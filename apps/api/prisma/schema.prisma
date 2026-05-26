@@ -1,0 +1,620 @@
+// OnyxHawk — cleaning service platform
+// Backend schema (PostgreSQL via Prisma).
+// Covers all 16 design screens: auth, booking flow, calendar, photos,
+// quote requests, payments (M-Pesa + card), and the Hawk Points loyalty system.
+//
+// Conventions:
+//   - All monetary fields are integers in the smallest unit (KES cents).
+//     Daraja is called with whole KES; we divide by 100 at the API boundary.
+//   - All timestamps are UTC. Display-time zone is Africa/Nairobi.
+//   - The Hawk Points ledger is append-only; balance is derived (with a
+//     denormalized snapshot on each row for fast reads).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity & access
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  CREW
+  CREW_LEAD
+  ADMIN
+  SUPPORT
+}
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+model User {
+  id             String      @id @default(cuid())
+  phone          String      @unique // E.164, e.g. +254712480392
+  email          String?     @unique
+  fullName       String
+  passwordHash   String?     // null until customer sets one; OTP-only flow allowed
+  phoneVerified  Boolean     @default(false)
+  emailVerified  Boolean     @default(false)
+  role           UserRole    @default(CUSTOMER)
+  tier           LoyaltyTier @default(BRONZE)
+  // Lifetime CREDIT points earned (never decreases). Tier is derived from this,
+  // NOT from current balance — otherwise redeeming points would demote the user.
+  lifetimeEarnedPoints Int    @default(0)
+  referralCode   String      @unique // generated; shown on referral CTA
+  referredByUser User?       @relation("Referrals", fields: [referredByUserId], references: [id])
+  referredByUserId String?
+  referrals      User[]      @relation("Referrals")
+  avatarUrl      String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  addresses          Address[]
+  bookings           Booking[]
+  quoteRequests      QuoteRequest[]
+  payments           Payment[]
+  paymentMethods     PaymentMethod[]
+  pointsLedger       HawkPointsLedger[]
+  credits            CustomerCredit[]
+  notificationPrefs  NotificationPreference[]
+  notifications      Notification[]
+  otpCodes           OtpCode[]
+  refreshTokens      RefreshToken[]
+
+  // Crew assignments (only populated when role = CREW or CREW_LEAD).
+  crewAssignments    BookingCrew[]
+  photosTaken        BookingPhoto[] @relation("PhotosTaken")
+
+  @@index([referredByUserId])
+}
+
+model OtpCode {
+  id        String    @id @default(cuid())
+  user      User?     @relation(fields: [userId], references: [id])
+  userId    String?
+  phone     String    // phone the OTP was sent to (may not yet be linked to a user)
+  codeHash  String    // never store the OTP in plaintext
+  purpose   String    // "SIGN_IN" | "PHONE_VERIFY" | "PASSWORD_RESET"
+  expiresAt DateTime
+  consumedAt DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  @@index([phone, purpose])
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  tokenHash  String   @unique
+  device     String?  // user-agent / device label
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Addresses (saved spaces — "Home", "Office")
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Address {
+  id            String   @id @default(cuid())
+  user          User     @relation(fields: [userId], references: [id])
+  userId        String
+  label         String   // "Home", "Office", ...
+  line1         String   // e.g. "Riverside Drive · Apt 14B"
+  line2         String?
+  area          String?  // "Westlands"
+  city          String   @default("Nairobi")
+  country       String   @default("KE")
+  lat           Decimal? @db.Decimal(10, 7)
+  lng           Decimal? @db.Decimal(10, 7)
+  accessNotes   String?  // gate code, lift info — surfaced to crew lead
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  bookings      Booking[]
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Service catalog
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ServiceBadge {
+  NONE
+  MOST_BOOKED
+  CERTIFIED
+  NEW
+}
+
+// Top-level service lines: Residential, Office & commercial, Hospital & medical,
+// Post-construction, Fumigation
+model ServiceLine {
+  id              String       @id @default(cuid())
+  code            String       @unique // "residential" | "office" | "hospital" | "post_build" | "fumigation"
+  name            String
+  tagline         String?      // short description shown on catalog card
+  description     String?
+  badge           ServiceBadge @default(NONE)
+  imageUrl        String?
+  colorHex        String?      // calendar dot color (Residential green, Office blue, ...)
+  quoteOnly       Boolean      @default(false) // Hospital + Post-build often quote-only
+  fromPriceCents  Int?         // shown as "FROM KSh X" on catalog
+  sortOrder       Int          @default(0)
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  cleanTypes      CleanType[]
+  addOns          AddOn[]
+  bookings        Booking[]
+  quoteRequests   QuoteRequest[]
+}
+
+// Per-line variants: Standard / Deep / Move-out for Residential, etc.
+model CleanType {
+  id             String       @id @default(cuid())
+  serviceLine    ServiceLine  @relation(fields: [serviceLineId], references: [id])
+  serviceLineId  String
+  code           String       // "standard" | "deep" | "move_out"
+  name           String
+  subtitle       String?      // "Maintenance" / "Top-to-bottom" / "Empty unit"
+  basePriceCents Int          // base price before scope/add-ons
+  sortOrder      Int          @default(0)
+  isActive       Boolean      @default(true)
+  bookings       Booking[]
+
+  @@unique([serviceLineId, code])
+}
+
+model AddOn {
+  id             String       @id @default(cuid())
+  serviceLine    ServiceLine? @relation(fields: [serviceLineId], references: [id])
+  serviceLineId  String?      // null = available across all lines
+  code           String
+  name           String       // "Inside fridge & oven"
+  priceCents     Int
+  sortOrder      Int          @default(0)
+  isActive       Boolean      @default(true)
+
+  bookingAddOns  BookingAddOn[]
+
+  @@unique([serviceLineId, code])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bookings
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BookingStatus {
+  DRAFT          // user is mid-flow; not yet confirmed
+  PENDING_PAYMENT
+  CONFIRMED      // paid (or invoice issued for B2B) and scheduled
+  EN_ROUTE
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum RecurrenceFrequency {
+  NONE
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+model Booking {
+  id              String         @id @default(cuid())
+  // Human reference shown to users, e.g. "OH-2406-371".
+  // Generated server-side: OH-{YYMM}-{zero-padded sequence within the month}.
+  reference       String         @unique
+
+  user            User           @relation(fields: [userId], references: [id])
+  userId          String
+  address         Address        @relation(fields: [addressId], references: [id])
+  addressId       String
+  serviceLine     ServiceLine    @relation(fields: [serviceLineId], references: [id])
+  serviceLineId   String
+  cleanType       CleanType      @relation(fields: [cleanTypeId], references: [id])
+  cleanTypeId     String
+
+  // Scope (screen 05)
+  bedrooms        Int            @default(0)
+  bathrooms       Int            @default(0)
+  livingRooms     Int            @default(0)
+  squareMeters    Int?           // approximate
+  notesForCrew    String?
+
+  // Schedule (screen 06)
+  scheduledAt              DateTime
+  estimatedDurationMinutes Int
+
+  status          BookingStatus  @default(DRAFT)
+
+  // Pricing snapshot at booking time (so historical receipts are stable).
+  basePriceCents     Int  @default(0)
+  addOnsTotalCents   Int  @default(0)
+  travelFeeCents     Int  @default(0)
+  creditAppliedCents Int  @default(0) // first-clean credit, referral credit, etc.
+  discountCents      Int  @default(0) // promo codes
+  totalCents         Int  @default(0)
+
+  // Points payout (decided at booking time, credited when COMPLETED).
+  pointsToEarn       Int  @default(0)
+
+  // Recurrence: a recurring booking has a "series" parent; concrete instances
+  // point back to the same seriesParentId. Single bookings leave this null.
+  recurrenceFrequency RecurrenceFrequency @default(NONE)
+  seriesParent        Booking?  @relation("Series", fields: [seriesParentId], references: [id])
+  seriesParentId      String?
+  seriesChildren      Booking[] @relation("Series")
+
+  // Review (post-completion, shown on My bookings — past)
+  rating          Int?           // 1–5
+  ratingComment   String?
+  ratedAt         DateTime?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  confirmedAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancellationReason String?
+
+  addOns          BookingAddOn[]
+  crew            BookingCrew[]
+  photos          BookingPhoto[]
+  payments        Payment[]
+  pointsEntries   HawkPointsLedger[]
+
+  @@index([userId, scheduledAt])
+  @@index([serviceLineId, scheduledAt])
+  @@index([scheduledAt])
+}
+
+model BookingAddOn {
+  id              String   @id @default(cuid())
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId       String
+  addOn           AddOn    @relation(fields: [addOnId], references: [id])
+  addOnId         String
+  priceCentsAtBooking Int   // snapshot, in case AddOn.priceCents changes later
+
+  @@unique([bookingId, addOnId])
+}
+
+// Per-month counter for generating safe sequential booking references
+// (OH-YYMM-XXX). Incremented inside the booking-confirm transaction so two
+// simultaneous confirms can't collide.
+model BookingSequence {
+  yearMonth String @id // "2605" for May 2026
+  lastSeq   Int    @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Crew & photo documentation
+// ─────────────────────────────────────────────────────────────────────────────
+
+// LEAD vs MEMBER on a single booking. (Whether a person is "crew" globally is
+// expressed by User.role = CREW or CREW_LEAD — see UserRole.)
+enum CrewRole {
+  LEAD
+  MEMBER
+}
+
+// Crew members are Users (role = CREW or CREW_LEAD) using the same RN app as
+// customers, switched into a crew view by their role. No separate Crew table.
+model BookingCrew {
+  id         String   @id @default(cuid())
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId  String
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  role       CrewRole // LEAD or MEMBER for THIS booking
+  assignedAt DateTime @default(now())
+
+  @@unique([bookingId, userId])
+  @@index([userId])
+}
+
+enum PhotoKind {
+  BEFORE
+  AFTER
+}
+
+// One row per photo. Pair detection is by (bookingId, room): the UI compares
+// the latest BEFORE and AFTER for that room.
+model BookingPhoto {
+  id            String    @id @default(cuid())
+  booking       Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId     String
+  room          String    // "Kitchen", "Living room", "Bedroom 1", ...
+  kind          PhotoKind
+  url           String    // R2/S3 object URL
+  thumbnailUrl  String?
+  takenBy       User?     @relation("PhotosTaken", fields: [takenByUserId], references: [id])
+  takenByUserId String?
+  takenAt       DateTime  @default(now())
+
+  @@index([bookingId, room])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quote requests (screen 12)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum QuoteStatus {
+  PENDING
+  SITE_VISIT_SCHEDULED
+  QUOTED
+  WON              // converted to a Booking
+  LOST
+  CANCELLED
+}
+
+model QuoteRequest {
+  id              String       @id @default(cuid())
+  user            User         @relation(fields: [userId], references: [id])
+  userId          String
+  serviceLine     ServiceLine  @relation(fields: [serviceLineId], references: [id])
+  serviceLineId   String
+  siteType        String       // "Open-plan office", "Floor 4 ward", ...
+  approxSqm       Int?
+  floors          Int?
+  frequency       RecurrenceFrequency @default(NONE) // ONE_OFF (NONE) / WEEKLY / DAILY etc.
+  notes           String?
+  status          QuoteStatus  @default(PENDING)
+  quotedAmountCents Int?
+  quotedAt        DateTime?
+  convertedBookingId String?   // when WON, link to the resulting booking
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  photos          QuoteRequestPhoto[]
+
+  @@index([userId, status])
+}
+
+model QuoteRequestPhoto {
+  id              String       @id @default(cuid())
+  quoteRequest    QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  quoteRequestId  String
+  url             String
+  createdAt       DateTime     @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payments
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Launch is M-Pesa only. If/when card payments are added, extend this model
+// (don't introduce a parallel `Card` table) so Payment.paymentMethodId stays
+// uniform across payment kinds.
+model PaymentMethod {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  mpesaPhone  String   // E.164 — the MSISDN STK push is sent to
+  label       String?  // optional user-set label, e.g. "Work phone"
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  payments    Payment[]
+
+  @@unique([userId, mpesaPhone])
+  @@index([userId])
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUESTED        // STK push fired / card auth initiated
+  AWAITING_USER    // waiting for PIN entry on phone
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  TIMED_OUT
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentProvider {
+  MPESA_STK
+  WALLET_CREDIT    // pay entirely from CustomerCredit (no Daraja call)
+}
+
+model Payment {
+  id              String          @id @default(cuid())
+  booking         Booking?        @relation(fields: [bookingId], references: [id])
+  bookingId       String?
+  user            User            @relation(fields: [userId], references: [id])
+  userId          String
+  paymentMethod   PaymentMethod?  @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodId String?
+  provider        PaymentProvider
+  amountCents     Int
+  currency        String          @default("KES")
+  status          PaymentStatus   @default(PENDING)
+  failureReason   String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  completedAt     DateTime?
+
+  mpesaTransaction MpesaTransaction?
+
+  @@index([bookingId])
+  @@index([userId, createdAt])
+}
+
+// Daraja STK Push lifecycle — one row per push attempt.
+model MpesaTransaction {
+  id                  String     @id @default(cuid())
+  payment             Payment    @relation(fields: [paymentId], references: [id])
+  paymentId           String     @unique
+  msisdn              String     // phone the push went to
+  amountKes           Int        // Daraja takes whole KES
+  accountReference    String     // e.g. booking.reference
+  transactionDesc     String
+  merchantRequestId   String?
+  checkoutRequestId   String?    @unique
+  resultCode          String?
+  resultDesc          String?
+  mpesaReceiptNumber  String?    @unique
+  callbackPayload     Json?
+  pushSentAt          DateTime?
+  callbackReceivedAt  DateTime?
+  createdAt           DateTime   @default(now())
+
+  @@index([msisdn])
+}
+
+// Stand-alone customer credits (first-clean credit, refund credit, referral bonus).
+enum CustomerCreditSource {
+  FIRST_CLEAN
+  REFERRAL_BONUS
+  REFUND_CREDIT
+  GOODWILL
+  PROMO
+}
+
+model CustomerCredit {
+  id                String               @id @default(cuid())
+  user              User                 @relation(fields: [userId], references: [id])
+  userId            String
+  amountCents       Int                  // positive = credit owed to the customer
+  source            CustomerCreditSource
+  expiresAt         DateTime?
+  redeemedAt        DateTime?
+  redeemedBookingId String?
+  note              String?
+  createdAt         DateTime             @default(now())
+
+  @@index([userId, redeemedAt])
+}
+
+// Promo codes (screen 15 PROMO CODE field).
+model PromoCode {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  description   String?
+  amountOffCents Int?    // exclusive with percentOff
+  percentOff    Int?
+  maxRedemptions Int?
+  redemptionsCount Int   @default(0)
+  validFrom     DateTime?
+  validUntil    DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hawk Points loyalty
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PointsReason {
+  BOOKING_BASE          // 10 pts / KSh 100
+  WEEKEND_MULTIPLIER    // bonus for Sat/Sun bookings
+  RECURRING_BONUS       // signing into a recurring contract
+  REFERRAL              // friend joins and books
+  PHOTO_DOCUMENTATION   // per fully-documented room
+  TIER_BONUS
+  REDEMPTION            // pts spent for KSh value on a booking
+  REFUND_CLAWBACK
+  ADJUSTMENT            // admin correction
+}
+
+// Append-only ledger. The user's balance is the SUM of `points` for that user
+// (CREDIT positive, DEBIT negative). We also store balanceAfter for fast reads.
+enum PointsDirection {
+  CREDIT
+  DEBIT
+}
+
+model HawkPointsLedger {
+  id              String           @id @default(cuid())
+  user            User             @relation(fields: [userId], references: [id])
+  userId          String
+  direction       PointsDirection
+  points          Int              // always positive magnitude; sign comes from direction
+  balanceAfter    Int              // denormalized snapshot
+  reason          PointsReason
+  description     String?          // human-readable, shown in ledger UI
+  booking         Booking?         @relation(fields: [bookingId], references: [id])
+  bookingId       String?
+  referralUserId  String?          // when reason = REFERRAL
+  createdAt       DateTime         @default(now())
+
+  @@index([userId, createdAt])
+  @@index([bookingId])
+}
+
+// Configurable loyalty rules (so marketing can tweak without a deploy).
+model PointsRule {
+  id          String       @id @default(cuid())
+  reason      PointsReason @unique
+  // For PER_KSH-style rules, `numerator/denominator` express the ratio
+  // (e.g. 10 pts per 100 KSh → numerator=10, denominator=10000 cents).
+  numerator   Int
+  denominator Int
+  description String?
+  activeFrom  DateTime?
+  activeUntil DateTime?
+  isActive    Boolean      @default(true)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifications (bell icon on Home; toggles on Profile)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum NotificationChannel {
+  PUSH
+  SMS
+  EMAIL
+}
+
+model NotificationPreference {
+  id        String              @id @default(cuid())
+  user      User                @relation(fields: [userId], references: [id])
+  userId    String
+  channel   NotificationChannel
+  enabled   Boolean             @default(true)
+
+  @@unique([userId, channel])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  kind      String   // "BOOKING_CONFIRMED" | "CREW_EN_ROUTE" | "POINTS_CREDITED" | ...
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  sentAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt])
+}

@@ -1,0 +1,3 @@
+- [Project overview](project_overview.md) — cleaning service (OnyxHawk): mobile + customer web + admin web, M-Pesa, Hawk Points loyalty
+- [Tech stack](tech_stack.md) — Expo + NativeWind, Fastify + Prisma + Postgres, R2 storage, Daraja for M-Pesa, Turborepo monorepo
+- [Product decisions](product_decisions.md) — v1: M-Pesa only, crew shares the customer RN app via roles, tier thresholds 0/500/1k/2k pts
