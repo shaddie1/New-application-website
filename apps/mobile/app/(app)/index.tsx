@@ -1,18 +1,44 @@
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import type { BookingDto } from '@onyxhawk/types';
+
 import { useAuthStore } from '../../src/auth/store';
 import { useBookingStore } from '../../src/booking/store';
 import { api } from '../../src/api/client';
 
-// Home screen — visual sketch of mockup 03.
-// The booking flow / data plumbing is the next pass; this is just enough to
-// confirm the design tokens and the auth gate work end-to-end.
+// Home screen — mockup 03.
 export default function HomeScreen() {
   const router = useRouter();
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const resetBooking = useBookingStore((s) => s.reset);
+
+  const [upcomingCount, setUpcomingCount] = useState<number | null>(null);
+  const [nextBooking, setNextBooking] = useState<BookingDto | null | undefined>(undefined);
+
+  const load = useCallback(async () => {
+    if (!session) return;
+    try {
+      const res = await api.listBookings();
+      setUpcomingCount(res.upcoming.length);
+      setNextBooking(res.upcoming[0] ?? null);
+    } catch {
+      // Soft-fail: leave the home card in its loading state. Don't block sign-out etc.
+      setNextBooking(null);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   if (!session) return null;
 
@@ -35,37 +61,53 @@ export default function HomeScreen() {
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
-        <View className="px-5 pt-2">
-          <Text className="text-text-muted text-xs uppercase tracking-widest">Tuesday · 26 May</Text>
-          <Text className="text-text mt-2 text-4xl" style={{ fontFamily: 'serif' }}>
-            Good morning,
-          </Text>
-          <Text className="text-gold-deep text-4xl italic" style={{ fontFamily: 'serif' }}>
-            {firstName}.
-          </Text>
-        </View>
-
-        <View className="mx-5 mt-8 rounded-xl bg-surface-dark p-5">
-          <View className="self-start rounded-pill bg-service-residential/20 px-3 py-1">
-            <Text className="text-service-residential text-xs uppercase tracking-widest">● Residential</Text>
-          </View>
-          <Text className="text-text-on-dark mt-3 text-2xl" style={{ fontFamily: 'serif' }}>
-            Deep clean
-          </Text>
-          <Text className="text-gold italic text-lg" style={{ fontFamily: 'serif' }}>
-            3-bedroom apartment
-          </Text>
-
-          <View className="mt-4 flex-row justify-between">
-            <Column label="TODAY" value="2:30 PM" />
-            <Column label="CREW" value="4 + lead" />
-            <Column label="EST." value="3h 30m" />
+        <View className="px-5 pt-2 flex-row items-start justify-between">
+          <View>
+            <Text className="text-text-muted text-xs uppercase tracking-widest">{todayLabel()}</Text>
+            <Text className="text-text mt-2 text-4xl" style={{ fontFamily: 'serif' }}>
+              {greetingForNow()},
+            </Text>
+            <Text className="text-gold-deep text-4xl italic" style={{ fontFamily: 'serif' }}>
+              {firstName}.
+            </Text>
           </View>
 
-          <Pressable className="mt-4 self-end rounded-lg bg-gold px-4 py-2">
-            <Text className="text-surface-dark font-semibold">Track →</Text>
-          </Pressable>
+          {upcomingCount !== null && upcomingCount > 0 && (
+            <Pressable
+              onPress={() => router.push('/(app)/bookings')}
+              className="rounded-pill bg-surface border border-border px-3 py-1.5 mt-2"
+            >
+              <Text className="text-text-muted text-xs uppercase tracking-widest">
+                {upcomingCount} upcoming →
+              </Text>
+            </Pressable>
+          )}
         </View>
+
+        {nextBooking === undefined && (
+          <View className="mx-5 mt-8 rounded-xl bg-surface-dark p-8 items-center">
+            <ActivityIndicator color="#C9A55C" />
+          </View>
+        )}
+
+        {nextBooking === null && (
+          <View className="mx-5 mt-8 rounded-xl bg-surface border border-border p-5">
+            <Text className="text-text-muted text-xs uppercase tracking-widest">Next clean</Text>
+            <Text className="text-text mt-2 text-2xl" style={{ fontFamily: 'serif' }}>
+              Nothing on the calendar yet.
+            </Text>
+            <Text className="text-text-muted text-sm mt-1">
+              Book one in under a minute and your crew will appear here.
+            </Text>
+          </View>
+        )}
+
+        {nextBooking && (
+          <NextCleanCard
+            booking={nextBooking}
+            onTrack={() => router.push({ pathname: '/(app)/bookings/[id]', params: { id: nextBooking.id } })}
+          />
+        )}
 
         <View className="mt-8 px-5">
           <Text className="text-text-muted text-xs uppercase tracking-widest">Book a clean</Text>
@@ -85,11 +127,61 @@ export default function HomeScreen() {
           <Text className="text-surface-dark text-xl">→</Text>
         </Pressable>
 
+        <Pressable
+          onPress={() => router.push('/(app)/bookings')}
+          className="mx-5 mt-3 rounded-xl bg-surface border border-border px-5 py-4 flex-row items-center justify-between"
+        >
+          <View>
+            <Text className="text-text text-base font-medium">View all bookings</Text>
+            <Text className="text-text-muted text-xs mt-0.5">Upcoming and past, in one ledger</Text>
+          </View>
+          <Text className="text-text text-xl">→</Text>
+        </Pressable>
+
         <Pressable onPress={handleSignOut} className="mx-5 mt-12 self-start">
           <Text className="text-text-muted underline">Sign out</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function NextCleanCard({ booking, onTrack }: { booking: BookingDto; onTrack: () => void }) {
+  const d = new Date(booking.scheduledAt);
+  const timeLabel = d.toLocaleTimeString('en-GB', { timeZone: 'Africa/Nairobi', hour: '2-digit', minute: '2-digit' });
+  const dayLabel = isToday(d)
+    ? 'TODAY'
+    : isTomorrow(d)
+    ? 'TOMORROW'
+    : d.toLocaleDateString('en-US', { timeZone: 'Africa/Nairobi', weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
+  const durationLabel = formatDuration(booking.estimatedDurationMinutes);
+  const lineColor = serviceLineColor(booking.serviceLineCode);
+  const ctaLabel = booking.status === 'PENDING_PAYMENT' ? 'Complete payment →' : 'Track →';
+
+  return (
+    <View className="mx-5 mt-8 rounded-xl bg-surface-dark p-5">
+      <View className="self-start rounded-pill px-3 py-1" style={{ backgroundColor: lineColor + '33' }}>
+        <Text className="text-xs uppercase tracking-widest" style={{ color: lineColor }}>
+          ● {serviceLineLabel(booking.serviceLineCode)}
+        </Text>
+      </View>
+      <Text className="text-text-on-dark mt-3 text-2xl" style={{ fontFamily: 'serif' }}>
+        {cleanTypeLabel(booking.cleanTypeCode)}
+      </Text>
+      <Text className="text-gold italic text-lg" style={{ fontFamily: 'serif' }}>
+        {booking.scope.bedrooms > 0 ? `${booking.scope.bedrooms}-bedroom · ${booking.address.label}` : booking.address.label}
+      </Text>
+
+      <View className="mt-4 flex-row justify-between">
+        <Column label={dayLabel} value={timeLabel} />
+        <Column label="CREW" value="Assigned" />
+        <Column label="EST." value={durationLabel} />
+      </View>
+
+      <Pressable onPress={onTrack} className="mt-4 self-end rounded-lg bg-gold px-4 py-2">
+        <Text className="text-surface-dark font-semibold">{ctaLabel}</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -100,4 +192,77 @@ function Column({ label, value }: { label: string; value: string }) {
       <Text className="text-text-on-dark mt-1 text-base font-medium">{value}</Text>
     </View>
   );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function todayLabel(): string {
+  return new Date()
+    .toLocaleDateString('en-US', {
+      timeZone: 'Africa/Nairobi',
+      weekday: 'long',
+      day: '2-digit',
+      month: 'short',
+    })
+    .replace(',', ' ·');
+}
+
+function greetingForNow(): string {
+  const hour = Number(
+    new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi', hour: '2-digit', hour12: false }),
+  );
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function isToday(d: Date): boolean {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
+  const target = d.toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
+  return today === target;
+}
+
+function isTomorrow(d: Date): boolean {
+  const tmr = new Date(Date.now() + 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
+  const target = d.toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
+  return tmr === target;
+}
+
+function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function serviceLineColor(code: string): string {
+  switch (code) {
+    case 'residential': return '#4F7B5C';
+    case 'office': return '#3A5E7A';
+    case 'hospital': return '#A8556B';
+    case 'post_build': return '#C97E3B';
+    case 'fumigation': return '#6B4E8C';
+    default: return '#C9A55C';
+  }
+}
+
+function serviceLineLabel(code: string): string {
+  switch (code) {
+    case 'residential': return 'Residential';
+    case 'office': return 'Office';
+    case 'hospital': return 'Hospital';
+    case 'post_build': return 'Post-build';
+    case 'fumigation': return 'Fumigation';
+    default: return code;
+  }
+}
+
+function cleanTypeLabel(code: string): string {
+  switch (code) {
+    case 'deep': return 'Deep clean';
+    case 'move_out': return 'Move-out clean';
+    case 'recurring': return 'Recurring clean';
+    default: return 'Standard clean';
+  }
 }
