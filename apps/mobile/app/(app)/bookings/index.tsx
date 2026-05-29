@@ -50,7 +50,9 @@ export default function BookingsScreen() {
           <Text className="text-text text-xl">‹</Text>
         </Pressable>
         <Text className="text-text-muted text-xs uppercase tracking-widest">History</Text>
-        <View className="h-10 w-10" />
+        <Pressable onPress={() => router.push('/(app)/calendar')} className="h-10 w-10 items-center justify-center rounded-full bg-surface">
+          <Text className="text-text text-base">▦</Text>
+        </Pressable>
       </View>
 
       <ScrollView

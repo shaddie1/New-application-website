@@ -73,6 +73,16 @@ export interface CreateAddressInput {
   isDefault?: boolean;
 }
 
+export interface UpdateAddressInput {
+  label?: string;
+  line1?: string;
+  line2?: string | null;
+  area?: string | null;
+  city?: string;
+  accessNotes?: string | null;
+  isDefault?: boolean;
+}
+
 // ── Booking scope & pricing ───────────────────────────────────────────────
 
 export interface BookingScope {
@@ -157,4 +167,20 @@ export interface BookingDto {
   address: AddressDto;
   addOns: Array<{ id: string; code: string; name: string; priceCentsAtBooking: number }>;
   createdAt: string;
+}
+
+// ── Crew & transitions ────────────────────────────────────────────────────
+
+/** Booking states the crew flow can advance to (subset of BookingStatus). */
+export type CrewTransitionTo = 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED';
+
+export interface TransitionBookingInput {
+  to: CrewTransitionTo;
+}
+
+/** A booking as the assigned crew sees it (customer info + role on the job). */
+export interface CrewJobDto extends BookingDto {
+  customerName: string;
+  customerPhone: string;
+  crewRole: 'LEAD' | 'MEMBER';
 }

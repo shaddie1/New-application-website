@@ -16,6 +16,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { quoteBooking, type PricingInputs } from '../booking/pricing.js';
 import { getAvailability } from '../booking/availability.js';
 import { generateBookingReference } from '../booking/reference.js';
+import { listBookingPhotos } from '../photos/service.js';
 
 // ── Validation ────────────────────────────────────────────────────────────
 
@@ -170,6 +171,19 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: 'booking not found' });
     }
     return reply.send({ booking: toBookingDto(booking) });
+  });
+
+  // Before/after photos for a booking the caller owns (mockup 11).
+  app.get<{ Params: { id: string } }>('/:id/photos', async (req, reply) => {
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      select: { userId: true },
+    });
+    if (!booking || booking.userId !== req.auth!.sub) {
+      return reply.code(404).send({ error: 'booking not found' });
+    }
+    const result = await listBookingPhotos(req.params.id);
+    return reply.send(result);
   });
 
   // Cancel a booking. Allowed while PENDING_PAYMENT or CONFIRMED.

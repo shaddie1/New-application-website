@@ -21,7 +21,17 @@
       "bundler": "metro",
       "output": "static"
     },
-    "plugins": ["expo-router", "expo-font"],
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "OnyxHawk needs photo access so the crew can attach before/after shots to a clean.",
+          "cameraPermission": "OnyxHawk needs camera access so the crew can capture before/after shots on site."
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
     }

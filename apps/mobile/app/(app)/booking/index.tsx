@@ -36,7 +36,7 @@ export default function ServiceCatalogScreen() {
 
   const handlePick = (line: ServiceLineDto) => {
     if (line.quoteOnly) {
-      // Route to quote-request flow once it exists. For now, no-op visually.
+      router.push({ pathname: '/(app)/quote', params: { serviceLineCode: line.code } });
       return;
     }
     setServiceLine({

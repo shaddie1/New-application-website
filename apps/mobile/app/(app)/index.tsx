@@ -8,22 +8,39 @@ import { useAuthStore } from '../../src/auth/store';
 import { useBookingStore } from '../../src/booking/store';
 import { api } from '../../src/api/client';
 
-// Home screen — mockup 03.
+// Home screen — mockup 03 for customers; crew users are bounced to /crew.
 export default function HomeScreen() {
   const router = useRouter();
   const session = useAuthStore((s) => s.session);
-  const signOut = useAuthStore((s) => s.signOut);
   const resetBooking = useBookingStore((s) => s.reset);
+
+  useEffect(() => {
+    if (session && (session.user.role === 'CREW' || session.user.role === 'CREW_LEAD')) {
+      router.replace('/(app)/crew');
+    }
+  }, [session, router]);
 
   const [upcomingCount, setUpcomingCount] = useState<number | null>(null);
   const [nextBooking, setNextBooking] = useState<BookingDto | null | undefined>(undefined);
+  const [pointsBalance, setPointsBalance] = useState<number | null>(null);
+  const [tier, setTier] = useState<string | null>(null);
+  const [unread, setUnread] = useState<number>(0);
 
   const load = useCallback(async () => {
     if (!session) return;
     try {
-      const res = await api.listBookings();
-      setUpcomingCount(res.upcoming.length);
-      setNextBooking(res.upcoming[0] ?? null);
+      const [bookings, loyalty, notifs] = await Promise.all([
+        api.listBookings(),
+        api.getLoyalty().catch(() => null),
+        api.listNotifications().catch(() => null),
+      ]);
+      setUpcomingCount(bookings.upcoming.length);
+      setNextBooking(bookings.upcoming[0] ?? null);
+      if (loyalty) {
+        setPointsBalance(loyalty.loyalty.balancePoints);
+        setTier(loyalty.loyalty.tier);
+      }
+      if (notifs) setUnread(notifs.unreadCount);
     } catch {
       // Soft-fail: leave the home card in its loading state. Don't block sign-out etc.
       setNextBooking(null);
@@ -49,15 +66,6 @@ export default function HomeScreen() {
 
   const firstName = session.user.fullName.split(' ')[0];
 
-  const handleSignOut = async () => {
-    try {
-      await api.logout(session.refreshToken);
-    } catch {
-      // Continue with local sign-out even if the server call fails.
-    }
-    await signOut();
-  };
-
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
@@ -72,16 +80,48 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {upcomingCount !== null && upcomingCount > 0 && (
-            <Pressable
-              onPress={() => router.push('/(app)/bookings')}
-              className="rounded-pill bg-surface border border-border px-3 py-1.5 mt-2"
-            >
-              <Text className="text-text-muted text-xs uppercase tracking-widest">
-                {upcomingCount} upcoming →
-              </Text>
-            </Pressable>
-          )}
+          <View className="items-end mt-2 gap-2">
+            <View className="flex-row items-center gap-2">
+              <Pressable
+                onPress={() => router.push('/(app)/notifications')}
+                className="h-11 w-11 rounded-full bg-surface border border-border items-center justify-center"
+              >
+                <Text className="text-text text-base">🔔</Text>
+                {unread > 0 && (
+                  <View className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-danger items-center justify-center px-1">
+                    <Text className="text-text-on-dark text-[10px] font-semibold">{unread > 9 ? '9+' : unread}</Text>
+                  </View>
+                )}
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/(app)/profile')}
+                className="h-11 w-11 rounded-full bg-surface-dark items-center justify-center"
+              >
+                <Text className="text-gold text-base" style={{ fontFamily: 'serif' }}>{initialsFor(session.user.fullName)}</Text>
+              </Pressable>
+            </View>
+            {upcomingCount !== null && upcomingCount > 0 && (
+              <Pressable
+                onPress={() => router.push('/(app)/bookings')}
+                className="rounded-pill bg-surface border border-border px-3 py-1.5"
+              >
+                <Text className="text-text-muted text-xs uppercase tracking-widest">
+                  {upcomingCount} upcoming →
+                </Text>
+              </Pressable>
+            )}
+            {pointsBalance !== null && (
+              <Pressable
+                onPress={() => router.push('/(app)/loyalty')}
+                className="rounded-pill bg-surface-dark px-3 py-1.5 flex-row items-center"
+              >
+                <Text className="text-gold text-xs mr-1">★</Text>
+                <Text className="text-text-on-dark text-xs uppercase tracking-widest">
+                  {pointsBalance.toLocaleString()} pts{tier ? ` · ${tier.toLowerCase()}` : ''}
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {nextBooking === undefined && (
@@ -127,19 +167,36 @@ export default function HomeScreen() {
           <Text className="text-surface-dark text-xl">→</Text>
         </Pressable>
 
+        <View className="mx-5 mt-3 flex-row" style={{ gap: 12 }}>
+          <Pressable
+            onPress={() => router.push('/(app)/bookings')}
+            className="flex-1 rounded-xl bg-surface border border-border px-4 py-4"
+          >
+            <Text className="text-text text-base font-medium">Bookings</Text>
+            <Text className="text-text-muted text-xs mt-0.5">Upcoming & past</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/(app)/calendar')}
+            className="flex-1 rounded-xl bg-surface border border-border px-4 py-4"
+          >
+            <Text className="text-text text-base font-medium">Calendar</Text>
+            <Text className="text-text-muted text-xs mt-0.5">Month · week · list</Text>
+          </Pressable>
+        </View>
+
         <Pressable
-          onPress={() => router.push('/(app)/bookings')}
+          onPress={() => router.push('/(app)/loyalty')}
           className="mx-5 mt-3 rounded-xl bg-surface border border-border px-5 py-4 flex-row items-center justify-between"
         >
           <View>
-            <Text className="text-text text-base font-medium">View all bookings</Text>
-            <Text className="text-text-muted text-xs mt-0.5">Upcoming and past, in one ledger</Text>
+            <Text className="text-text text-base font-medium">
+              Hawk Points{pointsBalance !== null ? ` · ${pointsBalance.toLocaleString()} pts` : ''}
+            </Text>
+            <Text className="text-text-muted text-xs mt-0.5">
+              {tier ? `${tier.charAt(0) + tier.slice(1).toLowerCase()} tier · tier perks & ledger` : 'Tier perks & ledger'}
+            </Text>
           </View>
-          <Text className="text-text text-xl">→</Text>
-        </Pressable>
-
-        <Pressable onPress={handleSignOut} className="mx-5 mt-12 self-start">
-          <Text className="text-text-muted underline">Sign out</Text>
+          <Text className="text-gold-deep text-xl">★</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -214,6 +271,10 @@ function greetingForNow(): string {
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
+}
+
+function initialsFor(name: string): string {
+  return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 }
 
 function isToday(d: Date): boolean {

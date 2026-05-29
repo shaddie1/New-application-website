@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { BookingDto, BookingStatus } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/api/client';
+import { CustomerPhotoGallery } from '../../../src/photos/CustomerPhotoGallery';
 
 // Booking detail. Single screen for now — the photo gallery from mockup 11
 // hooks in once the crew flow lands and photos exist.
@@ -198,12 +199,9 @@ export default function BookingDetailScreen() {
               </View>
             </View>
 
-            {booking.status === 'COMPLETED' && (
-              <View className="mx-5 mt-3 rounded-xl bg-surface border border-border px-4 py-5 items-center">
-                <Text className="text-text-muted text-xs uppercase tracking-widest">Before & after</Text>
-                <Text className="text-text-muted text-sm mt-2 text-center">
-                  Photos will appear here once the crew has uploaded them.
-                </Text>
+            {(booking.status === 'COMPLETED' || booking.status === 'IN_PROGRESS') && (
+              <View className="mx-5 mt-3 rounded-xl bg-surface border border-border px-4 py-4">
+                <CustomerPhotoGallery bookingId={booking.id} showEmptyState />
               </View>
             )}
           </>

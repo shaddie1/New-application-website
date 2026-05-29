@@ -2,3 +2,8 @@ export * from './auth.js';
 export * from './booking.js';
 export * from './mpesa.js';
 export * from './loyalty.js';
+export * from './photos.js';
+export * from './profile.js';
+export * from './quote.js';
+export * from './admin.js';
+export * from './notification.js';

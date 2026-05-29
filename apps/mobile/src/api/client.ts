@@ -14,6 +14,24 @@ import type {
   BookingDto,
   InitiatePaymentInput,
   PaymentDto,
+  CrewJobDto,
+  CrewTransitionTo,
+  LoyaltyOverview,
+  BookingPhotosResult,
+  BookingPhotoDto,
+  PhotoUploadUrlInput,
+  PhotoUploadUrlResult,
+  CreatePhotoInput,
+  ProfileOverview,
+  UpdateProfileInput,
+  NotificationPreferenceDto,
+  UpdateNotificationInput,
+  CreateAddressInput,
+  UpdateAddressInput,
+  CreateQuoteRequestInput,
+  QuoteRequestDto,
+  NotificationsResult,
+  MarkNotificationsReadInput,
 } from '@onyxhawk/types';
 import { API_URL } from '../config';
 import { useAuthStore } from '../auth/store';
@@ -112,6 +130,19 @@ export const api = {
   listAddresses: () =>
     request<{ addresses: AddressDto[] }>('/addresses', { method: 'GET', auth: true }),
 
+  createAddress: (input: CreateAddressInput) =>
+    request<{ address: AddressDto }>('/addresses', { method: 'POST', auth: true, body: JSON.stringify(input) }),
+
+  updateAddress: (id: string, input: UpdateAddressInput) =>
+    request<{ address: AddressDto }>(`/addresses/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteAddress: (id: string) =>
+    request<{ ok: true }>(`/addresses/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
   // ── Booking ──────────────────────────────────────────────────────────────
   quoteBooking: (input: QuoteInput) =>
     request<{ quote: QuoteResult }>('/bookings/quote', {
@@ -165,6 +196,163 @@ export const api = {
       method: 'GET',
       auth: true,
     }),
+
+  // ── Crew ─────────────────────────────────────────────────────────────────
+  listCrewJobs: (scope: 'today' | 'upcoming' | 'past' | 'all' = 'upcoming') =>
+    request<{ jobs: CrewJobDto[] }>(`/crew/jobs?scope=${scope}`, {
+      method: 'GET',
+      auth: true,
+    }),
+
+  getCrewJob: (id: string) =>
+    request<{ job: CrewJobDto }>(`/crew/jobs/${encodeURIComponent(id)}`, {
+      method: 'GET',
+      auth: true,
+    }),
+
+  transitionCrewJob: (id: string, to: CrewTransitionTo) =>
+    request<{ bookingId: string; status: string; pointsCredited?: number }>(
+      `/crew/jobs/${encodeURIComponent(id)}/transition`,
+      { method: 'POST', auth: true, body: JSON.stringify({ to }) },
+    ),
+
+  claimCrewJob: (bookingId: string, role: 'LEAD' | 'MEMBER' = 'LEAD') =>
+    request<{ job: CrewJobDto }>('/crew/jobs/claim', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ bookingId, role }),
+    }),
+
+  // ── Loyalty ──────────────────────────────────────────────────────────────
+  getLoyalty: () =>
+    request<{ loyalty: LoyaltyOverview }>('/loyalty', { method: 'GET', auth: true }),
+
+  // ── Profile ──────────────────────────────────────────────────────────────
+  getProfile: () =>
+    request<{ profile: ProfileOverview }>('/profile', { method: 'GET', auth: true }),
+
+  updateProfile: (input: UpdateProfileInput) =>
+    request<{ user: ProfileOverview['user'] }>('/profile', {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  getNotificationPrefs: () =>
+    request<{ preferences: NotificationPreferenceDto[] }>('/profile/notifications', { method: 'GET', auth: true }),
+
+  updateNotificationPref: (input: UpdateNotificationInput) =>
+    request<{ preference: NotificationPreferenceDto }>('/profile/notifications', {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  // ── Quote requests ─────────────────────────────────────────────────────────
+  createQuoteRequest: (input: CreateQuoteRequestInput) =>
+    request<{ quoteRequest: QuoteRequestDto }>('/quote-requests', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  listQuoteRequests: () =>
+    request<{ quoteRequests: QuoteRequestDto[] }>('/quote-requests', { method: 'GET', auth: true }),
+
+  getQuoteRequest: (id: string) =>
+    request<{ quoteRequest: QuoteRequestDto }>(`/quote-requests/${encodeURIComponent(id)}`, {
+      method: 'GET',
+      auth: true,
+    }),
+
+  // ── Photos ───────────────────────────────────────────────────────────────
+  // Customer-side: photos for a booking the caller owns.
+  getBookingPhotos: (bookingId: string) =>
+    request<BookingPhotosResult>(`/bookings/${encodeURIComponent(bookingId)}/photos`, {
+      method: 'GET',
+      auth: true,
+    }),
+
+  // Crew-side: photos for a job the caller is assigned to.
+  getCrewJobPhotos: (bookingId: string) =>
+    request<BookingPhotosResult>(`/crew/jobs/${encodeURIComponent(bookingId)}/photos`, {
+      method: 'GET',
+      auth: true,
+    }),
+
+  requestPhotoUploadUrl: (bookingId: string, input: PhotoUploadUrlInput) =>
+    request<PhotoUploadUrlResult>(`/crew/jobs/${encodeURIComponent(bookingId)}/photos/upload-url`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  saveCrewPhoto: (bookingId: string, input: CreatePhotoInput) =>
+    request<{ photo: BookingPhotoDto }>(`/crew/jobs/${encodeURIComponent(bookingId)}/photos`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+  listNotifications: () =>
+    request<NotificationsResult>('/notifications', { method: 'GET', auth: true }),
+
+  markNotificationsRead: (input: MarkNotificationsReadInput = {}) =>
+    request<{ ok: true; unreadCount: number }>('/notifications/read', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
 };
+
+/**
+ * End-to-end crew photo upload: presign → PUT binary to R2 → confirm row.
+ * `localUri` is the file:// path from expo-image-picker.
+ */
+export async function uploadCrewPhoto(opts: {
+  bookingId: string;
+  room: string;
+  kind: 'BEFORE' | 'AFTER';
+  localUri: string;
+  contentType?: string;
+}): Promise<BookingPhotoDto> {
+  const contentType = opts.contentType ?? guessContentType(opts.localUri);
+
+  const presigned = await api.requestPhotoUploadUrl(opts.bookingId, {
+    room: opts.room,
+    kind: opts.kind,
+    contentType,
+  });
+
+  // Read the local file and PUT it straight to R2.
+  const fileRes = await fetch(opts.localUri);
+  const blob = await fileRes.blob();
+  const putRes = await fetch(presigned.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType },
+    body: blob,
+  });
+  if (!putRes.ok) {
+    throw new ApiError(putRes.status, 'upload to storage failed');
+  }
+
+  const saved = await api.saveCrewPhoto(opts.bookingId, {
+    room: opts.room,
+    kind: opts.kind,
+    url: presigned.publicUrl,
+  });
+  return saved.photo;
+}
+
+function guessContentType(uri: string): string {
+  const ext = uri.split('.').pop()?.toLowerCase() ?? '';
+  switch (ext) {
+    case 'png': return 'image/png';
+    case 'webp': return 'image/webp';
+    case 'heic': return 'image/heic';
+    default: return 'image/jpeg';
+  }
+}
 
 export { ApiError };

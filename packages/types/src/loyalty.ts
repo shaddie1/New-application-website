@@ -29,3 +29,14 @@ export interface PointsLedgerEntry {
   bookingId?: string;
   createdAt: string;
 }
+
+/** GET /loyalty response — everything mockup 14 needs in one shot. */
+export interface LoyaltyOverview {
+  tier: LoyaltyTier;
+  lifetimeEarnedPoints: number;
+  balancePoints: number;
+  next: LoyaltyTier | null;
+  pointsRemaining: number;
+  /** Most recent ledger entries, newest first (capped server-side). */
+  recentLedger: PointsLedgerEntry[];
+}

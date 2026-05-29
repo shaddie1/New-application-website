@@ -19,6 +19,7 @@ import type { MpesaStkCallback, PaymentDto } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { stkPush, DarajaError } from './daraja.js';
+import { notifyBookingConfirmed } from '../notifications/service.js';
 
 export class PaymentError extends Error {
   constructor(message: string, public status: number) {
@@ -208,6 +209,11 @@ export async function handleStkCallback(
     { checkoutRequestId, resultCode: cb.ResultCode, paymentId: tx.paymentId },
     'STK callback processed',
   );
+
+  // Fire-and-forget: tell the customer their booking is confirmed.
+  if (succeeded && tx.payment.bookingId) {
+    void notifyBookingConfirmed(tx.payment.bookingId, log);
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
