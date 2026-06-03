@@ -12,6 +12,11 @@ const EnvSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 
+  // Comma-separated list of allowed browser origins (web + admin). When unset,
+  // CORS reflects any origin — convenient for local dev, but ALWAYS set this in
+  // production to your real domains.
+  CORS_ORIGIN: z.string().optional(),
+
   AT_USERNAME: z.string().optional(),
   AT_API_KEY: z.string().optional(),
   SMS_SENDER_ID: z.string().default('ONYXHAWK'),

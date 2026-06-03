@@ -31,7 +31,11 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(cors, { origin: true, credentials: true });
+  // Lock CORS to the configured origins in production; reflect any origin in dev.
+  const corsOrigin = env.CORS_ORIGIN
+    ? env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+    : true;
+  await app.register(cors, { origin: corsOrigin, credentials: true });
   await app.register(sensible);
 
   await app.register(healthRoutes, { prefix: '/health' });

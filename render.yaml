@@ -1,0 +1,60 @@
+# Render Blueprint for the OnyxHawk API (Fastify + Prisma).
+# Deploy: Render dashboard → New → Blueprint → point at this repo.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: onyxhawk-api
+    runtime: node
+    plan: free # free spins down after ~15m idle (cold start). Upgrade to 'starter' for always-on.
+    region: frankfurt # closest Render region to Kenya
+    rootDir: . # pnpm workspace — install from the repo root
+    # Corepack activates the pnpm version pinned in package.json (packageManager).
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @onyxhawk/api build
+    # Run migrations once per deploy, before the new instance goes live.
+    preDeployCommand: pnpm --filter @onyxhawk/api exec prisma migrate deploy
+    startCommand: node apps/api/dist/index.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT automatically; the app binds env.PORT.
+      - key: HOST
+        value: 0.0.0.0
+      # --- Secrets: set these in the Render dashboard (sync:false = not stored in git) ---
+      - key: DATABASE_URL # Neon connection string (use the POOLED url + ?sslmode=require)
+        sync: false
+      - key: JWT_SECRET # 32+ random chars
+        sync: false
+      - key: CORS_ORIGIN # https://onyxhawkcleaningservice.com,https://admin.onyxhawkcleaningservice.com
+        sync: false
+      - key: MPESA_BASE_URL
+        value: https://api.safaricom.co.ke
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: MPESA_CALLBACK_URL # https://api.onyxhawkcleaningservice.com/webhooks/mpesa/stk
+        sync: false
+      - key: AT_USERNAME # Africa's Talking (SMS OTP)
+        sync: false
+      - key: AT_API_KEY
+        sync: false
+      - key: SMS_SENDER_ID
+        value: ONYXHAWK
+      - key: R2_ACCOUNT_ID # Cloudflare R2 (before/after photos) — optional
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        value: onyxhawk-media
+      - key: R2_PUBLIC_URL
+        sync: false
