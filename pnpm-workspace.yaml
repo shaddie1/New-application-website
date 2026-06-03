@@ -2,6 +2,13 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Expo / React Native / Metro can't resolve pnpm's default isolated (symlinked)
+# node_modules layout — transitive deps like @expo/metro-runtime and
+# react-native-css-interop/jsx-runtime aren't visible to Metro's resolver.
+# Hoisting flattens node_modules (npm/yarn-style) so the mobile app bundles.
+# See https://docs.expo.dev/guides/monorepos/
+nodeLinker: hoisted
+
 # pnpm 11 requires explicit allow for postinstall scripts.
 # Prisma's postinstall downloads the query-engine binary; esbuild ships a native binary.
 allowBuilds:
