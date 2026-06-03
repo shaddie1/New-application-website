@@ -12,7 +12,10 @@ services:
     # NOTE: free tier doesn't support preDeployCommand, so migrations run here in
     # the build step (build-time env vars are available). `migrate deploy` is
     # idempotent — it only applies pending migrations.
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @onyxhawk/api build && pnpm exec prisma migrate deploy --schema apps/api/prisma/schema.prisma
+    # Install ONLY the API and its workspace deps (the `...` suffix) — skips the
+    # Expo/React-Native + Next deps for mobile/web/admin, which the API doesn't
+    # need and which would bloat/slow the free-tier build.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --filter @onyxhawk/api... && pnpm --filter @onyxhawk/api build && pnpm exec prisma migrate deploy --schema apps/api/prisma/schema.prisma
     startCommand: node apps/api/dist/index.js
     healthCheckPath: /health
     autoDeploy: true
