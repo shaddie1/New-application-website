@@ -9,9 +9,10 @@ services:
     region: frankfurt # closest Render region to Kenya
     rootDir: . # pnpm workspace — install from the repo root
     # Corepack activates the pnpm version pinned in package.json (packageManager).
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @onyxhawk/api build
-    # Run migrations once per deploy, before the new instance goes live.
-    preDeployCommand: pnpm --filter @onyxhawk/api exec prisma migrate deploy
+    # NOTE: free tier doesn't support preDeployCommand, so migrations run here in
+    # the build step (build-time env vars are available). `migrate deploy` is
+    # idempotent — it only applies pending migrations.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @onyxhawk/api build && pnpm exec prisma migrate deploy --schema apps/api/prisma/schema.prisma
     startCommand: node apps/api/dist/index.js
     healthCheckPath: /health
     autoDeploy: true
