@@ -8,6 +8,7 @@ build/
 .next/
 .expo/
 .turbo/
+*.tsbuildinfo
 
 # Env files (NEVER commit secrets — Daraja keys, DB URLs)
 .env

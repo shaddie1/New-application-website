@@ -8,8 +8,8 @@ Premium cleaning service platform — mobile + customer web + admin web sharing 
 apps/
   api/          Fastify + Prisma + PostgreSQL backend (M-Pesa Daraja integration)
   mobile/       Expo (React Native) — customer and crew (role-gated)
-  admin/        (planned) Next.js admin portal
-  web/          (planned) Next.js customer website
+  admin/        Next.js admin portal (port 4100)
+  web/          Next.js customer portal (port 4200)
 packages/
   types/        Shared TypeScript types (booking DTOs, M-Pesa payloads, ...)
   ui-tokens/    Design tokens extracted from the mockups
@@ -38,4 +38,6 @@ pnpm --filter @onyxhawk/mobile dev
 - Domain schema rationale: [`docs/schema.md`](docs/schema.md)
 
 ## Status
-v0 scaffold. Domain schema is locked (`apps/api/prisma/schema.prisma`). Customer booking flow next.
+v0 scaffold. Domain schema is locked (`apps/api/prisma/schema.prisma`). API, mobile, admin and the
+customer web portal (`apps/web`) all build; the web portal covers auth, the booking flow with M-Pesa
+STK push, bookings, loyalty and profile against the shared API.

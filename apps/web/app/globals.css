@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #f5f1e6;
+  color: #1b1814;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Headlines use a serif to match the mockups. Real licensed fonts
+   (DM Serif Display) can be wired via next/font later; the var falls back. */
+.font-serif {
+  letter-spacing: -0.01em;
+}
