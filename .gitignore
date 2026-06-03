@@ -34,5 +34,8 @@ Thumbs.db
 # Prisma
 **/prisma/migrations/dev.db*
 
+# Local portable Postgres cluster (dev only — binaries + data dir)
+.local-postgres/
+
 # Coverage
 coverage/
