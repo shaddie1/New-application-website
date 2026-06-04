@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import type { BookingDto, BookingPhotosResult, PaymentDto } from '@onyxhawk/types';
 
 import { api, apiErrorMessage } from '../../../../src/lib/api';
@@ -18,9 +18,17 @@ import { Banner, Button, Card, Pill, Spinner } from '../../../../src/components/
 const PAY_TERMINAL = new Set<PaymentDto['status']>(['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT', 'REFUNDED']);
 const CANCELLABLE = new Set<BookingDto['status']>(['PENDING_PAYMENT', 'CONFIRMED']);
 
+// useSearchParams must be inside a Suspense boundary for static export.
 export default function BookingDetailPage() {
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+  return (
+    <Suspense fallback={<div className="flex justify-center py-20 text-text-muted"><Spinner /></div>}>
+      <BookingDetail />
+    </Suspense>
+  );
+}
+
+function BookingDetail() {
+  const id = useSearchParams().get('id') ?? '';
 
   const [booking, setBooking] = useState<BookingDto | null>(null);
   const [photos, setPhotos] = useState<BookingPhotosResult | null>(null);
@@ -29,6 +37,10 @@ export default function BookingDetailPage() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    if (!id) {
+      setError('Missing booking id.');
+      return;
+    }
     try {
       const [b, p] = await Promise.all([api.getBooking(id), api.getBookingPhotos(id).catch(() => null)]);
       setBooking(b.booking);

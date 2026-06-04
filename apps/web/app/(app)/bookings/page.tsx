@@ -55,7 +55,7 @@ export default function BookingsPage() {
 
       <div className="space-y-3">
         {list.map((b) => (
-          <Link key={b.id} href={`/bookings/${b.id}`}>
+          <Link key={b.id} href={`/bookings/view?id=${b.id}`}>
             <Card className="flex items-center justify-between transition-colors hover:border-gold">
               <div>
                 <p className="font-medium text-text">{formatDateTime(b.scheduledAt)}</p>

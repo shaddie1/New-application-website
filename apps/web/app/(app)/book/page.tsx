@@ -568,7 +568,7 @@ function PaymentPanel({
           Your booking {booking?.reference ? `(${booking.reference})` : ''} is confirmed. A crew will be assigned shortly.
         </p>
         <div className="flex justify-center gap-3">
-          {booking ? <ButtonLink href={`/bookings/${booking.id}`}>View booking</ButtonLink> : null}
+          {booking ? <ButtonLink href={`/bookings/view?id=${booking.id}`}>View booking</ButtonLink> : null}
           <ButtonLink href="/dashboard" variant="secondary">
             Dashboard
           </ButtonLink>
@@ -591,7 +591,7 @@ function PaymentPanel({
             {retrying ? <Spinner /> : 'Try again'}
           </Button>
           {booking ? (
-            <ButtonLink href={`/bookings/${booking.id}`} variant="secondary">
+            <ButtonLink href={`/bookings/view?id=${booking.id}`} variant="secondary">
               View booking
             </ButtonLink>
           ) : null}

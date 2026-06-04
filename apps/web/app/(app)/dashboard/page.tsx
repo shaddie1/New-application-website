@@ -64,7 +64,7 @@ export default function DashboardPage() {
       <section>
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-text-muted">Your next clean</h2>
         {next ? (
-          <Link href={`/bookings/${next.id}`}>
+          <Link href={`/bookings/view?id=${next.id}`}>
             <Card className="bg-surface-dark text-text-on-dark transition-opacity hover:opacity-95">
               <div className="flex items-start justify-between">
                 <div>
