@@ -21,7 +21,8 @@ services:
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
-        value: "20"
+        # pnpm 11.3 (pinned in package.json) requires Node >= 22.13.
+        value: "22"
       - key: NODE_ENV
         value: production
       # Render injects PORT automatically; the app binds env.PORT.
