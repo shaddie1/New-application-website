@@ -1,0 +1,10 @@
+{
+  // Cloudflare Workers static-assets config for the admin portal.
+  // No Worker script — serves the Next.js static export in ./out.
+  "name": "onyxhawk-admin",
+  "compatibility_date": "2025-05-05",
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  // Cloudflare Workers static-assets config for the customer web portal.
+  // No Worker script — this just serves the Next.js static export in ./out.
+  "name": "onyxhawk-web",
+  "compatibility_date": "2025-05-05",
+  "assets": {
+    "directory": "./out",
+    // Static export emits a real .html per route; serve 404.html on misses.
+    "not_found_handling": "404-page"
+  }
+}
