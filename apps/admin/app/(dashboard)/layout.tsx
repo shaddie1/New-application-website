@@ -6,6 +6,7 @@ import { useAuth, useRequireAdmin } from '../../src/lib/auth';
 
 const NAV = [
   { href: '/', label: 'Dashboard' },
+  { href: '/calendar', label: 'Calendar' },
   { href: '/bookings', label: 'Bookings' },
   { href: '/quotes', label: 'Quotes' },
 ];
