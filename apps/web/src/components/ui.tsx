@@ -13,10 +13,11 @@ function buttonClasses(variant: Variant, size: Size, extra?: string): string {
     lg: 'px-6 py-3 text-base',
   };
   const variants: Record<Variant, string> = {
-    primary: 'bg-gold text-surface-dark hover:bg-gold-deep',
-    secondary: 'border border-border-strong bg-surface text-text hover:bg-bg-muted',
+    // Metallic gold gradient for a more premium feel.
+    primary: 'bg-gradient-to-br from-gold to-gold-deep text-surface-dark shadow-sm hover:shadow-md hover:brightness-105',
+    secondary: 'border border-gold/40 bg-surface text-text hover:border-gold hover:bg-gold-soft/20',
     dark: 'bg-surface-dark text-text-on-dark hover:opacity-90',
-    ghost: 'text-text hover:bg-bg-muted',
+    ghost: 'text-gold-deep hover:bg-gold-soft/20',
   };
   return [base, sizes[size], variants[variant], extra].filter(Boolean).join(' ');
 }
