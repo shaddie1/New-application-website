@@ -1,27 +1,27 @@
 import type { ServiceLineCode } from '@onyxhawk/types';
 
 /**
- * Stock photos per service line. These are free, Creative-Commons images served
- * by LoremFlickr (keyword-matched, `lock` keeps each one stable). They're a
- * placeholder until OnyxHawk has its own photography — swap these URLs (or set
- * `imageUrl` on the ServiceLine rows in the DB) and the UI picks them up.
+ * Service photos — free, commercial-use stock from Pexels (relevant to each
+ * service). Placeholders until OnyxHawk has its own photography; swap a URL
+ * here, or set `imageUrl` on the ServiceLine row in the DB, and the UI uses it.
  */
-const BASE = 'https://loremflickr.com/600/400';
+const px = (id: number) =>
+  `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=800`;
 
 export const serviceImage: Record<ServiceLineCode, string> = {
-  residential: `${BASE}/cleaning,home?lock=11`,
-  office: `${BASE}/office,cleaning?lock=22`,
-  hospital: `${BASE}/hospital,clean?lock=33`,
-  post_build: `${BASE}/construction,cleaning?lock=44`,
-  fumigation: `${BASE}/pest,control?lock=55`,
-  sofa: `${BASE}/sofa,cleaning?lock=66`,
-  carpet: `${BASE}/carpet,cleaning?lock=77`,
+  residential: px(8055825), // people cleaning a home
+  office: px(6197123), // professional cleaner in uniform
+  hospital: px(6196566), // mopping / floor sanitation
+  post_build: px(8853470), // construction worker on site
+  fumigation: px(4008518), // spraying / disinfecting
+  sofa: px(4401538), // vacuuming a sofa
+  carpet: px(9462139), // vacuuming a carpet
 };
 
 /** Hero banner image for the landing page. */
-export const heroImage = 'https://loremflickr.com/1600/900/cleaning,home?lock=7';
+export const heroImage = px(8055825);
 
-/** Prefer a DB-provided imageUrl, else the themed stock photo, else a generic clean. */
+/** Prefer a DB-provided imageUrl, else the themed stock photo. */
 export function imageForService(code: string, dbImageUrl?: string | null): string {
-  return dbImageUrl || serviceImage[code as ServiceLineCode] || `${BASE}/cleaning?lock=1`;
+  return dbImageUrl || serviceImage[code as ServiceLineCode] || px(8055825);
 }
