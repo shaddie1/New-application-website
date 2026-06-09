@@ -1,4 +1,5 @@
 import { ButtonLink, Card } from '../../src/components/ui';
+import { heroImage, serviceImage } from '../../src/lib/serviceImages';
 
 const STEPS = [
   { n: '1', title: 'Pick your clean', body: 'Choose a service, set your home’s scope and any add-ons in a few taps.' },
@@ -14,19 +15,26 @@ const WHY = [
 ];
 
 const SERVICES = [
-  { name: 'Residential', tagline: 'Standard, deep & move-out cleans', color: 'bg-service-residential' },
-  { name: 'Office', tagline: 'Workspaces kept spotless', color: 'bg-service-office' },
-  { name: 'Hospital', tagline: 'Clinical-grade sanitation', color: 'bg-service-hospital' },
-  { name: 'Post-build', tagline: 'After renovations & fit-outs', color: 'bg-service-post-build' },
-  { name: 'Fumigation', tagline: 'Pest control done right', color: 'bg-service-fumigation' },
+  { name: 'Residential', tagline: 'Standard, deep & move-out cleans', img: serviceImage.residential },
+  { name: 'Office', tagline: 'Workspaces kept spotless', img: serviceImage.office },
+  { name: 'Hospital', tagline: 'Clinical-grade sanitation', img: serviceImage.hospital },
+  { name: 'Post-build', tagline: 'After renovations & fit-outs', img: serviceImage.post_build },
+  { name: 'Fumigation', tagline: 'Pest control done right', img: serviceImage.fumigation },
 ];
 
 export default function HomePage() {
   return (
     <>
       {/* Hero */}
-      <section className="bg-surface-dark">
-        <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 md:grid-cols-2 md:items-center md:py-28">
+      <section className="relative overflow-hidden bg-surface-dark">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={heroImage}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 h-full w-full object-cover opacity-20"
+        />
+        <div className="relative mx-auto grid max-w-6xl gap-10 px-5 py-20 md:grid-cols-2 md:items-center md:py-28">
           <div>
             <span className="inline-block rounded-pill bg-gold-soft/20 px-3 py-1 text-xs font-medium text-gold">
               Nairobi · M-Pesa · Hawk Points
@@ -92,13 +100,19 @@ export default function HomePage() {
           </div>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {SERVICES.map((s) => (
-              <Card key={s.name} className="flex items-center gap-4">
-                <span className={`h-12 w-12 shrink-0 rounded-lg ${s.color}`} aria-hidden />
-                <div>
+              <div key={s.name} className="overflow-hidden rounded-xl border border-border bg-surface">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={s.img}
+                  alt={`${s.name} cleaning`}
+                  loading="lazy"
+                  className="h-40 w-full bg-bg-muted object-cover"
+                />
+                <div className="p-5">
                   <h3 className="font-medium text-text">{s.name}</h3>
                   <p className="text-sm text-text-muted">{s.tagline}</p>
                 </div>
-              </Card>
+              </div>
             ))}
           </div>
         </div>

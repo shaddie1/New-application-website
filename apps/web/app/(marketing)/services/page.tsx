@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { ServiceLineDto } from '@onyxhawk/types';
 
 import { api, apiErrorMessage } from '../../../src/lib/api';
+import { imageForService } from '../../../src/lib/serviceImages';
 import { Banner, ButtonLink, Card, Pill, Spinner } from '../../../src/components/ui';
 
 export default function ServicesPage() {
@@ -34,20 +35,24 @@ export default function ServicesPage() {
         {lines ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {lines.map((line) => (
-              <Card key={line.id} className="flex flex-col">
-                <div className="flex items-start justify-between">
-                  <span
-                    className="h-11 w-11 rounded-lg"
-                    style={{ backgroundColor: line.colorHex ?? '#C9A55C' }}
-                    aria-hidden
+              <Card key={line.id} className="flex flex-col overflow-hidden">
+                <div className="relative -mx-5 -mt-5 mb-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imageForService(line.code, line.imageUrl)}
+                    alt={`${line.name} cleaning`}
+                    loading="lazy"
+                    className="h-40 w-full bg-bg-muted object-cover"
                   />
                   {line.badge !== 'NONE' ? (
-                    <Pill className="bg-gold-soft text-gold-deep">{badgeLabel(line.badge)}</Pill>
+                    <Pill className="absolute right-3 top-3 bg-surface text-gold-deep shadow-sm">
+                      {badgeLabel(line.badge)}
+                    </Pill>
                   ) : null}
                 </div>
-                <h2 className="mt-4 text-lg font-medium text-text">{line.name}</h2>
+                <h2 className="text-lg font-medium text-text">{line.name}</h2>
                 {line.tagline ? <p className="mt-1 text-sm text-text-muted">{line.tagline}</p> : null}
-                <div className="mt-4 flex items-center justify-between pt-2">
+                <div className="mt-auto flex items-center justify-between pt-4">
                   <span className="text-sm text-text-muted">
                     {line.quoteOnly ? 'Custom quote' : 'Book online'}
                   </span>
