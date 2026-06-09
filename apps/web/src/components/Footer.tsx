@@ -35,6 +35,16 @@ export function Footer() {
                 My bookings
               </Link>
             </div>
+            <div className="flex flex-col gap-2 text-sm">
+              <span className="text-text-on-dark">Contact</span>
+              <a href="tel:+254115247988" className="hover:text-text-on-dark">
+                +254 115 247 988
+              </a>
+              <a href="mailto:info@onyxhawkcleaningservice.com" className="hover:text-text-on-dark">
+                info@onyxhawkcleaningservice.com
+              </a>
+              <span>Nairobi, Kenya</span>
+            </div>
           </div>
         </div>
         <p className="mt-10 text-xs text-text-on-dark-muted">
