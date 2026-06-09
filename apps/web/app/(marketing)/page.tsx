@@ -1,9 +1,16 @@
 import { ButtonLink, Card } from '../../src/components/ui';
 
 const STEPS = [
-  { n: '1', title: 'Pick your clean', body: 'Choose a service, set your home’s scope and any add-ons. See the price instantly.' },
+  { n: '1', title: 'Pick your clean', body: 'Choose a service, set your home’s scope and any add-ons in a few taps.' },
   { n: '2', title: 'Schedule a slot', body: 'Pick a date, time and address. We’ll match a vetted crew to your booking.' },
-  { n: '3', title: 'Pay with M-Pesa', body: 'Confirm with an STK push to your phone. Earn Hawk Points on every shilling.' },
+  { n: '3', title: 'Pay with M-Pesa', body: 'Confirm with an STK push to your phone. Earn Hawk Points on every clean.' },
+];
+
+const WHY = [
+  'Vetted, background-checked crews',
+  'Pay securely with M-Pesa',
+  'Earn Hawk Points on every clean',
+  'Before & after photos of your space',
 ];
 
 const SERVICES = [
@@ -28,8 +35,8 @@ export default function HomePage() {
               A spotless home is one tap away.
             </h1>
             <p className="mt-5 max-w-md text-text-on-dark-muted">
-              Book vetted cleaning crews for deep cleans, move-outs, offices and more. Transparent pricing,
-              M-Pesa payments, and points on every clean.
+              Book vetted cleaning crews for deep cleans, move-outs, offices and more. Secure M-Pesa
+              payments and Hawk Points on every clean.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <ButtonLink href="/sign-in" size="lg">
@@ -42,22 +49,17 @@ export default function HomePage() {
           </div>
           <div className="rounded-xl border border-white/10 bg-white/5 p-6">
             <div className="rounded-lg bg-bg p-5">
-              <p className="text-sm text-text-muted">Deep clean · 3 bed / 2 bath</p>
-              <p className="mt-1 font-serif text-3xl text-text">KSh 3,200</p>
-              <div className="mt-4 space-y-2 text-sm text-text-muted">
-                <div className="flex justify-between">
-                  <span>Estimated time</span>
-                  <span className="text-text">4h 45m</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Hawk Points earned</span>
-                  <span className="text-gold-deep">+350 pts</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Payment</span>
-                  <span className="text-text">M-Pesa STK</span>
-                </div>
-              </div>
+              <p className="font-serif text-xl text-text">Why OnyxHawk</p>
+              <ul className="mt-4 space-y-3 text-sm text-text">
+                {WHY.map((item) => (
+                  <li key={item} className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-pill bg-gold-soft text-xs text-gold-deep">
+                      ✓
+                    </span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>

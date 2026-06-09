@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import type { ServiceLineDto } from '@onyxhawk/types';
 
 import { api, apiErrorMessage } from '../../../src/lib/api';
-import { money } from '../../../src/lib/format';
 import { Banner, ButtonLink, Card, Pill, Spinner } from '../../../src/components/ui';
 
 export default function ServicesPage() {
@@ -50,11 +49,7 @@ export default function ServicesPage() {
                 {line.tagline ? <p className="mt-1 text-sm text-text-muted">{line.tagline}</p> : null}
                 <div className="mt-4 flex items-center justify-between pt-2">
                   <span className="text-sm text-text-muted">
-                    {line.quoteOnly
-                      ? 'Custom quote'
-                      : line.fromPriceCents != null
-                        ? `From ${money(line.fromPriceCents)}`
-                        : ''}
+                    {line.quoteOnly ? 'Custom quote' : 'Book online'}
                   </span>
                   {line.quoteOnly ? (
                     <ButtonLink href="/quote" variant="secondary" size="sm">

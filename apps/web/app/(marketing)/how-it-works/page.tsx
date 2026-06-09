@@ -3,7 +3,7 @@ import { ButtonLink, Card } from '../../../src/components/ui';
 const STEPS = [
   {
     title: 'Choose your service & scope',
-    body: 'Browse residential, office, hospital, post-build and fumigation cleans. Set bedrooms, bathrooms and add-ons — the price updates as you go.',
+    body: 'Browse residential, office, hospital, post-build and fumigation cleans. Set bedrooms, bathrooms and add-ons to match your space.',
   },
   {
     title: 'Schedule a convenient slot',
@@ -19,7 +19,7 @@ const STEPS = [
   },
   {
     title: 'Earn Hawk Points',
-    body: 'Every clean earns 10 points per KSh 100 — double on weekends. Climb from Bronze to Platinum and unlock perks.',
+    body: 'Every clean earns Hawk Points — double on weekends. Climb from Bronze to Platinum and unlock perks.',
   },
 ];
 
