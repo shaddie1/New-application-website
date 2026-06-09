@@ -20,10 +20,13 @@ import type {
   BookingStatus as BookingStatusDto,
   RespondQuoteInput,
   AssignCrewInput,
+  AdminStaffDto,
+  CreateStaffInput,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { generateUniqueReferralCode } from '../auth/referral.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
 
 const BookingsQuerySchema = z.object({
@@ -50,6 +53,12 @@ const RespondSchema = z.object({
   status: z.enum(['PENDING', 'SITE_VISIT_SCHEDULED', 'QUOTED', 'WON', 'LOST', 'CANCELLED']),
   quotedAmountCents: z.number().int().nonnegative().optional(),
 }) satisfies z.ZodType<RespondQuoteInput>;
+
+const CreateStaffSchema = z.object({
+  phone: z.string().trim().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +254712480392)'),
+  fullName: z.string().trim().min(1).max(120),
+  role: z.enum(['ADMIN', 'SUPPORT']),
+}) satisfies z.ZodType<CreateStaffInput>;
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
@@ -183,6 +192,50 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     return reply.send({ quoteRequest: toAdminQuoteDto(row) });
   });
+
+  // ── Team / staff management (OWNER only) ──────────────────────────────────
+
+  // List admins, support staff, and the owner.
+  app.get('/staff', { preHandler: requireOwner }, async (_req, reply) => {
+    const rows = await prisma.user.findMany({
+      where: { OR: [{ role: { in: [UserRole.ADMIN, UserRole.SUPPORT] } }, { isOwner: true }], deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: staffSelect,
+    });
+    return reply.send({ staff: rows.map(toStaffDto) });
+  });
+
+  // Add a new admin/support member (or promote an existing user by phone).
+  app.post('/staff', { preHandler: requireOwner }, async (req, reply) => {
+    const parsed = CreateStaffSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { phone, fullName, role } = parsed.data;
+
+    const existing = await prisma.user.findUnique({ where: { phone }, select: { id: true } });
+    const user = existing
+      ? await prisma.user.update({ where: { phone }, data: { role: role as UserRole, fullName }, select: staffSelect })
+      : await prisma.user.create({
+          data: {
+            phone,
+            fullName,
+            role: role as UserRole,
+            phoneVerified: true,
+            referralCode: await generateUniqueReferralCode(),
+          },
+          select: staffSelect,
+        });
+    return reply.code(existing ? 200 : 201).send({ staff: toStaffDto(user) });
+  });
+
+  // Revoke a staff member (demote back to customer). Can't remove the owner or yourself.
+  app.delete<{ Params: { id: string } }>('/staff/:id', { preHandler: requireOwner }, async (req, reply) => {
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, isOwner: true } });
+    if (!target) return reply.code(404).send({ error: 'user not found' });
+    if (target.isOwner) return reply.code(403).send({ error: 'cannot remove the owner' });
+    if (target.id === req.auth!.sub) return reply.code(400).send({ error: 'cannot remove yourself' });
+    await prisma.user.update({ where: { id: target.id }, data: { role: UserRole.CUSTOMER } });
+    return reply.send({ ok: true });
+  });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -192,6 +245,33 @@ async function requireAdminRole(req: FastifyRequest, reply: FastifyReply): Promi
   if (req.auth.role !== UserRole.ADMIN && req.auth.role !== UserRole.SUPPORT) {
     return reply.code(403).send({ error: 'admin access required' });
   }
+}
+
+// Owner gate for staff management — checked against the DB (not the JWT).
+async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+  const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
+  if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+}
+
+const staffSelect = {
+  id: true,
+  fullName: true,
+  phone: true,
+  role: true,
+  isOwner: true,
+  createdAt: true,
+} satisfies Prisma.UserSelect;
+
+function toStaffDto(u: Prisma.UserGetPayload<{ select: typeof staffSelect }>): AdminStaffDto {
+  return {
+    id: u.id,
+    fullName: u.fullName,
+    phone: u.phone,
+    role: u.role as AdminStaffDto['role'],
+    isOwner: u.isOwner,
+    createdAt: u.createdAt.toISOString(),
+  };
 }
 
 const adminBookingInclude = {

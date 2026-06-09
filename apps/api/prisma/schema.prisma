@@ -47,6 +47,8 @@ model User {
   phoneVerified  Boolean     @default(false)
   emailVerified  Boolean     @default(false)
   role           UserRole    @default(CUSTOMER)
+  // Owner / super-admin: an ADMIN who can also manage other admins (the Team page).
+  isOwner        Boolean     @default(false)
   tier           LoyaltyTier @default(BRONZE)
   // Lifetime CREDIT points earned (never decreases). Tier is derived from this,
   // NOT from current balance — otherwise redeeming points would demote the user.

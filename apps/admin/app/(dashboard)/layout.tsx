@@ -20,6 +20,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   if (!session) return null; // redirecting to /login
 
+  // Owner-only: the Team (staff management) page.
+  const nav = session.user.isOwner ? [...NAV, { href: '/team', label: 'Team' }] : NAV;
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-border bg-surface">
@@ -29,7 +32,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               OnyxHawk <span className="text-gold-deep">Admin</span>
             </span>
             <nav className="flex items-center gap-1">
-              {NAV.map((item) => {
+              {nav.map((item) => {
                 const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
                 return (
                   <Link

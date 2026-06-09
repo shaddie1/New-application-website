@@ -8,6 +8,8 @@ import type {
   CrewUserDto,
   AssignCrewInput,
   RespondQuoteInput,
+  AdminStaffDto,
+  CreateStaffInput,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -120,4 +122,13 @@ export const api = {
       auth: true,
       body: JSON.stringify(input),
     }),
+
+  // ── Team / staff (owner only) ────────────────────────────────────────────
+  staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),
+
+  addStaff: (input: CreateStaffInput) =>
+    request<{ staff: AdminStaffDto }>('/admin/staff', { method: 'POST', auth: true, body: JSON.stringify(input) }),
+
+  removeStaff: (id: string) =>
+    request<{ ok: true }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
 };

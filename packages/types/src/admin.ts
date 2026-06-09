@@ -45,6 +45,25 @@ export interface AdminStats {
   pendingQuotes: number;
 }
 
+// ── Team / staff management (owner only) ────────────────────────────────────
+
+export type StaffRole = 'ADMIN' | 'SUPPORT';
+
+export interface AdminStaffDto {
+  id: string;
+  fullName: string;
+  phone: string;
+  role: StaffRole;
+  isOwner: boolean;
+  createdAt: string;
+}
+
+export interface CreateStaffInput {
+  phone: string; // E.164
+  fullName: string;
+  role: StaffRole;
+}
+
 export interface AdminBookingsResult {
   bookings: AdminBookingDto[];
 }

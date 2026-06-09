@@ -101,6 +101,7 @@ export function toPublicUser(user: {
   email: string | null;
   fullName: string;
   role: string;
+  isOwner?: boolean;
   avatarUrl: string | null;
 }): Session['user'] {
   return {
@@ -109,6 +110,7 @@ export function toPublicUser(user: {
     email: user.email,
     fullName: user.fullName,
     role: user.role as Session['user']['role'],
+    isOwner: user.isOwner ?? false,
     avatarUrl: user.avatarUrl,
   };
 }

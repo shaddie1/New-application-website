@@ -13,18 +13,20 @@ const prisma = new PrismaClient();
 async function main() {
   const [phone, fullName = 'OnyxHawk Admin', roleArg = 'ADMIN'] = process.argv.slice(2);
   if (!phone || !/^\+[1-9]\d{7,14}$/.test(phone)) {
-    throw new Error('Usage: make-admin.ts <phoneE164 e.g. +254712480392> [fullName] [ADMIN|SUPPORT]');
+    throw new Error('Usage: make-admin.ts <phoneE164 e.g. +254712480392> [fullName] [ADMIN|SUPPORT|OWNER]');
   }
+  // OWNER = an ADMIN who can also manage other admins (super-admin).
+  const isOwner = roleArg === 'OWNER';
   const role = roleArg === 'SUPPORT' ? UserRole.SUPPORT : UserRole.ADMIN;
   const referralCode = 'OH' + Math.random().toString(36).slice(2, 8).toUpperCase();
 
   const user = await prisma.user.upsert({
     where: { phone },
-    create: { phone, fullName, role, phoneVerified: true, referralCode },
-    update: { role },
+    create: { phone, fullName, role, isOwner, phoneVerified: true, referralCode },
+    update: { role, ...(isOwner ? { isOwner: true } : {}) },
   });
 
-  console.log('Admin ready:', { id: user.id, phone: user.phone, name: user.fullName, role: user.role });
+  console.log('Admin ready:', { id: user.id, phone: user.phone, name: user.fullName, role: user.role, isOwner: user.isOwner });
 }
 
 main()

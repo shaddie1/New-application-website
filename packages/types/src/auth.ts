@@ -8,6 +8,8 @@ export interface PublicUser {
   email?: string | null;
   fullName: string;
   role: UserRole;
+  /** True for the owner / super-admin (can manage other admins). */
+  isOwner?: boolean;
   avatarUrl?: string | null;
 }
 
