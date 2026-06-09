@@ -75,6 +75,32 @@ async function main() {
     update: {},
   });
 
+  const sofa = await prisma.serviceLine.upsert({
+    where: { code: 'sofa' },
+    create: {
+      code: 'sofa',
+      name: 'Sofa & upholstery',
+      tagline: 'Deep-clean sofas, couches and upholstery — fabric or leather.',
+      colorHex: '#8A6D5B',
+      quoteOnly: true,
+      sortOrder: 6,
+    },
+    update: {},
+  });
+
+  const carpet = await prisma.serviceLine.upsert({
+    where: { code: 'carpet' },
+    create: {
+      code: 'carpet',
+      name: 'Carpet & rugs',
+      tagline: 'Steam and shampoo cleaning for carpets and rugs of any size.',
+      colorHex: '#5F7A6E',
+      quoteOnly: true,
+      sortOrder: 7,
+    },
+    update: {},
+  });
+
   // ── Clean types (residential only — others are quote-only or recurring) ──
   for (const [code, name, subtitle, basePriceCents] of [
     ['standard', 'Standard', 'Maintenance', 280_000],
@@ -138,7 +164,15 @@ async function main() {
     update: {},
   });
 
-  console.log('Seeded:', { residential: residential.id, office: office.id, hospital: hospital.id, postBuild: postBuild.id, fumigation: fumigation.id });
+  console.log('Seeded:', {
+    residential: residential.id,
+    office: office.id,
+    hospital: hospital.id,
+    postBuild: postBuild.id,
+    fumigation: fumigation.id,
+    sofa: sofa.id,
+    carpet: carpet.id,
+  });
 }
 
 main()

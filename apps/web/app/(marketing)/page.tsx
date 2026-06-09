@@ -17,6 +17,8 @@ const WHY = [
 const SERVICES = [
   { name: 'Residential', tagline: 'Standard, deep & move-out cleans', img: serviceImage.residential },
   { name: 'Office', tagline: 'Workspaces kept spotless', img: serviceImage.office },
+  { name: 'Sofa & upholstery', tagline: 'Fabric & leather, deep-cleaned', img: serviceImage.sofa },
+  { name: 'Carpet & rugs', tagline: 'Steam & shampoo cleaning', img: serviceImage.carpet },
   { name: 'Hospital', tagline: 'Clinical-grade sanitation', img: serviceImage.hospital },
   { name: 'Post-build', tagline: 'After renovations & fit-outs', img: serviceImage.post_build },
   { name: 'Fumigation', tagline: 'Pest control done right', img: serviceImage.fumigation },

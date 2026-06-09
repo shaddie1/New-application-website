@@ -14,6 +14,8 @@ export const serviceImage: Record<ServiceLineCode, string> = {
   hospital: `${BASE}/hospital,clean?lock=33`,
   post_build: `${BASE}/construction,cleaning?lock=44`,
   fumigation: `${BASE}/pest,control?lock=55`,
+  sofa: `${BASE}/sofa,cleaning?lock=66`,
+  carpet: `${BASE}/carpet,cleaning?lock=77`,
 };
 
 /** Hero banner image for the landing page. */

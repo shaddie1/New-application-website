@@ -1,6 +1,13 @@
 /** Subset of catalog + booking DTOs shared between API and clients. */
 
-export type ServiceLineCode = 'residential' | 'office' | 'hospital' | 'post_build' | 'fumigation';
+export type ServiceLineCode =
+  | 'residential'
+  | 'office'
+  | 'hospital'
+  | 'post_build'
+  | 'fumigation'
+  | 'sofa'
+  | 'carpet';
 
 export type CleanTypeCode = 'standard' | 'deep' | 'move_out' | 'recurring';
 
