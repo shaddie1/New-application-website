@@ -19,9 +19,24 @@ const SERVICES = [
   { name: 'Office', tagline: 'Workspaces kept spotless', img: serviceImage.office },
   { name: 'Sofa & upholstery', tagline: 'Fabric & leather, deep-cleaned', img: serviceImage.sofa },
   { name: 'Carpet & rugs', tagline: 'Steam & shampoo cleaning', img: serviceImage.carpet },
+  { name: 'Mattress', tagline: 'Sanitised & refreshed', img: serviceImage.mattress },
+  { name: 'Curtains & drapes', tagline: 'Cleaned and rehung', img: serviceImage.curtain },
+  { name: 'AC & duct', tagline: 'Cleaner, more efficient air', img: serviceImage.ac_duct },
+  { name: 'Mould & damp', tagline: 'Treated and prevented', img: serviceImage.mould },
   { name: 'Hospital', tagline: 'Clinical-grade sanitation', img: serviceImage.hospital },
   { name: 'Post-build', tagline: 'After renovations & fit-outs', img: serviceImage.post_build },
   { name: 'Fumigation', tagline: 'Pest control done right', img: serviceImage.fumigation },
+];
+
+const INDUSTRIES = [
+  'Homes & apartments',
+  'Offices',
+  'Clinics & hospitals',
+  'Schools',
+  'Gyms & studios',
+  'Retail & malls',
+  'Banks',
+  'Churches',
 ];
 
 const FEATURES = [
@@ -179,8 +194,35 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* FAQ */}
+      {/* Who we clean for */}
       <section className="bg-bg-muted">
+        <div className="mx-auto max-w-6xl px-5 py-20">
+          <h2 className="font-serif text-3xl text-text">Who we clean for</h2>
+          <p className="mt-2 max-w-xl text-text-muted">
+            From homes to high-traffic workplaces — with quality products and trained, vetted crews.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-2.5">
+            {INDUSTRIES.map((i) => (
+              <span key={i} className="rounded-pill border border-border bg-surface px-4 py-2 text-sm text-text">
+                {i}
+              </span>
+            ))}
+          </div>
+          <div className="mt-10 rounded-xl border border-border bg-surface p-6 sm:flex sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-text-muted">Trusted by</p>
+              <p className="mt-1 font-serif text-2xl text-text">Verst Carbon</p>
+              <p className="text-sm text-text-muted">Keeping their Nairobi offices spotless.</p>
+            </div>
+            <ButtonLink href="/quote" variant="secondary" size="md" className="mt-4 sm:mt-0">
+              Get a quote for your business
+            </ButtonLink>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="bg-bg">
         <div className="mx-auto max-w-3xl px-5 py-20">
           <h2 className="font-serif text-3xl text-text">Frequently asked questions</h2>
           <div className="mt-8 space-y-3">

@@ -7,6 +7,8 @@ import type { ServiceLineCode } from '@onyxhawk/types';
  */
 const px = (id: number) =>
   `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=800`;
+// Keyword-matched fallback for services without a curated Pexels shot yet.
+const lf = (kw: string, lock: number) => `https://loremflickr.com/600/400/${kw}?lock=${lock}`;
 
 export const serviceImage: Record<ServiceLineCode, string> = {
   residential: px(8055825), // people cleaning a home
@@ -16,6 +18,10 @@ export const serviceImage: Record<ServiceLineCode, string> = {
   fumigation: px(4008518), // spraying / disinfecting
   sofa: px(4401538), // vacuuming a sofa
   carpet: px(9462139), // vacuuming a carpet
+  mattress: lf('mattress,bed', 81),
+  curtain: lf('curtains,window', 82),
+  ac_duct: lf('air,conditioner', 83),
+  mould: lf('cleaning,wall', 84),
 };
 
 /** Hero banner image for the landing page. */

@@ -101,6 +101,58 @@ async function main() {
     update: {},
   });
 
+  const mattress = await prisma.serviceLine.upsert({
+    where: { code: 'mattress' },
+    create: {
+      code: 'mattress',
+      name: 'Mattress cleaning',
+      tagline: 'Deep-cleaned, sanitised and refreshed mattresses.',
+      colorHex: '#7A6E5F',
+      quoteOnly: true,
+      sortOrder: 8,
+    },
+    update: {},
+  });
+
+  const curtain = await prisma.serviceLine.upsert({
+    where: { code: 'curtain' },
+    create: {
+      code: 'curtain',
+      name: 'Curtains & drapes',
+      tagline: 'Taken down, cleaned and rehung — no fuss.',
+      colorHex: '#6E5F7A',
+      quoteOnly: true,
+      sortOrder: 9,
+    },
+    update: {},
+  });
+
+  const acDuct = await prisma.serviceLine.upsert({
+    where: { code: 'ac_duct' },
+    create: {
+      code: 'ac_duct',
+      name: 'AC & duct cleaning',
+      tagline: 'Cleaner air and more efficient units.',
+      colorHex: '#5F6E7A',
+      quoteOnly: true,
+      sortOrder: 10,
+    },
+    update: {},
+  });
+
+  const mould = await prisma.serviceLine.upsert({
+    where: { code: 'mould' },
+    create: {
+      code: 'mould',
+      name: 'Mould & damp treatment',
+      tagline: 'Treated at the source and prevented from returning.',
+      colorHex: '#7A5F6E',
+      quoteOnly: true,
+      sortOrder: 11,
+    },
+    update: {},
+  });
+
   // ── Clean types (residential only — others are quote-only or recurring) ──
   for (const [code, name, subtitle, basePriceCents] of [
     ['standard', 'Standard', 'Maintenance', 280_000],
@@ -172,6 +224,10 @@ async function main() {
     fumigation: fumigation.id,
     sofa: sofa.id,
     carpet: carpet.id,
+    mattress: mattress.id,
+    curtain: curtain.id,
+    acDuct: acDuct.id,
+    mould: mould.id,
   });
 }
 

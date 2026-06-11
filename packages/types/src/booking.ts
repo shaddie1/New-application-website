@@ -7,7 +7,11 @@ export type ServiceLineCode =
   | 'post_build'
   | 'fumigation'
   | 'sofa'
-  | 'carpet';
+  | 'carpet'
+  | 'mattress'
+  | 'curtain'
+  | 'ac_duct'
+  | 'mould';
 
 export type CleanTypeCode = 'standard' | 'deep' | 'move_out' | 'recurring';
 
