@@ -121,9 +121,17 @@ export function Footer() {
             </div>
           </div>
         </div>
-        <p className="mt-10 text-xs text-text-on-dark-muted">
-          © {new Date().getFullYear()} OnyxHawk. All rights reserved.
-        </p>
+        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-xs text-text-on-dark-muted sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} OnyxHawk. All rights reserved.</p>
+          <div className="flex gap-4">
+            <Link href="/privacy" className="hover:text-text-on-dark">
+              Privacy Policy
+            </Link>
+            <Link href="/terms" className="hover:text-text-on-dark">
+              Terms of Service
+            </Link>
+          </div>
+        </div>
       </div>
     </footer>
   );
