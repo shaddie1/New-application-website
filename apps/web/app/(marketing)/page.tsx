@@ -24,6 +24,46 @@ const SERVICES = [
   { name: 'Fumigation', tagline: 'Pest control done right', img: serviceImage.fumigation },
 ];
 
+const FEATURES = [
+  { icon: '📲', title: 'Pay with M-Pesa', body: 'Confirm with an STK push to your phone — no cash, no cards.' },
+  { icon: '⭐', title: 'Earn Hawk Points', body: 'Collect points on every clean, double on weekends, and climb tiers for perks.' },
+  { icon: '📸', title: 'Before & after photos', body: 'Your crew documents the work, attached right to your booking.' },
+  { icon: '🏷️', title: 'See the price first', body: 'Get your full quote before you confirm — no surprises at the door.' },
+  { icon: '📅', title: 'Real-time scheduling', body: 'Pick from genuinely open slots and we match a crew to your job.' },
+  { icon: '📱', title: 'Everything in one place', body: 'Book, track status, pay and rebook — from the web or the app.' },
+];
+
+const FAQS = [
+  {
+    q: 'How do I book a clean?',
+    a: 'Sign in with your phone number, choose a service and scope, pick a date and time, then confirm with M-Pesa — it takes a couple of minutes.',
+  },
+  {
+    q: 'How do I pay?',
+    a: 'We send an M-Pesa STK push to your phone. Enter your PIN to confirm and your booking is instantly secured — no cash needed.',
+  },
+  {
+    q: 'What are Hawk Points?',
+    a: 'Our loyalty rewards. You earn points on every clean (double on weekends) and move from Bronze to Platinum, unlocking perks along the way.',
+  },
+  {
+    q: 'Do you show prices?',
+    a: 'Yes — you see your full price before you confirm a booking. Specialist jobs like sofa, carpet, office contracts and fumigation are custom-quoted; just request a quote.',
+  },
+  {
+    q: 'Will I see proof of the work?',
+    a: 'Absolutely. Your crew captures before and after photos, attached to your booking so you can see the results.',
+  },
+  {
+    q: 'Can I reschedule or cancel?',
+    a: 'Yes — manage your booking any time before the crew is on the way, from your dashboard.',
+  },
+  {
+    q: 'Which areas do you cover?',
+    a: 'Nairobi and the surrounding areas. Not sure if we reach you? Request a quote and we’ll confirm.',
+  },
+];
+
 export default function HomePage() {
   return (
     <>
@@ -115,6 +155,43 @@ export default function HomePage() {
                   <p className="text-sm text-text-muted">{s.tagline}</p>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Why OnyxHawk */}
+      <section className="mx-auto max-w-6xl px-5 py-20">
+        <h2 className="font-serif text-3xl text-text">Why OnyxHawk</h2>
+        <p className="mt-2 max-w-xl text-text-muted">
+          Premium cleaning built for Nairobi — with rewards, proof of work, and M-Pesa convenience.
+        </p>
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f) => (
+            <Card key={f.title}>
+              <span className="text-2xl" aria-hidden>
+                {f.icon}
+              </span>
+              <h3 className="mt-3 text-lg font-medium text-text">{f.title}</h3>
+              <p className="mt-1 text-sm text-text-muted">{f.body}</p>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="bg-bg-muted">
+        <div className="mx-auto max-w-3xl px-5 py-20">
+          <h2 className="font-serif text-3xl text-text">Frequently asked questions</h2>
+          <div className="mt-8 space-y-3">
+            {FAQS.map((f) => (
+              <details key={f.q} className="group rounded-xl border border-border bg-surface px-5 py-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between font-medium text-text">
+                  {f.q}
+                  <span className="ml-4 text-xl text-gold-deep transition-transform group-open:rotate-45">+</span>
+                </summary>
+                <p className="mt-3 text-sm text-text-muted">{f.a}</p>
+              </details>
             ))}
           </div>
         </div>
