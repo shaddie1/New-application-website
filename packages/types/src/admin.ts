@@ -71,3 +71,33 @@ export interface AdminBookingsResult {
 export interface AdminQuotesResult {
   quoteRequests: AdminQuoteRequestDto[];
 }
+
+// ── Financials ────────────────────────────────────────────────────────────────
+
+export type ExpenseCategory = 'MATERIALS' | 'TRANSPORT' | 'EMPLOYEE_PAY' | 'LUNCH' | 'MISCELLANEOUS';
+
+export interface ExpenseDto {
+  id: string;
+  category: ExpenseCategory;
+  amountCents: number;
+  description: string | null;
+  date: string; // YYYY-MM-DD
+  bookingId: string | null;
+  createdAt: string;
+}
+
+export interface CreateExpenseInput {
+  category: ExpenseCategory;
+  amountCents: number;
+  description?: string;
+  date: string; // YYYY-MM-DD
+}
+
+export interface FinancialSummary {
+  incomeCents: number;
+  expensesByCategoryCents: Record<ExpenseCategory, number>;
+  totalExpensesCents: number;
+  netCents: number;
+  fromDate: string;
+  toDate: string;
+}

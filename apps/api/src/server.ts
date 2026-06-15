@@ -16,6 +16,7 @@ import { loyaltyRoutes } from './routes/loyalty.js';
 import { profileRoutes } from './routes/profile.js';
 import { quoteRoutes } from './routes/quotes.js';
 import { adminRoutes } from './routes/admin.js';
+import { financialsRoutes } from './routes/financials.js';
 import { notificationRoutes } from './routes/notifications.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -49,6 +50,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(profileRoutes, { prefix: '/profile' });
   await app.register(quoteRoutes, { prefix: '/quote-requests' });
   await app.register(adminRoutes, { prefix: '/admin' });
+  await app.register(financialsRoutes, { prefix: '/admin/financials' });
   await app.register(notificationRoutes, { prefix: '/notifications' });
   await app.register(mpesaRoutes, { prefix: '/webhooks/mpesa' });
 

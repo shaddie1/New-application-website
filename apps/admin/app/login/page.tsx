@@ -36,7 +36,9 @@ export default function LoginPage() {
     setBusy(true);
     try {
       const res = await api.requestOtp(e164(phone));
-      setDevOtp(res.devOtp ?? null);
+      const otp = res.devOtp ?? null;
+      setDevOtp(otp);
+      if (otp) setCode(otp); // auto-fill in dev
       setStep('code');
     } catch (err) {
       setError(messageFrom(err, 'Could not send the code.'));
@@ -115,7 +117,19 @@ export default function LoginPage() {
               onKeyDown={(e) => e.key === 'Enter' && verify()}
             />
             {devOtp && (
-              <p className="text-text-muted text-xs mt-2">Dev code: <span className="font-mono text-gold-deep">{devOtp}</span></p>
+              <div className="mt-3 rounded-lg border border-gold bg-gold-soft/20 px-4 py-3 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-text-muted">Dev — code auto-filled</p>
+                  <p className="font-mono text-2xl tracking-[0.4em] text-gold-deep mt-0.5">{devOtp}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCode(devOtp)}
+                  className="text-xs text-text-muted underline"
+                >
+                  Re-fill
+                </button>
+              </div>
             )}
             <button
               onClick={verify}

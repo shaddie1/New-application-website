@@ -10,6 +10,9 @@ import type {
   RespondQuoteInput,
   AdminStaffDto,
   CreateStaffInput,
+  ExpenseDto,
+  CreateExpenseInput,
+  FinancialSummary,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -131,4 +134,30 @@ export const api = {
 
   removeStaff: (id: string) =>
     request<{ ok: true }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  // ── Financials (owner only) ──────────────────────────────────────────────
+  financialSummary: (from: string, to: string) =>
+    request<{ summary: FinancialSummary }>(
+      `/admin/financials/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  expenses: (from: string, to: string) =>
+    request<{ expenses: ExpenseDto[] }>(
+      `/admin/financials/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  createExpense: (input: CreateExpenseInput) =>
+    request<{ expense: ExpenseDto }>('/admin/financials/expenses', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteExpense: (id: string) =>
+    request<{ ok: true }>(`/admin/financials/expenses/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      auth: true,
+    }),
 };
