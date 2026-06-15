@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ExpenseCategory, ExpenseDto, FinancialSummary } from '@onyxhawk/types';
+import type { ExpenseCategory, ExpenseDto, FinancialSummary, JobDto } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
@@ -14,49 +14,53 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
 };
 
 const CATEGORIES: ExpenseCategory[] = [
-  'MATERIALS',
-  'TRANSPORT',
-  'EMPLOYEE_PAY',
-  'LUNCH',
-  'MISCELLANEOUS',
+  'MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS',
 ];
 
 function fmt(cents: number) {
-  const kes = cents / 100;
-  return `KSh ${kes.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
 }
 
 function monthRange(year: number, month: number) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const from = `${year}-${pad(month)}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const to = `${year}-${pad(month)}-${lastDay}`;
+  const to = `${year}-${pad(month)}-${new Date(year, month, 0).getDate()}`;
   return { from, to };
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
+function todayIso() { return new Date().toISOString().slice(0, 10); }
+
+const blankExpenseForm = () => ({
+  category: 'TRANSPORT' as ExpenseCategory,
+  amountKes: '',
+  description: '',
+  date: todayIso(),
+});
 
 export default function FinancialsPage() {
   const session = useRequireAdmin();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
-  const [expenses, setExpenses] = useState<ExpenseDto[]>([]);
+  const [jobs, setJobs] = useState<JobDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<{
-    category: ExpenseCategory;
-    amountKes: string;
-    description: string;
-    date: string;
-  }>({ category: 'MATERIALS', amountKes: '', description: '', date: todayIso() });
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  // New job form
+  const [showJobForm, setShowJobForm] = useState(false);
+  const [jobForm, setJobForm] = useState({ title: '', date: todayIso(), incomeKes: '', notes: '' });
+  const [savingJob, setSavingJob] = useState(false);
+
+  // Per-job expansion + expense form
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [expenseForm, setExpenseForm] = useState(blankExpenseForm());
+  const [savingExpense, setSavingExpense] = useState(false);
+
+  // Deletion state
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
 
   const { from, to } = monthRange(year, month);
 
@@ -64,12 +68,12 @@ export default function FinancialsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, expensesRes] = await Promise.all([
+      const [sumRes, jobsRes] = await Promise.all([
         api.financialSummary(from, to),
-        api.expenses(from, to),
+        api.jobs(from, to),
       ]);
-      setSummary(summaryRes.summary);
-      setExpenses(expensesRes.expenses);
+      setSummary(sumRes.summary);
+      setJobs(jobsRes.jobs);
     } catch (err) {
       setError(err instanceof ApiError ? `Could not load data (${err.status}).` : 'Could not load financials.');
     } finally {
@@ -89,110 +93,157 @@ export default function FinancialsPage() {
   };
 
   const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('en-KE', {
-    month: 'long',
-    year: 'numeric',
+    month: 'long', year: 'numeric',
   });
 
-  const handleAdd = async (e: React.FormEvent) => {
+  // ── Create job ─────────────────────────────────────────────────────────────
+  const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amountKes = parseFloat(form.amountKes);
-    if (!amountKes || amountKes <= 0) return;
-    setSaving(true);
+    const incomeKes = parseFloat(jobForm.incomeKes);
+    if (!jobForm.title.trim()) return;
+    setSavingJob(true);
     setError(null);
     try {
-      const res = await api.createExpense({
-        category: form.category,
-        amountCents: Math.round(amountKes * 100),
-        description: form.description.trim() || undefined,
-        date: form.date,
+      const res = await api.createJob({
+        title: jobForm.title.trim(),
+        date: jobForm.date,
+        incomeCents: Math.round((incomeKes || 0) * 100),
+        notes: jobForm.notes.trim() || undefined,
       });
-      setExpenses((prev) => [res.expense, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
-      setSummary((prev) => {
-        if (!prev) return prev;
-        const added = res.expense.amountCents;
-        return {
-          ...prev,
-          expensesByCategoryCents: {
-            ...prev.expensesByCategoryCents,
-            [form.category]: (prev.expensesByCategoryCents[form.category] ?? 0) + added,
-          },
-          totalExpensesCents: prev.totalExpensesCents + added,
-          netCents: prev.netCents - added,
-        };
-      });
-      setForm({ category: 'MATERIALS', amountKes: '', description: '', date: todayIso() });
-      setShowForm(false);
+      setJobs((prev) => [res.job, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+      setSummary((prev) => prev ? {
+        ...prev,
+        incomeCents: prev.incomeCents + res.job.incomeCents,
+        netCents: prev.netCents + res.job.incomeCents,
+      } : prev);
+      setJobForm({ title: '', date: todayIso(), incomeKes: '', notes: '' });
+      setShowJobForm(false);
+      setExpandedJobId(res.job.id);
+      setExpenseForm(blankExpenseForm());
     } catch (err) {
-      setError(err instanceof ApiError ? `Save failed (${err.status}).` : 'Save failed.');
+      setError(err instanceof ApiError ? `Could not save job (${err.status}).` : 'Could not save job.');
     } finally {
-      setSaving(false);
+      setSavingJob(false);
     }
   };
 
-  const handleDelete = async (id: string, amountCents: number, category: ExpenseCategory) => {
-    setDeleting(id);
+  // ── Delete job ─────────────────────────────────────────────────────────────
+  const handleDeleteJob = async (job: JobDto) => {
+    if (!confirm(`Delete "${job.title}" and all its expenses?`)) return;
+    setDeletingJobId(job.id);
     try {
-      await api.deleteExpense(id);
-      setExpenses((prev) => prev.filter((e) => e.id !== id));
-      setSummary((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          expensesByCategoryCents: {
-            ...prev.expensesByCategoryCents,
-            [category]: Math.max(0, (prev.expensesByCategoryCents[category] ?? 0) - amountCents),
-          },
-          totalExpensesCents: Math.max(0, prev.totalExpensesCents - amountCents),
-          netCents: prev.netCents + amountCents,
-        };
+      await api.deleteJob(job.id);
+      setJobs((prev) => prev.filter((j) => j.id !== job.id));
+      setSummary((prev) => prev ? {
+        ...prev,
+        incomeCents: prev.incomeCents - job.incomeCents,
+        totalExpensesCents: prev.totalExpensesCents - job.totalExpensesCents,
+        netCents: prev.netCents - job.netCents,
+      } : prev);
+      if (expandedJobId === job.id) setExpandedJobId(null);
+    } catch {
+      setError('Could not delete job.');
+    } finally {
+      setDeletingJobId(null);
+    }
+  };
+
+  // ── Add expense to job ─────────────────────────────────────────────────────
+  const handleAddExpense = async (e: React.FormEvent, jobId: string) => {
+    e.preventDefault();
+    const amountKes = parseFloat(expenseForm.amountKes);
+    if (!amountKes || amountKes <= 0) return;
+    setSavingExpense(true);
+    setError(null);
+    try {
+      const res = await api.addJobExpense(jobId, {
+        category: expenseForm.category,
+        amountCents: Math.round(amountKes * 100),
+        description: expenseForm.description.trim() || undefined,
+        date: expenseForm.date,
       });
+      const newExpense = res.expense;
+      setJobs((prev) => prev.map((j) => {
+        if (j.id !== jobId) return j;
+        const expenses = [newExpense, ...j.expenses];
+        const totalExpensesCents = j.totalExpensesCents + newExpense.amountCents;
+        return { ...j, expenses, totalExpensesCents, netCents: j.incomeCents - totalExpensesCents };
+      }));
+      setSummary((prev) => prev ? {
+        ...prev,
+        expensesByCategoryCents: {
+          ...prev.expensesByCategoryCents,
+          [newExpense.category]: (prev.expensesByCategoryCents[newExpense.category] ?? 0) + newExpense.amountCents,
+        },
+        totalExpensesCents: prev.totalExpensesCents + newExpense.amountCents,
+        netCents: prev.netCents - newExpense.amountCents,
+      } : prev);
+      setExpenseForm(blankExpenseForm());
+    } catch (err) {
+      setError(err instanceof ApiError ? `Could not add expense (${err.status}).` : 'Could not add expense.');
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
+  // ── Delete expense ─────────────────────────────────────────────────────────
+  const handleDeleteExpense = async (jobId: string, expense: ExpenseDto) => {
+    setDeletingExpenseId(expense.id);
+    try {
+      await api.deleteJobExpense(jobId, expense.id);
+      setJobs((prev) => prev.map((j) => {
+        if (j.id !== jobId) return j;
+        const expenses = j.expenses.filter((ex) => ex.id !== expense.id);
+        const totalExpensesCents = j.totalExpensesCents - expense.amountCents;
+        return { ...j, expenses, totalExpensesCents, netCents: j.incomeCents - totalExpensesCents };
+      }));
+      setSummary((prev) => prev ? {
+        ...prev,
+        expensesByCategoryCents: {
+          ...prev.expensesByCategoryCents,
+          [expense.category]: Math.max(0, (prev.expensesByCategoryCents[expense.category] ?? 0) - expense.amountCents),
+        },
+        totalExpensesCents: Math.max(0, prev.totalExpensesCents - expense.amountCents),
+        netCents: prev.netCents + expense.amountCents,
+      } : prev);
     } catch {
       setError('Could not delete expense.');
     } finally {
-      setDeleting(null);
+      setDeletingExpenseId(null);
     }
   };
 
-  if (session === undefined) {
-    return <div className="text-text-muted">Loading…</div>;
-  }
+  const toggleExpand = (jobId: string) => {
+    if (expandedJobId === jobId) {
+      setExpandedJobId(null);
+    } else {
+      setExpandedJobId(jobId);
+      setExpenseForm(blankExpenseForm());
+    }
+  };
+
+  if (session === undefined) return <div className="text-text-muted">Loading…</div>;
   if (!session) return null;
   if (!session.user.isOwner) {
     return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Owner access required.</div>;
   }
 
-  const totalExpenses = summary?.totalExpensesCents ?? 0;
-
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
-          Financials
-        </h1>
+        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Financials</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={prevMonth}
-            className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted"
-          >
-            ←
-          </button>
+          <button onClick={prevMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">←</button>
           <span className="text-sm font-medium w-36 text-center">{monthLabel}</span>
-          <button
-            onClick={nextMonth}
-            className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted"
-          >
-            →
-          </button>
+          <button onClick={nextMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">→</button>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>
-      )}
+      {error && <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-3 gap-4 mb-8">
         <SummaryCard label="Income" cents={summary?.incomeCents} color="text-success" loading={loading} />
         <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} color="text-danger" loading={loading} />
         <SummaryCard
@@ -204,81 +255,32 @@ export default function FinancialsPage() {
         />
       </div>
 
-      {/* Expense breakdown by category */}
-      <div className="rounded-xl border border-border bg-surface mb-8">
-        <div className="px-5 py-4 border-b border-border">
-          <h2 className="text-lg" style={{ fontFamily: 'Georgia, serif' }}>
-            Expenses by category
-          </h2>
-        </div>
-        <div className="divide-y divide-border">
-          {CATEGORIES.map((cat) => {
-            const amt = summary?.expensesByCategoryCents[cat] ?? 0;
-            const pct = totalExpenses > 0 ? (amt / totalExpenses) * 100 : 0;
-            return (
-              <div key={cat} className="px-5 py-3 flex items-center gap-4">
-                <span className="text-sm text-text-muted" style={{ minWidth: '9rem' }}>
-                  {CATEGORY_LABELS[cat]}
-                </span>
-                <div className="flex-1 h-2 bg-bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gold rounded-full transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium" style={{ minWidth: '7rem', textAlign: 'right' }}>
-                  {loading ? '—' : fmt(amt)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Expense entries header + add button */}
+      {/* Jobs section */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg" style={{ fontFamily: 'Georgia, serif' }}>
-          Expense entries
-        </h2>
+        <h2 className="text-lg" style={{ fontFamily: 'Georgia, serif' }}>Jobs — {monthLabel}</h2>
         <button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => { setShowJobForm((v) => !v); }}
           className="rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
         >
-          {showForm ? 'Cancel' : '+ Add expense'}
+          {showJobForm ? 'Cancel' : '+ New job'}
         </button>
       </div>
 
-      {/* Add expense form */}
-      {showForm && (
+      {/* New job form */}
+      {showJobForm && (
         <form
-          onSubmit={(e) => void handleAdd(e)}
-          className="mb-4 rounded-xl border border-border bg-surface p-5 grid grid-cols-2 md:grid-cols-4 gap-3"
+          onSubmit={(e) => void handleCreateJob(e)}
+          className="mb-4 rounded-xl border border-gold bg-gold-soft/10 p-5 grid grid-cols-2 md:grid-cols-4 gap-3"
         >
-          <div>
-            <label className="block text-xs text-text-muted mb-1">Category</label>
-            <select
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-              value={form.category}
-              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as ExpenseCategory }))}
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {CATEGORY_LABELS[c]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-text-muted mb-1">Amount (KSh)</label>
+          <div className="col-span-2">
+            <label className="block text-xs text-text-muted mb-1">Job title</label>
             <input
-              type="number"
-              min="1"
-              step="1"
-              placeholder="e.g. 500"
+              type="text"
               required
+              placeholder='e.g. "Sofa wash – Karen, Kilimani"'
               className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-              value={form.amountKes}
-              onChange={(e) => setForm((f) => ({ ...f, amountKes: e.target.value }))}
+              value={jobForm.title}
+              onChange={(e) => setJobForm((f) => ({ ...f, title: e.target.value }))}
             />
           </div>
           <div>
@@ -287,74 +289,207 @@ export default function FinancialsPage() {
               type="date"
               required
               className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-              value={form.date}
-              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+              value={jobForm.date}
+              onChange={(e) => setJobForm((f) => ({ ...f, date: e.target.value }))}
             />
           </div>
           <div>
-            <label className="block text-xs text-text-muted mb-1">Description (optional)</label>
+            <label className="block text-xs text-text-muted mb-1">Income charged (KSh)</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              placeholder="e.g. 5000"
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+              value={jobForm.incomeKes}
+              onChange={(e) => setJobForm((f) => ({ ...f, incomeKes: e.target.value }))}
+            />
+          </div>
+          <div className="col-span-full">
+            <label className="block text-xs text-text-muted mb-1">Notes (optional)</label>
             <input
               type="text"
-              placeholder="e.g. Cleaning supplies"
-              maxLength={500}
+              placeholder="e.g. 3-seater + 2-seater, paid cash"
               className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              value={jobForm.notes}
+              onChange={(e) => setJobForm((f) => ({ ...f, notes: e.target.value }))}
             />
           </div>
           <div className="col-span-full flex justify-end">
             <button
               type="submit"
-              disabled={saving}
-              className="rounded-lg bg-gold-deep text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
+              disabled={savingJob}
+              className="rounded-lg bg-gold-deep text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Save expense'}
+              {savingJob ? 'Saving…' : 'Create job'}
             </button>
           </div>
         </form>
       )}
 
-      {/* Expense list */}
+      {/* Job list */}
       {loading ? (
+        <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
+      ) : jobs.length === 0 ? (
         <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
-          Loading…
-        </div>
-      ) : expenses.length === 0 ? (
-        <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
-          No expenses recorded for {monthLabel}.
+          No jobs recorded for {monthLabel}. Click <strong>+ New job</strong> to add one.
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-surface overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-text-muted text-xs uppercase tracking-widest">
-                <th className="px-5 py-3 text-left font-normal">Date</th>
-                <th className="px-5 py-3 text-left font-normal">Category</th>
-                <th className="px-5 py-3 text-left font-normal">Description</th>
-                <th className="px-5 py-3 text-right font-normal">Amount</th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {expenses.map((e) => (
-                <tr key={e.id} className="hover:bg-bg-muted/50">
-                  <td className="px-5 py-3 text-text-muted">{e.date}</td>
-                  <td className="px-5 py-3">{CATEGORY_LABELS[e.category]}</td>
-                  <td className="px-5 py-3 text-text-muted">{e.description ?? '—'}</td>
-                  <td className="px-5 py-3 text-right font-medium">{fmt(e.amountCents)}</td>
-                  <td className="px-5 py-3 text-right">
+        <div className="space-y-3">
+          {jobs.map((job) => {
+            const isExpanded = expandedJobId === job.id;
+            const isDeleting = deletingJobId === job.id;
+            return (
+              <div key={job.id} className="rounded-xl border border-border bg-surface overflow-hidden">
+                {/* Job header */}
+                <div className="px-5 py-4 flex items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-base">{job.title}</span>
+                      <span className="text-text-muted text-xs">{job.date}</span>
+                    </div>
+                    {job.notes && <p className="text-text-muted text-xs mt-0.5">{job.notes}</p>}
+                    {/* Per-job P&L mini stats */}
+                    <div className="flex items-center gap-4 mt-2 text-sm flex-wrap">
+                      <span>
+                        <span className="text-text-muted text-xs">Income </span>
+                        <span className="text-success font-medium">{fmt(job.incomeCents)}</span>
+                      </span>
+                      <span className="text-border">|</span>
+                      <span>
+                        <span className="text-text-muted text-xs">Expenses </span>
+                        <span className="text-danger font-medium">{fmt(job.totalExpensesCents)}</span>
+                      </span>
+                      <span className="text-border">|</span>
+                      <span>
+                        <span className="text-text-muted text-xs">Net </span>
+                        <span className={`font-medium ${job.netCents >= 0 ? 'text-success' : 'text-danger'}`}>
+                          {fmt(job.netCents)}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => void handleDelete(e.id, e.amountCents, e.category)}
-                      disabled={deleting === e.id}
+                      onClick={() => toggleExpand(job.id)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-muted"
+                    >
+                      {isExpanded ? '▲ Hide' : '▼ Expenses'}
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteJob(job)}
+                      disabled={isDeleting}
                       className="text-danger text-xs hover:underline disabled:opacity-40"
                     >
-                      {deleting === e.id ? '…' : 'Delete'}
+                      {isDeleting ? '…' : 'Delete'}
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+
+                {/* Expanded: expense list + add form */}
+                {isExpanded && (
+                  <div className="border-t border-border">
+                    {/* Expense rows */}
+                    {job.expenses.length > 0 ? (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border">
+                            <th className="px-5 py-2 text-left font-normal">Date</th>
+                            <th className="px-5 py-2 text-left font-normal">Category</th>
+                            <th className="px-5 py-2 text-left font-normal">Description</th>
+                            <th className="px-5 py-2 text-right font-normal">Amount</th>
+                            <th className="px-5 py-2" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {job.expenses.map((ex) => (
+                            <tr key={ex.id} className="hover:bg-bg-muted/40">
+                              <td className="px-5 py-2 text-text-muted text-xs">{ex.date}</td>
+                              <td className="px-5 py-2">{CATEGORY_LABELS[ex.category]}</td>
+                              <td className="px-5 py-2 text-text-muted">{ex.description ?? '—'}</td>
+                              <td className="px-5 py-2 text-right font-medium">{fmt(ex.amountCents)}</td>
+                              <td className="px-5 py-2 text-right">
+                                <button
+                                  onClick={() => void handleDeleteExpense(job.id, ex)}
+                                  disabled={deletingExpenseId === ex.id}
+                                  className="text-danger text-xs hover:underline disabled:opacity-40"
+                                >
+                                  {deletingExpenseId === ex.id ? '…' : 'Delete'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="px-5 py-3 text-text-muted text-sm">No expenses yet.</p>
+                    )}
+
+                    {/* Add expense form */}
+                    <form
+                      onSubmit={(e) => void handleAddExpense(e, job.id)}
+                      className="px-5 py-4 border-t border-border bg-bg-muted/30 grid grid-cols-2 md:grid-cols-4 gap-3"
+                    >
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">Category</label>
+                        <select
+                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                          value={expenseForm.category}
+                          onChange={(e) => setExpenseForm((f) => ({ ...f, category: e.target.value as ExpenseCategory }))}
+                        >
+                          {CATEGORIES.map((c) => (
+                            <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">Amount (KSh)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="e.g. 200"
+                          required
+                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                          value={expenseForm.amountKes}
+                          onChange={(e) => setExpenseForm((f) => ({ ...f, amountKes: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">Date</label>
+                        <input
+                          type="date"
+                          required
+                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                          value={expenseForm.date}
+                          onChange={(e) => setExpenseForm((f) => ({ ...f, date: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">Description (optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Matatu to Karen"
+                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                          value={expenseForm.description}
+                          onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))}
+                        />
+                      </div>
+                      <div className="col-span-full flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={savingExpense}
+                          className="rounded-lg bg-gold-deep text-white px-4 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
+                        >
+                          {savingExpense ? 'Adding…' : '+ Add expense'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -362,24 +497,12 @@ export default function FinancialsPage() {
 }
 
 function SummaryCard({
-  label,
-  cents,
-  color,
-  loading,
-  accent,
+  label, cents, color, loading, accent,
 }: {
-  label: string;
-  cents?: number;
-  color?: string;
-  loading?: boolean;
-  accent?: boolean;
+  label: string; cents?: number; color?: string; loading?: boolean; accent?: boolean;
 }) {
   return (
-    <div
-      className={`rounded-xl border p-5 ${
-        accent ? 'border-gold bg-gold-soft/20' : 'border-border bg-surface'
-      }`}
-    >
+    <div className={`rounded-xl border p-5 ${accent ? 'border-gold bg-gold-soft/20' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
       <p className={`mt-2 text-3xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>
         {loading || cents === undefined ? '—' : fmt(cents)}

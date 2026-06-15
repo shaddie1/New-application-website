@@ -78,6 +78,7 @@ model User {
   crewAssignments    BookingCrew[]
   photosTaken        BookingPhoto[] @relation("PhotosTaken")
   expensesCreated    Expense[]      @relation("ExpensesCreatedBy")
+  jobsCreated        Job[]          @relation("JobsCreatedBy")
 
   @@index([referredByUserId])
 }
@@ -589,8 +590,26 @@ model PointsRule {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Financials — operational expense tracking
+// Financials — per-job income & expense tracking
 // ─────────────────────────────────────────────────────────────────────────────
+
+// A Job represents one cleaning engagement (e.g. "Sofa wash – Karen, Kilimani").
+// Income is manually entered; expenses are attached to the job.
+model Job {
+  id          String    @id @default(cuid())
+  title       String
+  date        DateTime  @db.Date
+  incomeCents Int       @default(0)
+  notes       String?
+  createdBy   User      @relation("JobsCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  expenses    Expense[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([date])
+  @@index([createdById])
+}
 
 enum ExpenseCategory {
   MATERIALS
@@ -606,6 +625,8 @@ model Expense {
   amountCents Int
   description String?
   date        DateTime        @db.Date
+  job         Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId       String?
   booking     Booking?        @relation(fields: [bookingId], references: [id])
   bookingId   String?
   createdBy   User            @relation("ExpensesCreatedBy", fields: [createdById], references: [id])
@@ -614,6 +635,7 @@ model Expense {
   updatedAt   DateTime        @updatedAt
 
   @@index([date])
+  @@index([jobId])
   @@index([createdById])
 }
 

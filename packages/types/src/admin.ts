@@ -82,6 +82,7 @@ export interface ExpenseDto {
   amountCents: number;
   description: string | null;
   date: string; // YYYY-MM-DD
+  jobId: string | null;
   bookingId: string | null;
   createdAt: string;
 }
@@ -91,6 +92,32 @@ export interface CreateExpenseInput {
   amountCents: number;
   description?: string;
   date: string; // YYYY-MM-DD
+}
+
+// A Job represents one cleaning engagement with its own income + expenses.
+export interface JobDto {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  incomeCents: number;
+  notes: string | null;
+  expenses: ExpenseDto[];
+  totalExpensesCents: number;
+  netCents: number;
+  createdAt: string;
+}
+
+export interface CreateJobInput {
+  title: string;
+  date: string; // YYYY-MM-DD
+  incomeCents: number;
+  notes?: string;
+}
+
+export interface UpdateJobInput {
+  title?: string;
+  incomeCents?: number;
+  notes?: string;
 }
 
 export interface FinancialSummary {

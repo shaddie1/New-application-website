@@ -13,6 +13,9 @@ import type {
   ExpenseDto,
   CreateExpenseInput,
   FinancialSummary,
+  JobDto,
+  CreateJobInput,
+  UpdateJobInput,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -142,22 +145,41 @@ export const api = {
       { method: 'GET', auth: true },
     ),
 
-  expenses: (from: string, to: string) =>
-    request<{ expenses: ExpenseDto[] }>(
-      `/admin/financials/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  jobs: (from: string, to: string) =>
+    request<{ jobs: JobDto[] }>(
+      `/admin/financials/jobs?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       { method: 'GET', auth: true },
     ),
 
-  createExpense: (input: CreateExpenseInput) =>
-    request<{ expense: ExpenseDto }>('/admin/financials/expenses', {
+  createJob: (input: CreateJobInput) =>
+    request<{ job: JobDto }>('/admin/financials/jobs', {
       method: 'POST',
       auth: true,
       body: JSON.stringify(input),
     }),
 
-  deleteExpense: (id: string) =>
-    request<{ ok: true }>(`/admin/financials/expenses/${encodeURIComponent(id)}`, {
+  updateJob: (id: string, input: UpdateJobInput) =>
+    request<{ job: JobDto }>(`/admin/financials/jobs/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteJob: (id: string) =>
+    request<{ ok: true }>(`/admin/financials/jobs/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       auth: true,
     }),
+
+  addJobExpense: (jobId: string, input: CreateExpenseInput) =>
+    request<{ expense: ExpenseDto }>(
+      `/admin/financials/jobs/${encodeURIComponent(jobId)}/expenses`,
+      { method: 'POST', auth: true, body: JSON.stringify(input) },
+    ),
+
+  deleteJobExpense: (jobId: string, expenseId: string) =>
+    request<{ ok: true }>(
+      `/admin/financials/jobs/${encodeURIComponent(jobId)}/expenses/${encodeURIComponent(expenseId)}`,
+      { method: 'DELETE', auth: true },
+    ),
 };
