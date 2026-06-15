@@ -596,11 +596,12 @@ model PointsRule {
 // A Job represents one cleaning engagement (e.g. "Sofa wash – Karen, Kilimani").
 // Income is manually entered; expenses are attached to the job.
 model Job {
-  id          String    @id @default(cuid())
-  title       String
-  date        DateTime  @db.Date
-  incomeCents Int       @default(0)
-  notes       String?
+  id             String    @id @default(cuid())
+  title          String
+  date           DateTime  @db.Date
+  incomeCents    Int       @default(0)
+  discountCents  Int       @default(0)
+  notes          String?
   createdBy   User      @relation("JobsCreatedBy", fields: [createdById], references: [id])
   createdById String
   expenses    Expense[]

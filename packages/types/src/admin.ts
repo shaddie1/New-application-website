@@ -100,10 +100,12 @@ export interface JobDto {
   title: string;
   date: string; // YYYY-MM-DD
   incomeCents: number;
+  discountCents: number;
+  actualIncomeCents: number; // incomeCents - discountCents
   notes: string | null;
   expenses: ExpenseDto[];
   totalExpensesCents: number;
-  netCents: number;
+  netCents: number; // actualIncomeCents - totalExpensesCents
   createdAt: string;
 }
 
@@ -111,12 +113,14 @@ export interface CreateJobInput {
   title: string;
   date: string; // YYYY-MM-DD
   incomeCents: number;
+  discountCents?: number;
   notes?: string;
 }
 
 export interface UpdateJobInput {
   title?: string;
   incomeCents?: number;
+  discountCents?: number;
   notes?: string;
 }
 

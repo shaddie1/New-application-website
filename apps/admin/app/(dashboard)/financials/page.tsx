@@ -50,7 +50,7 @@ export default function FinancialsPage() {
 
   // New job form
   const [showJobForm, setShowJobForm] = useState(false);
-  const [jobForm, setJobForm] = useState({ title: '', date: todayIso(), incomeKes: '', notes: '' });
+  const [jobForm, setJobForm] = useState({ title: '', date: todayIso(), incomeKes: '', discountKes: '', notes: '' });
   const [savingJob, setSavingJob] = useState(false);
 
   // Per-job expansion + expense form
@@ -108,15 +108,16 @@ export default function FinancialsPage() {
         title: jobForm.title.trim(),
         date: jobForm.date,
         incomeCents: Math.round((incomeKes || 0) * 100),
+        discountCents: Math.round((parseFloat(jobForm.discountKes) || 0) * 100),
         notes: jobForm.notes.trim() || undefined,
       });
       setJobs((prev) => [res.job, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
       setSummary((prev) => prev ? {
         ...prev,
-        incomeCents: prev.incomeCents + res.job.incomeCents,
-        netCents: prev.netCents + res.job.incomeCents,
+        incomeCents: prev.incomeCents + res.job.actualIncomeCents,
+        netCents: prev.netCents + res.job.actualIncomeCents,
       } : prev);
-      setJobForm({ title: '', date: todayIso(), incomeKes: '', notes: '' });
+      setJobForm({ title: '', date: todayIso(), incomeKes: '', discountKes: '', notes: '' });
       setShowJobForm(false);
       setExpandedJobId(res.job.id);
       setExpenseForm(blankExpenseForm());
@@ -305,6 +306,18 @@ export default function FinancialsPage() {
               onChange={(e) => setJobForm((f) => ({ ...f, incomeKes: e.target.value }))}
             />
           </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Discount given (KSh)</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              placeholder="e.g. 500"
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+              value={jobForm.discountKes}
+              onChange={(e) => setJobForm((f) => ({ ...f, discountKes: e.target.value }))}
+            />
+          </div>
           <div className="col-span-full">
             <label className="block text-xs text-text-muted mb-1">Notes (optional)</label>
             <input
@@ -352,9 +365,32 @@ export default function FinancialsPage() {
                     {/* Per-job P&L mini stats */}
                     <div className="flex items-center gap-4 mt-2 text-sm flex-wrap">
                       <span>
-                        <span className="text-text-muted text-xs">Income </span>
-                        <span className="text-success font-medium">{fmt(job.incomeCents)}</span>
+                        <span className="text-text-muted text-xs">Charged </span>
+                        <span className="font-medium">{fmt(job.incomeCents)}</span>
                       </span>
+                      {job.discountCents > 0 && (
+                        <>
+                          <span className="text-border">−</span>
+                          <span>
+                            <span className="text-text-muted text-xs">Discount </span>
+                            <span className="text-warning font-medium">{fmt(job.discountCents)}</span>
+                          </span>
+                          <span className="text-border">→</span>
+                          <span>
+                            <span className="text-text-muted text-xs">Income </span>
+                            <span className="text-success font-medium">{fmt(job.actualIncomeCents)}</span>
+                          </span>
+                        </>
+                      )}
+                      {job.discountCents === 0 && (
+                        <>
+                          <span className="text-border">|</span>
+                          <span>
+                            <span className="text-text-muted text-xs">Income </span>
+                            <span className="text-success font-medium">{fmt(job.actualIncomeCents)}</span>
+                          </span>
+                        </>
+                      )}
                       <span className="text-border">|</span>
                       <span>
                         <span className="text-text-muted text-xs">Expenses </span>

@@ -22,12 +22,14 @@ const CreateJobSchema = z.object({
   title: z.string().trim().min(1).max(200),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
   incomeCents: z.number().int().nonnegative(),
+  discountCents: z.number().int().nonnegative().optional(),
   notes: z.string().trim().max(1000).optional(),
 }) satisfies z.ZodType<CreateJobInput>;
 
 const UpdateJobSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   incomeCents: z.number().int().nonnegative().optional(),
+  discountCents: z.number().int().nonnegative().optional(),
   notes: z.string().trim().max(1000).optional(),
 }) satisfies z.ZodType<UpdateJobInput>;
 
@@ -54,7 +56,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const [jobs, expenses] = await Promise.all([
       prisma.job.findMany({
         where: { date: { gte: from, lte: to } },
-        select: { incomeCents: true },
+        select: { incomeCents: true, discountCents: true },
       }),
       prisma.expense.findMany({
         where: { date: { gte: from, lte: to } },
@@ -62,7 +64,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       }),
     ]);
 
-    const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents, 0);
+    const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
 
     const catTotal = (cat: ExpenseCategory): number =>
       expenses.filter((e) => e.category === cat).reduce((acc, e) => acc + e.amountCents, 0);
@@ -114,6 +116,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         title: parsed.data.title,
         date: new Date(parsed.data.date),
         incomeCents: parsed.data.incomeCents,
+        discountCents: parsed.data.discountCents ?? 0,
         notes: parsed.data.notes,
         createdById: req.auth!.sub,
       },
@@ -135,6 +138,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       data: {
         ...(parsed.data.title !== undefined && { title: parsed.data.title }),
         ...(parsed.data.incomeCents !== undefined && { incomeCents: parsed.data.incomeCents }),
+        ...(parsed.data.discountCents !== undefined && { discountCents: parsed.data.discountCents }),
         ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
       },
       include: { expenses: { orderBy: { date: 'desc' } } },
@@ -205,6 +209,7 @@ type JobRow = {
   title: string;
   date: Date;
   incomeCents: number;
+  discountCents: number;
   notes: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
@@ -223,16 +228,19 @@ type ExpenseRow = {
 
 function toJobDto(row: JobRow): JobDto {
   const expenses = row.expenses.map(toExpenseDto);
-  const totalExpensesCents = expenses.reduce((s, e) => s + e.amountCents, 0);
+  const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+  const actualIncomeCents = row.incomeCents - row.discountCents;
   return {
     id: row.id,
     title: row.title,
     date: row.date.toISOString().slice(0, 10),
     incomeCents: row.incomeCents,
+    discountCents: row.discountCents,
+    actualIncomeCents,
     notes: row.notes,
     expenses,
     totalExpensesCents,
-    netCents: row.incomeCents - totalExpensesCents,
+    netCents: actualIncomeCents - totalExpensesCents,
     createdAt: row.createdAt.toISOString(),
   };
 }
