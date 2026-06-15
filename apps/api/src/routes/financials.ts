@@ -28,7 +28,7 @@ const CreateJobSchema = z.object({
 const UpdateJobSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   incomeCents: z.number().int().nonnegative().optional(),
-  notes: z.string().trim().max(1000).nullable().optional(),
+  notes: z.string().trim().max(1000).optional(),
 }) satisfies z.ZodType<UpdateJobInput>;
 
 const CreateExpenseSchema = z.object({
@@ -62,20 +62,23 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       }),
     ]);
 
-    const incomeCents = jobs.reduce((sum, j) => sum + j.incomeCents, 0);
+    const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents, 0);
 
-    const expensesByCategoryCents: Record<string, number> = {
-      MATERIALS: 0, TRANSPORT: 0, EMPLOYEE_PAY: 0, LUNCH: 0, MISCELLANEOUS: 0,
+    const catTotal = (cat: ExpenseCategory): number =>
+      expenses.filter((e) => e.category === cat).reduce((acc, e) => acc + e.amountCents, 0);
+    const expensesByCategoryCents: Record<ExpenseCategory, number> = {
+      MATERIALS: catTotal('MATERIALS'),
+      TRANSPORT: catTotal('TRANSPORT'),
+      EMPLOYEE_PAY: catTotal('EMPLOYEE_PAY'),
+      LUNCH: catTotal('LUNCH'),
+      MISCELLANEOUS: catTotal('MISCELLANEOUS'),
     };
-    for (const e of expenses) {
-      expensesByCategoryCents[e.category] = (expensesByCategoryCents[e.category] ?? 0) + e.amountCents;
-    }
 
-    const totalExpensesCents = expenses.reduce((sum, e) => sum + e.amountCents, 0);
+    const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
 
     const summary: FinancialSummary = {
       incomeCents,
-      expensesByCategoryCents: expensesByCategoryCents as FinancialSummary['expensesByCategoryCents'],
+      expensesByCategoryCents,
       totalExpensesCents,
       netCents: incomeCents - totalExpensesCents,
       fromDate: parsed.data.from,
