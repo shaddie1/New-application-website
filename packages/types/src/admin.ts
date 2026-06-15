@@ -102,6 +102,9 @@ export interface JobDto {
   incomeCents: number;
   discountCents: number;
   actualIncomeCents: number; // incomeCents - discountCents
+  clientName: string | null;
+  clientPhone: string | null;
+  clientLocation: string | null;
   notes: string | null;
   expenses: ExpenseDto[];
   totalExpensesCents: number;
@@ -114,6 +117,9 @@ export interface CreateJobInput {
   date: string; // YYYY-MM-DD
   incomeCents: number;
   discountCents?: number;
+  clientName?: string;
+  clientPhone?: string;
+  clientLocation?: string;
   notes?: string;
 }
 
@@ -121,6 +127,9 @@ export interface UpdateJobInput {
   title?: string;
   incomeCents?: number;
   discountCents?: number;
+  clientName?: string;
+  clientPhone?: string;
+  clientLocation?: string;
   notes?: string;
 }
 

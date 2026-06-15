@@ -601,6 +601,9 @@ model Job {
   date           DateTime  @db.Date
   incomeCents    Int       @default(0)
   discountCents  Int       @default(0)
+  clientName     String?
+  clientPhone    String?
+  clientLocation String?
   notes          String?
   createdBy   User      @relation("JobsCreatedBy", fields: [createdById], references: [id])
   createdById String

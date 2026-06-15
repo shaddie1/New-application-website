@@ -23,6 +23,9 @@ const CreateJobSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
   incomeCents: z.number().int().nonnegative(),
   discountCents: z.number().int().nonnegative().optional(),
+  clientName: z.string().trim().max(200).optional(),
+  clientPhone: z.string().trim().max(30).optional(),
+  clientLocation: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(1000).optional(),
 }) satisfies z.ZodType<CreateJobInput>;
 
@@ -30,6 +33,9 @@ const UpdateJobSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   incomeCents: z.number().int().nonnegative().optional(),
   discountCents: z.number().int().nonnegative().optional(),
+  clientName: z.string().trim().max(200).optional(),
+  clientPhone: z.string().trim().max(30).optional(),
+  clientLocation: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(1000).optional(),
 }) satisfies z.ZodType<UpdateJobInput>;
 
@@ -117,6 +123,9 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         date: new Date(parsed.data.date),
         incomeCents: parsed.data.incomeCents,
         discountCents: parsed.data.discountCents ?? 0,
+        clientName: parsed.data.clientName,
+        clientPhone: parsed.data.clientPhone,
+        clientLocation: parsed.data.clientLocation,
         notes: parsed.data.notes,
         createdById: req.auth!.sub,
       },
@@ -139,6 +148,9 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.title !== undefined && { title: parsed.data.title }),
         ...(parsed.data.incomeCents !== undefined && { incomeCents: parsed.data.incomeCents }),
         ...(parsed.data.discountCents !== undefined && { discountCents: parsed.data.discountCents }),
+        ...(parsed.data.clientName !== undefined && { clientName: parsed.data.clientName }),
+        ...(parsed.data.clientPhone !== undefined && { clientPhone: parsed.data.clientPhone }),
+        ...(parsed.data.clientLocation !== undefined && { clientLocation: parsed.data.clientLocation }),
         ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
       },
       include: { expenses: { orderBy: { date: 'desc' } } },
@@ -210,6 +222,9 @@ type JobRow = {
   date: Date;
   incomeCents: number;
   discountCents: number;
+  clientName: string | null;
+  clientPhone: string | null;
+  clientLocation: string | null;
   notes: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
@@ -237,6 +252,9 @@ function toJobDto(row: JobRow): JobDto {
     incomeCents: row.incomeCents,
     discountCents: row.discountCents,
     actualIncomeCents,
+    clientName: row.clientName,
+    clientPhone: row.clientPhone,
+    clientLocation: row.clientLocation,
     notes: row.notes,
     expenses,
     totalExpensesCents,

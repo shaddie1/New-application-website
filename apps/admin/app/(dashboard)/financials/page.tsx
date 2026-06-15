@@ -50,7 +50,7 @@ export default function FinancialsPage() {
 
   // New job form
   const [showJobForm, setShowJobForm] = useState(false);
-  const [jobForm, setJobForm] = useState({ title: '', date: todayIso(), incomeKes: '', discountKes: '', notes: '' });
+  const [jobForm, setJobForm] = useState({ title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '' });
   const [savingJob, setSavingJob] = useState(false);
 
   // Per-job expansion + expense form
@@ -109,6 +109,9 @@ export default function FinancialsPage() {
         date: jobForm.date,
         incomeCents: Math.round((incomeKes || 0) * 100),
         discountCents: Math.round((parseFloat(jobForm.discountKes) || 0) * 100),
+        clientName: jobForm.clientName.trim() || undefined,
+        clientPhone: jobForm.clientPhone.trim() || undefined,
+        clientLocation: jobForm.clientLocation.trim() || undefined,
         notes: jobForm.notes.trim() || undefined,
       });
       setJobs((prev) => [res.job, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
@@ -117,7 +120,7 @@ export default function FinancialsPage() {
         incomeCents: prev.incomeCents + res.job.actualIncomeCents,
         netCents: prev.netCents + res.job.actualIncomeCents,
       } : prev);
-      setJobForm({ title: '', date: todayIso(), incomeKes: '', discountKes: '', notes: '' });
+      setJobForm({ title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '' });
       setShowJobForm(false);
       setExpandedJobId(res.job.id);
       setExpenseForm(blankExpenseForm());
@@ -318,6 +321,36 @@ export default function FinancialsPage() {
               onChange={(e) => setJobForm((f) => ({ ...f, discountKes: e.target.value }))}
             />
           </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Client name (optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Jane Mwangi"
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+              value={jobForm.clientName}
+              onChange={(e) => setJobForm((f) => ({ ...f, clientName: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Client phone (optional)</label>
+            <input
+              type="tel"
+              placeholder="e.g. 0712 345 678"
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+              value={jobForm.clientPhone}
+              onChange={(e) => setJobForm((f) => ({ ...f, clientPhone: e.target.value }))}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs text-text-muted mb-1">Location (optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Karen, Nairobi"
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+              value={jobForm.clientLocation}
+              onChange={(e) => setJobForm((f) => ({ ...f, clientLocation: e.target.value }))}
+            />
+          </div>
           <div className="col-span-full">
             <label className="block text-xs text-text-muted mb-1">Notes (optional)</label>
             <input
@@ -361,6 +394,13 @@ export default function FinancialsPage() {
                       <span className="font-medium text-base">{job.title}</span>
                       <span className="text-text-muted text-xs">{job.date}</span>
                     </div>
+                    {(job.clientName || job.clientPhone || job.clientLocation) && (
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap text-xs text-text-muted">
+                        {job.clientName && <span>👤 {job.clientName}</span>}
+                        {job.clientPhone && <span>📞 {job.clientPhone}</span>}
+                        {job.clientLocation && <span>📍 {job.clientLocation}</span>}
+                      </div>
+                    )}
                     {job.notes && <p className="text-text-muted text-xs mt-0.5">{job.notes}</p>}
                     {/* Per-job P&L mini stats */}
                     <div className="flex items-center gap-4 mt-2 text-sm flex-wrap">
