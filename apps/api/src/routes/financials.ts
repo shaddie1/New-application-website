@@ -48,7 +48,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       MATERIALS: 0, TRANSPORT: 0, EMPLOYEE_PAY: 0, LUNCH: 0, MISCELLANEOUS: 0,
     };
     for (const e of expenses) {
-      expensesByCategoryCents[e.category] += e.amountCents;
+      expensesByCategoryCents[e.category] = (expensesByCategoryCents[e.category] ?? 0) + e.amountCents;
     }
 
     const totalExpensesCents = expenses.reduce((sum, e) => sum + e.amountCents, 0);
