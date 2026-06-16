@@ -75,6 +75,28 @@ export default function VerifyScreen() {
             </Text>
           </View>
 
+          {/* Dev-only: show the OTP visibly so testing doesn't need a real SMS */}
+          {!!devOtp && (
+            <View
+              className="mt-6 rounded-xl px-4 py-4"
+              style={{ backgroundColor: 'rgba(201,165,92,0.15)', borderWidth: 1, borderColor: 'rgba(201,165,92,0.4)' }}
+            >
+              <Text className="text-gold-deep text-xs uppercase tracking-widest mb-2">
+                Dev mode · verification code
+              </Text>
+              <Text className="text-text text-4xl tracking-widest font-semibold text-center" style={{ fontFamily: 'serif' }}>
+                {devOtp}
+              </Text>
+              <Pressable
+                onPress={() => setCode(devOtp)}
+                className="mt-3 items-center rounded-lg py-2"
+                style={{ backgroundColor: 'rgba(201,165,92,0.25)' }}
+              >
+                <Text className="text-gold-deep text-sm font-medium">Tap to fill →</Text>
+              </Pressable>
+            </View>
+          )}
+
           <View className="mt-12">
             <TextInput
               value={code}
