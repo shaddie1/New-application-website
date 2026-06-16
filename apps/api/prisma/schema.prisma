@@ -79,6 +79,7 @@ model User {
   photosTaken        BookingPhoto[] @relation("PhotosTaken")
   expensesCreated    Expense[]      @relation("ExpensesCreatedBy")
   jobsCreated        Job[]          @relation("JobsCreatedBy")
+  jobsReported       Job[]          @relation("JobsReportedBy")
 
   @@index([referredByUserId])
 }
@@ -601,18 +602,28 @@ model Job {
   date           DateTime  @db.Date
   incomeCents    Int       @default(0)
   discountCents  Int       @default(0)
+  status         JobStatus @default(OWNER_ENTRY)
   clientName     String?
   clientPhone    String?
   clientLocation String?
   notes          String?
-  createdBy   User      @relation("JobsCreatedBy", fields: [createdById], references: [id])
-  createdById String
-  expenses    Expense[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdBy      User      @relation("JobsCreatedBy", fields: [createdById], references: [id])
+  createdById    String
+  reportedBy     User?     @relation("JobsReportedBy", fields: [reportedById], references: [id])
+  reportedById   String?
+  expenses       Expense[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([date])
   @@index([createdById])
+  @@index([status])
+}
+
+enum JobStatus {
+  OWNER_ENTRY
+  PENDING
+  APPROVED
 }
 
 enum ExpenseCategory {

@@ -21,10 +21,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   if (!session) return null; // redirecting to /login
 
-  // Owner-only: Team (staff management) and Financials pages.
   const nav = session.user.isOwner
     ? [...NAV, { href: '/team', label: 'Team' }, { href: '/financials', label: 'Financials' }]
-    : NAV;
+    : [...NAV, { href: '/job-reports', label: 'Job Reports' }];
 
   return (
     <div className="min-h-screen">

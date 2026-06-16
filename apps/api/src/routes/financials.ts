@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ExpenseCategory } from '@prisma/client';
+import { ExpenseCategory, JobStatus } from '@prisma/client';
 import type {
   ExpenseDto,
   FinancialSummary,
@@ -8,10 +8,13 @@ import type {
   JobDto,
   CreateJobInput,
   UpdateJobInput,
+  MonthlyTrendItem,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+
+const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
 
 const DateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
@@ -52,7 +55,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
   // ── Summary ────────────────────────────────────────────────────────────────
 
-  // Monthly financial summary — income from jobs, expenses from all entries.
   app.get('/summary', async (req, reply) => {
     const parsed = DateRangeSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -61,11 +63,11 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const [jobs, expenses] = await Promise.all([
       prisma.job.findMany({
-        where: { date: { gte: from, lte: to } },
+        where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
         select: { incomeCents: true, discountCents: true },
       }),
       prisma.expense.findMany({
-        where: { date: { gte: from, lte: to } },
+        where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
         select: { category: true, amountCents: true },
       }),
     ]);
@@ -95,9 +97,56 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ summary });
   });
 
+  // ── Monthly trends ─────────────────────────────────────────────────────────
+
+  app.get('/trends', async (req, reply) => {
+    const MonthsSchema = z.object({ months: z.coerce.number().int().min(1).max(24).default(6) });
+    const parsed = MonthsSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const count = parsed.data.months;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    const monthSlots = Array.from({ length: count }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (count - 1 - i), 1);
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const fromStr = `${year}-${pad(month)}-01`;
+      const toStr = `${year}-${pad(month)}-${pad(daysInMonth)}`;
+      const label = d.toLocaleDateString('en-KE', { month: 'short', year: 'numeric' });
+      return { year, month, label, ...dateRange(fromStr, toStr) };
+    });
+
+    const results = await Promise.all(
+      monthSlots.map(async ({ year, month, label, from, to }) => {
+        const [jobs, expenses] = await Promise.all([
+          prisma.job.findMany({
+            where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+            select: { incomeCents: true, discountCents: true },
+          }),
+          prisma.expense.findMany({
+            where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
+            select: { amountCents: true },
+          }),
+        ]);
+        const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
+        const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+        const item: MonthlyTrendItem = {
+          year, month, label, incomeCents, totalExpensesCents,
+          netCents: incomeCents - totalExpensesCents,
+          jobCount: jobs.length,
+        };
+        return item;
+      }),
+    );
+
+    return reply.send({ trends: results });
+  });
+
   // ── Jobs ───────────────────────────────────────────────────────────────────
 
-  // List jobs (with their expenses) for a date range.
   app.get('/jobs', async (req, reply) => {
     const parsed = DateRangeSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -105,14 +154,16 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const { from, to } = dateRange(parsed.data.from, parsed.data.to);
 
     const rows = await prisma.job.findMany({
-      where: { date: { gte: from, lte: to } },
-      include: { expenses: { orderBy: { date: 'desc' } } },
+      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+      include: {
+        expenses: { orderBy: { date: 'desc' } },
+        reportedBy: { select: { fullName: true } },
+      },
       orderBy: { date: 'desc' },
     });
     return reply.send({ jobs: rows.map(toJobDto) });
   });
 
-  // Create a job.
   app.post('/jobs', async (req, reply) => {
     const parsed = CreateJobSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -123,18 +174,18 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         date: new Date(parsed.data.date),
         incomeCents: parsed.data.incomeCents,
         discountCents: parsed.data.discountCents ?? 0,
+        status: 'OWNER_ENTRY',
         clientName: parsed.data.clientName,
         clientPhone: parsed.data.clientPhone,
         clientLocation: parsed.data.clientLocation,
         notes: parsed.data.notes,
         createdById: req.auth!.sub,
       },
-      include: { expenses: true },
+      include: { expenses: true, reportedBy: { select: { fullName: true } } },
     });
     return reply.code(201).send({ job: toJobDto(row) });
   });
 
-  // Update a job's title, income, or notes.
   app.patch<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
     const parsed = UpdateJobSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -153,12 +204,11 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.clientLocation !== undefined && { clientLocation: parsed.data.clientLocation }),
         ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
       },
-      include: { expenses: { orderBy: { date: 'desc' } } },
+      include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
     });
     return reply.send({ job: toJobDto(row) });
   });
 
-  // Delete a job (cascades its expenses).
   app.delete<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'job not found' });
@@ -168,7 +218,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
   // ── Job expenses ───────────────────────────────────────────────────────────
 
-  // Add an expense to a specific job.
   app.post<{ Params: { id: string } }>('/jobs/:id/expenses', async (req, reply) => {
     const job = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!job) return reply.code(404).send({ error: 'job not found' });
@@ -189,7 +238,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ expense: toExpenseDto(row) });
   });
 
-  // Delete a specific expense from a job.
   app.delete<{ Params: { id: string; expenseId: string } }>(
     '/jobs/:id/expenses/:expenseId',
     async (req, reply) => {
@@ -199,6 +247,39 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       return reply.send({ ok: true });
     },
   );
+
+  // ── Pending report submissions (owner review) ──────────────────────────────
+
+  app.get('/reports', async (_req, reply) => {
+    const rows = await prisma.job.findMany({
+      where: { status: 'PENDING' },
+      include: {
+        expenses: { orderBy: { date: 'desc' } },
+        reportedBy: { select: { fullName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return reply.send({ reports: rows.map(toJobDto) });
+  });
+
+  app.patch<{ Params: { id: string } }>('/reports/:id/approve', async (req, reply) => {
+    const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
+    if (!existing || existing.status !== 'PENDING') return reply.code(404).send({ error: 'pending report not found' });
+
+    const row = await prisma.job.update({
+      where: { id: req.params.id },
+      data: { status: 'APPROVED' },
+      include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
+    });
+    return reply.send({ job: toJobDto(row) });
+  });
+
+  app.delete<{ Params: { id: string } }>('/reports/:id', async (req, reply) => {
+    const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
+    if (!existing || existing.status !== 'PENDING') return reply.code(404).send({ error: 'pending report not found' });
+    await prisma.job.delete({ where: { id: req.params.id } });
+    return reply.send({ ok: true });
+  });
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -222,12 +303,14 @@ type JobRow = {
   date: Date;
   incomeCents: number;
   discountCents: number;
+  status: JobStatus;
   clientName: string | null;
   clientPhone: string | null;
   clientLocation: string | null;
   notes: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
+  reportedBy: { fullName: string } | null;
 };
 
 type ExpenseRow = {
@@ -252,6 +335,8 @@ function toJobDto(row: JobRow): JobDto {
     incomeCents: row.incomeCents,
     discountCents: row.discountCents,
     actualIncomeCents,
+    status: row.status,
+    reportedByName: row.reportedBy?.fullName ?? null,
     clientName: row.clientName,
     clientPhone: row.clientPhone,
     clientLocation: row.clientLocation,

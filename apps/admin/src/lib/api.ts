@@ -16,6 +16,8 @@ import type {
   JobDto,
   CreateJobInput,
   UpdateJobInput,
+  CreateJobReportInput,
+  MonthlyTrendItem,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -180,6 +182,53 @@ export const api = {
   deleteJobExpense: (jobId: string, expenseId: string) =>
     request<{ ok: true }>(
       `/admin/financials/jobs/${encodeURIComponent(jobId)}/expenses/${encodeURIComponent(expenseId)}`,
+      { method: 'DELETE', auth: true },
+    ),
+
+  // ── Monthly trends (owner only) ──────────────────────────────────────────
+  financialTrends: (months = 6) =>
+    request<{ trends: MonthlyTrendItem[] }>(
+      `/admin/financials/trends?months=${months}`,
+      { method: 'GET', auth: true },
+    ),
+
+  // ── Pending report submissions (owner only) ──────────────────────────────
+  pendingReports: () =>
+    request<{ reports: JobDto[] }>('/admin/financials/reports', { method: 'GET', auth: true }),
+
+  approveReport: (id: string) =>
+    request<{ job: JobDto }>(`/admin/financials/reports/${encodeURIComponent(id)}/approve`, {
+      method: 'PATCH', auth: true,
+    }),
+
+  deleteReport: (id: string) =>
+    request<{ ok: true }>(`/admin/financials/reports/${encodeURIComponent(id)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
+  // ── Job reports (all admin users) ────────────────────────────────────────
+  myReports: () =>
+    request<{ reports: JobDto[] }>('/admin/job-reports', { method: 'GET', auth: true }),
+
+  submitReport: (input: CreateJobReportInput) =>
+    request<{ report: JobDto }>('/admin/job-reports', {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  deleteMyReport: (id: string) =>
+    request<{ ok: true }>(`/admin/job-reports/${encodeURIComponent(id)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
+  addReportExpense: (reportId: string, input: CreateExpenseInput) =>
+    request<{ expense: ExpenseDto }>(
+      `/admin/job-reports/${encodeURIComponent(reportId)}/expenses`,
+      { method: 'POST', auth: true, body: JSON.stringify(input) },
+    ),
+
+  deleteReportExpense: (reportId: string, expenseId: string) =>
+    request<{ ok: true }>(
+      `/admin/job-reports/${encodeURIComponent(reportId)}/expenses/${encodeURIComponent(expenseId)}`,
       { method: 'DELETE', auth: true },
     ),
 };

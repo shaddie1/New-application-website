@@ -76,6 +76,8 @@ export interface AdminQuotesResult {
 
 export type ExpenseCategory = 'MATERIALS' | 'TRANSPORT' | 'EMPLOYEE_PAY' | 'LUNCH' | 'MISCELLANEOUS';
 
+export type JobStatus = 'OWNER_ENTRY' | 'PENDING' | 'APPROVED';
+
 export interface ExpenseDto {
   id: string;
   category: ExpenseCategory;
@@ -102,6 +104,8 @@ export interface JobDto {
   incomeCents: number;
   discountCents: number;
   actualIncomeCents: number; // incomeCents - discountCents
+  status: JobStatus;
+  reportedByName: string | null; // set for admin-submitted reports
   clientName: string | null;
   clientPhone: string | null;
   clientLocation: string | null;
@@ -140,4 +144,25 @@ export interface FinancialSummary {
   netCents: number;
   fromDate: string;
   toDate: string;
+}
+
+export interface CreateJobReportInput {
+  title: string;
+  date: string; // YYYY-MM-DD
+  incomeCents: number;
+  discountCents?: number;
+  clientName?: string;
+  clientPhone?: string;
+  clientLocation?: string;
+  notes?: string;
+}
+
+export interface MonthlyTrendItem {
+  year: number;
+  month: number;
+  label: string; // e.g. "Jun 2026"
+  incomeCents: number;
+  totalExpensesCents: number;
+  netCents: number;
+  jobCount: number;
 }
