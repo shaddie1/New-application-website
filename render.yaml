@@ -1,42 +1,27 @@
-# Render Blueprint for the OnyxHawk API (Fastify + Prisma).
-# Deploy: Render dashboard → New → Blueprint → point at this repo.
-# Docs: https://render.com/docs/blueprint-spec
 services:
   - type: web
     name: onyxhawk-api
     runtime: node
-    plan: free # free spins down after ~15m idle (cold start). Upgrade to 'starter' for always-on.
-    region: frankfurt # closest Render region to Kenya
-    rootDir: . # pnpm workspace — install from the repo root
-    # Corepack activates the pnpm version pinned in package.json (packageManager).
-    # NOTE: free tier doesn't support preDeployCommand, so migrations run here in
-    # the build step (build-time env vars are available). `migrate deploy` is
-    # idempotent — it only applies pending migrations.
-    # Install ONLY the API and its workspace deps (the `...` suffix) — skips the
-    # Expo/React-Native + Next deps for mobile/web/admin, which the API doesn't
-    # need and which would bloat/slow the free-tier build.
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --filter @onyxhawk/api... && pnpm --filter @onyxhawk/api build && pnpm exec prisma migrate deploy --schema apps/api/prisma/schema.prisma
-    startCommand: node apps/api/dist/index.js
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @onyxhawk/types build && pnpm --filter @onyxhawk/api build
+    startCommand: pnpm --filter @onyxhawk/api start:prod
     healthCheckPath: /health
-    autoDeploy: true
     envVars:
-      - key: NODE_VERSION
-        # pnpm 11.3 (pinned in package.json) requires Node >= 22.13.
-        value: "22"
       - key: NODE_ENV
         value: production
-      # Render injects PORT automatically; the app binds env.PORT.
-      - key: HOST
-        value: 0.0.0.0
-      # --- Secrets: set these in the Render dashboard (sync:false = not stored in git) ---
-      - key: DATABASE_URL # Neon connection string (use the POOLED url + ?sslmode=require)
+      - key: DATABASE_URL
         sync: false
-      - key: JWT_SECRET # 32+ random chars
+      - key: JWT_SECRET
         sync: false
-      - key: CORS_ORIGIN # https://onyxhawkcleaningservice.com,https://admin.onyxhawkcleaningservice.com
+      - key: CORS_ORIGIN
         sync: false
+      - key: AT_USERNAME
+        sync: false
+      - key: AT_API_KEY
+        sync: false
+      - key: SMS_SENDER_ID
+        value: ONYXHAWK
       - key: MPESA_BASE_URL
-        value: https://api.safaricom.co.ke
+        value: https://sandbox.safaricom.co.ke
       - key: MPESA_CONSUMER_KEY
         sync: false
       - key: MPESA_CONSUMER_SECRET
@@ -45,21 +30,5 @@ services:
         sync: false
       - key: MPESA_PASSKEY
         sync: false
-      - key: MPESA_CALLBACK_URL # https://api.onyxhawkcleaningservice.com/webhooks/mpesa/stk
-        sync: false
-      - key: AT_USERNAME # Africa's Talking (SMS OTP)
-        sync: false
-      - key: AT_API_KEY
-        sync: false
-      - key: SMS_SENDER_ID
-        value: ONYXHAWK
-      - key: R2_ACCOUNT_ID # Cloudflare R2 (before/after photos) — optional
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_BUCKET
-        value: onyxhawk-media
-      - key: R2_PUBLIC_URL
+      - key: MPESA_CALLBACK_URL
         sync: false
