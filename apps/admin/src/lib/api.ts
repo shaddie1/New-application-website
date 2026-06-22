@@ -231,4 +231,11 @@ export const api = {
       `/admin/job-reports/${encodeURIComponent(reportId)}/expenses/${encodeURIComponent(expenseId)}`,
       { method: 'DELETE', auth: true },
     ),
+
+  // ── Dev OTP viewer (owner only, returns [] in production) ────────────────
+  recentOtps: () =>
+    request<{ codes: { phone: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
+      '/admin/otps/recent',
+      { method: 'GET', auth: true },
+    ),
 };

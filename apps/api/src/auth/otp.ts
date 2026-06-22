@@ -24,10 +24,12 @@ export async function issueSignInOtp(phone: string, log: SmsLogger): Promise<{ d
   });
 
   const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+  const isDev = env.NODE_ENV !== 'production';
   await prisma.otpCode.create({
     data: {
       phone,
       codeHash: sha256(code),
+      codePlain: isDev ? code : null,
       purpose: 'SIGN_IN',
       expiresAt: new Date(Date.now() + OTP_TTL_MS),
     },

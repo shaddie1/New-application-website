@@ -90,6 +90,7 @@ model OtpCode {
   userId    String?
   phone     String    // phone the OTP was sent to (may not yet be linked to a user)
   codeHash  String    // never store the OTP in plaintext
+  codePlain String?   // plaintext only in non-production for admin dev panel; null in prod
   purpose   String    // "SIGN_IN" | "PHONE_VERIFY" | "PASSWORD_RESET"
   expiresAt DateTime
   consumedAt DateTime?

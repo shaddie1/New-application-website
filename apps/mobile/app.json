@@ -7,6 +7,12 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1B1814"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.onyxhawk.app"
@@ -14,7 +20,8 @@
     "android": {
       "package": "com.onyxhawk.app",
       "adaptiveIcon": {
-        "backgroundColor": "#F5F1E6"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1B1814"
       }
     },
     "web": {

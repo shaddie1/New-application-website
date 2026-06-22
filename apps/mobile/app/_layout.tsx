@@ -20,9 +20,12 @@ export default function RootLayout() {
   useEffect(() => {
     if (session === undefined) return; // still hydrating
     const inAuthGroup = segments[0] === '(auth)';
-    if (!session && !inAuthGroup) {
+    const inAppGroup = segments[0] === '(app)';
+    if (!session && inAppGroup) {
+      // Guest trying to reach a protected (app) route
       router.replace('/(auth)/sign-in');
-    } else if (session && inAuthGroup) {
+    } else if (session && !inAppGroup) {
+      // Authenticated user on landing or auth screens → go to main app
       router.replace('/(app)');
     }
   }, [session, segments, router]);

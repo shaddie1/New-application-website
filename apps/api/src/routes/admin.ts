@@ -236,6 +236,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await prisma.user.update({ where: { id: target.id }, data: { role: UserRole.CUSTOMER } });
     return reply.send({ ok: true });
   });
+
+  // Dev-only: live OTP codes for the admin dashboard. Returns [] in production or if migration not yet applied.
+  app.get('/otps/recent', { preHandler: requireOwner }, async (_req, reply) => {
+    try {
+      const codes = await prisma.otpCode.findMany({
+        where: {
+          codePlain: { not: null },
+          consumedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: { phone: true, codePlain: true, createdAt: true, expiresAt: true },
+      });
+      return reply.send({ codes });
+    } catch {
+      // Column may not exist yet (migration pending) — return empty list gracefully.
+      return reply.send({ codes: [] });
+    }
+  });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────

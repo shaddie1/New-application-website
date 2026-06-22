@@ -1,0 +1,1 @@
+ALTER TABLE "OtpCode" ADD COLUMN "codePlain" TEXT;
