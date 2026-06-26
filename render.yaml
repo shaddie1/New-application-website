@@ -2,7 +2,7 @@ services:
   - type: web
     name: onyxhawk-api
     runtime: node
-    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @onyxhawk/types build && pnpm --filter @onyxhawk/api build
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @onyxhawk/api build
     startCommand: pnpm --filter @onyxhawk/api start:prod
     healthCheckPath: /health
     envVars:
