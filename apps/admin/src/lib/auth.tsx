@@ -40,6 +40,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionState(null);
   }, []);
 
+  // Sign out automatically after 30 minutes of inactivity.
+  useEffect(() => {
+    if (!session) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void signOut(), 30 * 60 * 1000);
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'] as const;
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [session, signOut]);
+
   return <AuthContext.Provider value={{ session, setSession, signOut }}>{children}</AuthContext.Provider>;
 }
 
