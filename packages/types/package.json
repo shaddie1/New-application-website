@@ -3,18 +3,34 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./auth": "./src/auth.ts",
-    "./mpesa": "./src/mpesa.ts",
-    "./booking": "./src/booking.ts",
-    "./loyalty": "./src/loyalty.ts"
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./auth": {
+      "import": "./dist/auth.js",
+      "types": "./dist/auth.d.ts"
+    },
+    "./mpesa": {
+      "import": "./dist/mpesa.js",
+      "types": "./dist/mpesa.d.ts"
+    },
+    "./booking": {
+      "import": "./dist/booking.js",
+      "types": "./dist/booking.d.ts"
+    },
+    "./loyalty": {
+      "import": "./dist/loyalty.js",
+      "types": "./dist/loyalty.d.ts"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "clean": "rimraf .turbo"
+    "clean": "rimraf dist .turbo"
   },
   "devDependencies": {
     "rimraf": "^6.0.1",
