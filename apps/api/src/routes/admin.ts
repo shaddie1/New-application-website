@@ -57,7 +57,7 @@ const RespondSchema = z.object({
 const CreateStaffSchema = z.object({
   phone: z.string().trim().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +254712480392)'),
   fullName: z.string().trim().min(1).max(120),
-  role: z.enum(['ADMIN', 'SUPPORT']),
+  role: z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER']),
 }) satisfies z.ZodType<CreateStaffInput>;
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
@@ -260,9 +260,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+const STAFF_ROLES = new Set([
+  UserRole.ADMIN,
+  UserRole.SUPPORT,
+  UserRole.FINANCIAL_MANAGER,
+  UserRole.MARKETING,
+  UserRole.CLEANING_SUPERVISOR,
+  UserRole.SHAREHOLDER,
+]);
+
 async function requireAdminRole(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
-  if (req.auth.role !== UserRole.ADMIN && req.auth.role !== UserRole.SUPPORT) {
+  if (!STAFF_ROLES.has(req.auth.role as UserRole)) {
     return reply.code(403).send({ error: 'admin access required' });
   }
 }

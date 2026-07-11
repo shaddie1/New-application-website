@@ -6,6 +6,15 @@ import type { AdminStaffDto, StaffRole } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useAuth } from '../../../src/lib/auth';
 
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Admin',
+  SUPPORT: 'Support',
+  FINANCIAL_MANAGER: 'Financial Manager',
+  MARKETING: 'Marketing Personnel',
+  CLEANING_SUPERVISOR: 'Cleaning Supervisor',
+  SHAREHOLDER: 'Shareholder',
+};
+
 const e164 = (input: string): string => {
   const d = input.replace(/\D/g, '');
   if (d.startsWith('254')) return `+${d}`;
@@ -118,6 +127,10 @@ export default function TeamPage() {
           >
             <option value="ADMIN">Admin</option>
             <option value="SUPPORT">Support</option>
+            <option value="FINANCIAL_MANAGER">Financial Manager</option>
+            <option value="MARKETING">Marketing Personnel</option>
+            <option value="CLEANING_SUPERVISOR">Cleaning Supervisor</option>
+            <option value="SHAREHOLDER">Shareholder</option>
           </select>
           <button
             type="submit"
@@ -152,7 +165,7 @@ export default function TeamPage() {
                   {m.isOwner ? (
                     <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs text-gold-deep">Owner</span>
                   ) : (
-                    <span className="text-text-muted">{m.role === 'ADMIN' ? 'Admin' : 'Support'}</span>
+                    <span className="text-text-muted">{ROLE_LABELS[m.role] ?? m.role}</span>
                   )}
                 </td>
                 <td className="px-5 py-3 text-right">

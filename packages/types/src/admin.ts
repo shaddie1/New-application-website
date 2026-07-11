@@ -47,7 +47,13 @@ export interface AdminStats {
 
 // ── Team / staff management (owner only) ────────────────────────────────────
 
-export type StaffRole = 'ADMIN' | 'SUPPORT';
+export type StaffRole =
+  | 'ADMIN'
+  | 'SUPPORT'
+  | 'FINANCIAL_MANAGER'
+  | 'MARKETING'
+  | 'CLEANING_SUPERVISOR'
+  | 'SHAREHOLDER';
 
 export interface AdminStaffDto {
   id: string;
