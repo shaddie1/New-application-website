@@ -1,9 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ExpenseCategory, ExpenseDto, FinancialSummary, JobDto, MonthlyTrendItem } from '@onyxhawk/types';
+import type {
+  AllTimeTotals,
+  ExpenseCategory,
+  ExpenseDto,
+  FinancialSummary,
+  JobDto,
+  MonthlyTrendItem,
+} from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
+
+// How many months of history the Monthly trends tab can show at once.
+const TREND_RANGES = [6, 12, 24];
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -50,6 +60,8 @@ export default function FinancialsPage() {
   const [jobs, setJobs] = useState<JobDto[]>([]);
   const [pendingReports, setPendingReports] = useState<JobDto[]>([]);
   const [trends, setTrends] = useState<MonthlyTrendItem[]>([]);
+  const [trendMonths, setTrendMonths] = useState(12);
+  const [totals, setTotals] = useState<AllTimeTotals | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,22 +86,24 @@ export default function FinancialsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sumRes, jobsRes, reportsRes, trendsRes] = await Promise.all([
+      const [sumRes, jobsRes, reportsRes, trendsRes, totalsRes] = await Promise.all([
         api.financialSummary(from, to),
         api.jobs(from, to),
         api.pendingReports(),
-        api.financialTrends(6),
+        api.financialTrends(trendMonths),
+        api.financialTotals(),
       ]);
       setSummary(sumRes.summary);
       setJobs(jobsRes.jobs);
       setPendingReports(reportsRes.reports);
       setTrends(trendsRes.trends);
+      setTotals(totalsRes.totals);
     } catch (err) {
       setError(err instanceof ApiError ? `Could not load data (${err.status}).` : 'Could not load financials.');
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, trendMonths]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -290,7 +304,32 @@ export default function FinancialsPage() {
 
       {error && <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>}
 
-      {/* Summary cards */}
+      {/* All-time totals — everything the business has done so far. */}
+      <div className="mb-6 rounded-xl border border-border bg-surface-dark px-5 py-4 flex flex-wrap items-center gap-x-10 gap-y-3">
+        <div>
+          <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Projects so far</p>
+          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+            {loading || !totals ? '—' : totals.totalProjects}
+          </p>
+        </div>
+        <div>
+          <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Income generated so far</p>
+          <p className="mt-1 text-2xl text-gold" style={{ fontFamily: 'Georgia, serif' }}>
+            {loading || !totals ? '—' : fmt(totals.totalIncomeCents)}
+          </p>
+        </div>
+        <div>
+          <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Net profit so far</p>
+          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+            {loading || !totals ? '—' : fmt(totals.totalNetCents)}
+          </p>
+        </div>
+        {totals?.firstJobDate && (
+          <p className="text-text-on-dark-muted text-xs ml-auto">Since {totals.firstJobDate}</p>
+        )}
+      </div>
+
+      {/* Summary cards — the selected month */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <SummaryCard label="Income" cents={summary?.incomeCents} color="text-success" loading={loading} />
         <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} color="text-danger" loading={loading} />
@@ -567,6 +606,25 @@ export default function FinancialsPage() {
       {/* ── Tab: Monthly trends ────────────────────────────────────────────── */}
       {tab === 'trends' && (
         <div>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm text-text-muted">Income, expenses and profit for every month.</span>
+            <div className="flex items-center gap-1">
+              {TREND_RANGES.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setTrendMonths(n)}
+                  className={`rounded-lg px-3 py-1.5 text-sm ${
+                    trendMonths === n
+                      ? 'bg-surface-dark text-text-on-dark'
+                      : 'border border-border text-text-muted hover:bg-bg-muted'
+                  }`}
+                >
+                  {n} months
+                </button>
+              ))}
+            </div>
+          </div>
+
           {loading ? (
             <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
           ) : trends.length === 0 ? (
@@ -575,29 +633,52 @@ export default function FinancialsPage() {
             <>
               {/* Mini bar-chart using proportional widths */}
               <div className="mb-6 rounded-xl border border-border bg-surface p-5">
-                <p className="text-xs text-text-muted uppercase tracking-widest mb-4">Net profit — last 6 months</p>
-                <div className="space-y-2">
+                <p className="text-xs text-text-muted uppercase tracking-widest mb-4">
+                  Income &amp; net profit — last {trends.length} months
+                </p>
+                <div className="space-y-3">
                   {(() => {
-                    const maxAbs = Math.max(...trends.map((t) => Math.abs(t.netCents)), 1);
+                    // Both bars share one scale, so income and profit stay comparable.
+                    const maxAbs = Math.max(
+                      ...trends.map((t) => Math.max(Math.abs(t.netCents), t.incomeCents)),
+                      1,
+                    );
                     return trends.map((t) => {
-                      const pct = Math.round((Math.abs(t.netCents) / maxAbs) * 100);
+                      const incomePct = Math.round((t.incomeCents / maxAbs) * 100);
+                      const netPct = Math.round((Math.abs(t.netCents) / maxAbs) * 100);
                       const positive = t.netCents >= 0;
                       return (
                         <div key={`${t.year}-${t.month}`} className="flex items-center gap-3">
                           <span className="text-xs text-text-muted w-16 shrink-0">{t.label}</span>
-                          <div className="flex-1 bg-bg-muted rounded-full h-3 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${positive ? 'bg-success' : 'bg-danger'}`}
-                              style={{ width: `${pct}%` }}
-                            />
+                          <div className="flex-1 space-y-1">
+                            <div className="bg-bg-muted rounded-full h-2.5 overflow-hidden">
+                              <div className="h-full rounded-full bg-gold" style={{ width: `${incomePct}%` }} />
+                            </div>
+                            <div className="bg-bg-muted rounded-full h-2.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${positive ? 'bg-success' : 'bg-danger'}`}
+                                style={{ width: `${netPct}%` }}
+                              />
+                            </div>
                           </div>
-                          <span className={`text-xs font-medium w-24 text-right shrink-0 ${positive ? 'text-success' : 'text-danger'}`}>
-                            {fmt(t.netCents)}
+                          <span className="text-xs font-medium w-28 text-right shrink-0">
+                            <span className="text-gold-deep block">{fmt(t.incomeCents)}</span>
+                            <span className={positive ? 'text-success block' : 'text-danger block'}>
+                              {fmt(t.netCents)}
+                            </span>
                           </span>
                         </div>
                       );
                     });
                   })()}
+                </div>
+                <div className="mt-4 flex items-center gap-5 text-xs text-text-muted">
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm bg-gold" /> Income
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm bg-success" /> Net profit
+                  </span>
                 </div>
               </div>
 
@@ -628,7 +709,7 @@ export default function FinancialsPage() {
                   </tbody>
                   <tfoot className="border-t-2 border-border bg-bg-muted/30">
                     <tr>
-                      <td className="px-5 py-3 font-medium">6-month total</td>
+                      <td className="px-5 py-3 font-medium">{trends.length}-month total</td>
                       <td className="px-5 py-3 text-right font-medium text-text-muted">
                         {trends.reduce((acc, t) => acc + t.jobCount, 0)}
                       </td>

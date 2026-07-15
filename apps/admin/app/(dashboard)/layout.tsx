@@ -22,7 +22,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!session) return null; // redirecting to /login
 
   const nav = session.user.isOwner
-    ? [...NAV, { href: '/team', label: 'Team' }, { href: '/financials', label: 'Financials' }]
+    ? [
+        ...NAV,
+        { href: '/team', label: 'Team' },
+        { href: '/financials', label: 'Financials' },
+        { href: '/equity', label: 'Ownership' },
+      ]
     : [...NAV, { href: '/job-reports', label: 'Job Reports' }];
 
   return (

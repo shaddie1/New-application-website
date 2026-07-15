@@ -18,6 +18,11 @@ import type {
   UpdateJobInput,
   CreateJobReportInput,
   MonthlyTrendItem,
+  ShareholderDto,
+  CreateShareholderInput,
+  UpdateShareholderInput,
+  EquityOverview,
+  AllTimeTotals,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -191,6 +196,43 @@ export const api = {
       `/admin/financials/trends?months=${months}`,
       { method: 'GET', auth: true },
     ),
+
+  // ── All-time totals (owner only) ─────────────────────────────────────────
+  financialTotals: () =>
+    request<{ totals: AllTimeTotals }>('/admin/financials/totals', { method: 'GET', auth: true }),
+
+  // ── Ownership / cap table (owner only) ───────────────────────────────────
+  equity: (from: string, to: string) =>
+    request<{ overview: EquityOverview }>(
+      `/admin/financials/equity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  shareholders: () =>
+    request<{ shareholders: ShareholderDto[]; totalBasisPoints: number }>(
+      '/admin/financials/shareholders',
+      { method: 'GET', auth: true },
+    ),
+
+  addShareholder: (input: CreateShareholderInput) =>
+    request<{ shareholder: ShareholderDto }>('/admin/financials/shareholders', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  updateShareholder: (id: string, input: UpdateShareholderInput) =>
+    request<{ shareholder: ShareholderDto }>(`/admin/financials/shareholders/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  removeShareholder: (id: string) =>
+    request<{ ok: true }>(`/admin/financials/shareholders/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      auth: true,
+    }),
 
   // ── Pending report submissions (owner only) ──────────────────────────────
   pendingReports: () =>

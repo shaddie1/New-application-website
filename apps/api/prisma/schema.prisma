@@ -85,6 +85,9 @@ model User {
   jobsCreated        Job[]          @relation("JobsCreatedBy")
   jobsReported       Job[]          @relation("JobsReportedBy")
 
+  // Set only when this user is also on the cap table (see Shareholder).
+  shareholder        Shareholder?   @relation("UserShareholder")
+
   @@index([referredByUserId])
 }
 
@@ -657,6 +660,38 @@ model Expense {
   @@index([date])
   @@index([jobId])
   @@index([createdById])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ownership / cap table
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ShareholderKind {
+  COMPANY
+  INDIVIDUAL
+}
+
+// One row per party on the cap table. Profit is split by these stakes.
+model Shareholder {
+  id          String          @id @default(cuid())
+  name        String
+  // Role/title at the company, e.g. "Director", "COO". Null for the company itself.
+  title       String?
+  kind        ShareholderKind @default(INDIVIDUAL)
+  // Stake in basis points: 10000 = 100.00%, 4000 = 40%. An integer for the same
+  // reason money is in cents — the stakes must sum to exactly 100% with no
+  // floating-point drift.
+  basisPoints Int
+  notes       String?
+  // Optional link to a staff account, so a shareholder can also be a user who
+  // signs in. Nullable: the company itself holds shares but is not a user.
+  user        User?           @relation("UserShareholder", fields: [userId], references: [id])
+  userId      String?         @unique
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([sortOrder])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

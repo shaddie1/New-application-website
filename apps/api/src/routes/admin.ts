@@ -195,10 +195,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   // ── Team / staff management (OWNER only) ──────────────────────────────────
 
-  // List admins, support staff, and the owner.
+  // List every staff member (all staff roles, not just admin/support) and the owner.
   app.get('/staff', { preHandler: requireOwner }, async (_req, reply) => {
     const rows = await prisma.user.findMany({
-      where: { OR: [{ role: { in: [UserRole.ADMIN, UserRole.SUPPORT] } }, { isOwner: true }], deletedAt: null },
+      where: { OR: [{ role: { in: [...STAFF_ROLES] } }, { isOwner: true }], deletedAt: null },
       orderBy: { createdAt: 'asc' },
       select: staffSelect,
     });
@@ -260,7 +260,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-const STAFF_ROLES = new Set([
+// Typed as the full UserRole so `.has()` accepts any role, not just staff ones.
+const STAFF_ROLES = new Set<UserRole>([
   UserRole.ADMIN,
   UserRole.SUPPORT,
   UserRole.FINANCIAL_MANAGER,

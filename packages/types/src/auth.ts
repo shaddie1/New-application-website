@@ -1,6 +1,16 @@
 /** Auth DTOs shared between API, mobile, and (future) web. */
 
-export type UserRole = 'CUSTOMER' | 'CREW' | 'CREW_LEAD' | 'ADMIN' | 'SUPPORT';
+/** Mirrors the UserRole enum in prisma/schema.prisma — keep the two in step. */
+export type UserRole =
+  | 'CUSTOMER'
+  | 'CREW'
+  | 'CREW_LEAD'
+  | 'ADMIN'
+  | 'SUPPORT'
+  | 'FINANCIAL_MANAGER'
+  | 'MARKETING'
+  | 'CLEANING_SUPERVISOR'
+  | 'SHAREHOLDER';
 
 export interface PublicUser {
   id: string;
