@@ -33,6 +33,9 @@ services:
       - key: MPESA_CALLBACK_URL
         sync: false
 
+  # The admin app is a Next.js static export (see apps/admin/next.config.mjs):
+  # `next build` emits plain HTML/JS into out/, so there is no server to start —
+  # we serve those files. `next start` would fail here.
   - type: web
     name: onyxhawk-admin
     runtime: node
