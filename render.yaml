@@ -2,6 +2,7 @@ services:
   - type: web
     name: onyxhawk-api
     runtime: node
+    plan: free
     buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@onyxhawk/api...
     startCommand: pnpm --filter @onyxhawk/api start:prod
     healthCheckPath: /health
@@ -39,6 +40,7 @@ services:
   - type: web
     name: onyxhawk-admin
     runtime: node
+    plan: free
     buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@onyxhawk/admin...
     startCommand: pnpm --filter @onyxhawk/admin start:prod
     envVars:
