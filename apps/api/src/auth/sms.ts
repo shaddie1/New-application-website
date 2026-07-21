@@ -25,8 +25,11 @@ export async function sendSms(to: string, body: string, log: SmsLogger): Promise
     username: env.AT_USERNAME!,
     to,
     message: body,
-    from: env.SMS_SENDER_ID,
   });
+  // Only claim a sender ID when one is configured (and therefore approved);
+  // otherwise Africa's Talking uses its shared default sender.
+  const senderId = env.SMS_SENDER_ID?.trim();
+  if (senderId) form.set('from', senderId);
 
   const res = await fetch('https://api.africastalking.com/version1/messaging', {
     method: 'POST',

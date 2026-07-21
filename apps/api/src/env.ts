@@ -19,7 +19,10 @@ const EnvSchema = z.object({
 
   AT_USERNAME: z.string().optional(),
   AT_API_KEY: z.string().optional(),
-  SMS_SENDER_ID: z.string().default('ONYXHAWK'),
+  // Alphanumeric sender IDs must be registered and approved with Africa's
+  // Talking before use. Leave unset until approved — messages then go out via
+  // AT's shared default sender instead of being rejected.
+  SMS_SENDER_ID: z.string().optional(),
 
   MPESA_BASE_URL: z.string().url().default('https://sandbox.safaricom.co.ke'),
   MPESA_CONSUMER_KEY: z.string().min(1),
