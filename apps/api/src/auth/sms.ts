@@ -41,9 +41,27 @@ export async function sendSms(to: string, body: string, log: SmsLogger): Promise
     body: form.toString(),
   });
 
+  const text = await res.text().catch(() => '<unreadable body>');
   if (!res.ok) {
-    const text = await res.text().catch(() => '<unreadable body>');
     log.error({ status: res.status, text }, 'Africa\'s Talking SMS send failed');
     throw new Error(`SMS send failed: ${res.status}`);
+  }
+
+  // AT answers 201 even when it refuses delivery ("Sent to 0/1") — the real
+  // outcome is per-recipient. 1xx codes mean accepted; 4xx+ are refusals such
+  // as UserInBlacklist or InsufficientBalance.
+  let recipients: { status: string; statusCode: number }[] = [];
+  try {
+    const data = JSON.parse(text) as {
+      SMSMessageData?: { Recipients?: { status: string; statusCode: number }[] };
+    };
+    recipients = data.SMSMessageData?.Recipients ?? [];
+  } catch {
+    log.warn({ text }, 'Africa\'s Talking returned a non-JSON body; assuming sent');
+  }
+  const refused = recipients.find((r) => r.statusCode >= 400);
+  if (refused) {
+    log.error({ to, recipients }, 'Africa\'s Talking refused the SMS');
+    throw new Error(`SMS not delivered: ${refused.status}`);
   }
 }
