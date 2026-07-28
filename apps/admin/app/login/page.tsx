@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { api, ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
 
+// Keep in step with the staffRoles allowlist in src/lib/auth.tsx.
+const STAFF_ROLES = ['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER'];
+
 export default function LoginPage() {
   const router = useRouter();
   const { session, setSession } = useAuth();
@@ -16,9 +19,9 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Already signed in as admin → go to dashboard.
+  // Already signed in as staff → go to dashboard.
   useEffect(() => {
-    if (session && (session.user.role === 'ADMIN' || session.user.role === 'SUPPORT')) {
+    if (session && STAFF_ROLES.includes(session.user.role)) {
       router.replace('/');
     }
   }, [session, router]);
@@ -41,7 +44,12 @@ export default function LoginPage() {
       if (otp) setCode(otp); // auto-fill in dev
       setStep('code');
     } catch (err) {
-      setError(messageFrom(err, 'Could not send the code.'));
+      const msg = messageFrom(err, 'Could not send the code.');
+      setError(msg);
+      // The server stores the code before attempting the SMS, so when only
+      // delivery failed a valid code still exists — show the entry box so a
+      // code issued another way (scripts/issue-otp.ts) can be used.
+      if (msg.startsWith('SMS')) setStep('code');
     } finally {
       setBusy(false);
     }
@@ -57,8 +65,8 @@ export default function LoginPage() {
         return;
       }
       const role = res.session.user.role;
-      if (role !== 'ADMIN' && role !== 'SUPPORT') {
-        setError('This number is not an admin account.');
+      if (!STAFF_ROLES.includes(role)) {
+        setError('This number is not a staff account.');
         return;
       }
       setSession(res.session);
@@ -149,8 +157,12 @@ export default function LoginPage() {
 }
 
 function messageFrom(err: unknown, fallback: string): string {
-  if (err instanceof ApiError && typeof err.payload === 'object' && err.payload && 'error' in err.payload) {
-    return String((err.payload as { error: unknown }).error);
+  if (err instanceof ApiError && typeof err.payload === 'object' && err.payload) {
+    const payload = err.payload as { message?: unknown; error?: unknown };
+    // Prefer the specific message ("SMS not delivered: …") over the generic
+    // error name ("Internal Server Error").
+    if (typeof payload.message === 'string' && payload.message) return payload.message;
+    if (typeof payload.error === 'string' && payload.error) return payload.error;
   }
   return fallback;
 }
