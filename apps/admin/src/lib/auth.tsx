@@ -40,7 +40,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionState(null);
   }, []);
 
-  // Sign out automatically after 30 minutes of inactivity.
+  // Sign out automatically after 12 hours of inactivity. (Was 30 minutes —
+  // relaxed while SMS OTP delivery in Kenya is unreliable, since every forced
+  // re-login needs a manually issued code. Tighten again once the ONYXHAWK
+  // sender ID is approved and normal SMS login works.)
   useEffect(() => {
     if (!session) return;
 
@@ -48,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const reset = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => void signOut(), 30 * 60 * 1000);
+      timer = setTimeout(() => void signOut(), 12 * 60 * 60 * 1000);
     };
 
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'] as const;
