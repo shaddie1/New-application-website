@@ -50,3 +50,16 @@ services:
         value: production
       - key: NEXT_PUBLIC_API_URL
         sync: false
+
+  # Customer-facing site — same static-export pattern as the admin.
+  - type: web
+    name: onyxhawk-web
+    runtime: node
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@onyxhawk/web...
+    startCommand: pnpm --filter @onyxhawk/web start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
