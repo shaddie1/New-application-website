@@ -23,6 +23,18 @@ import type {
   UpdateShareholderInput,
   EquityOverview,
   AllTimeTotals,
+  MarketingSpendDto,
+  CreateMarketingSpendInput,
+  AssetDto,
+  CreateAssetInput,
+  CreateAssetMaintenanceInput,
+  InvestmentDto,
+  CreateInvestmentInput,
+  ProfitDistributionDto,
+  DeclareDistributionInput,
+  MarkDistributionPaidInput,
+  RevenueBreakdown,
+  UnreconciledItem,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -236,6 +248,110 @@ export const api = {
 
   removeShareholder: (id: string) =>
     request<{ ok: true }>(`/admin/financials/shareholders/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      auth: true,
+    }),
+
+  // ── Finance: marketing, assets, investments, distributions ───────────────
+  marketingSpends: (from: string, to: string) =>
+    request<{ spends: MarketingSpendDto[] }>(
+      `/admin/finance/marketing?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  addMarketingSpend: (input: CreateMarketingSpendInput) =>
+    request<{ spend: MarketingSpendDto }>('/admin/finance/marketing', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteMarketingSpend: (id: string) =>
+    request<{ ok: true }>(`/admin/finance/marketing/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  assets: () => request<{ assets: AssetDto[] }>('/admin/finance/assets', { method: 'GET', auth: true }),
+
+  addAsset: (input: CreateAssetInput) =>
+    request<{ asset: AssetDto }>('/admin/finance/assets', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  updateAsset: (id: string, input: Partial<CreateAssetInput>) =>
+    request<{ asset: AssetDto }>(`/admin/finance/assets/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteAsset: (id: string) =>
+    request<{ ok: true }>(`/admin/finance/assets/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  addAssetMaintenance: (assetId: string, input: CreateAssetMaintenanceInput) =>
+    request<{ asset: AssetDto }>(`/admin/finance/assets/${encodeURIComponent(assetId)}/maintenance`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  investments: () =>
+    request<{ investments: InvestmentDto[] }>('/admin/finance/investments', { method: 'GET', auth: true }),
+
+  addInvestment: (input: CreateInvestmentInput) =>
+    request<{ investment: InvestmentDto }>('/admin/finance/investments', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteInvestment: (id: string) =>
+    request<{ ok: true }>(`/admin/finance/investments/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  revenueBreakdown: (from: string, to: string) =>
+    request<{ breakdown: RevenueBreakdown }>(
+      `/admin/finance/revenue-breakdown?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  unreconciled: (from: string, to: string) =>
+    request<{ items: UnreconciledItem[] }>(
+      `/admin/finance/unreconciled?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  reconcile: (
+    kind: 'EXPENSE' | 'MARKETING',
+    id: string,
+    input: { reconciled?: boolean; receiptRef?: string | null; receiptUrl?: string | null },
+  ) =>
+    request<{ ok: true }>(`/admin/finance/reconcile/${kind}/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  distributions: () =>
+    request<{ distributions: ProfitDistributionDto[] }>('/admin/finance/distributions', {
+      method: 'GET',
+      auth: true,
+    }),
+
+  declareDistribution: (input: DeclareDistributionInput) =>
+    request<{ distributions: ProfitDistributionDto[] }>('/admin/finance/distributions/declare', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  updateDistribution: (id: string, input: MarkDistributionPaidInput) =>
+    request<{ distribution: ProfitDistributionDto }>(
+      `/admin/finance/distributions/${encodeURIComponent(id)}`,
+      { method: 'PATCH', auth: true, body: JSON.stringify(input) },
+    ),
+
+  deleteDistribution: (id: string) =>
+    request<{ ok: true }>(`/admin/finance/distributions/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       auth: true,
     }),

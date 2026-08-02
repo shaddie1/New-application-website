@@ -88,6 +88,14 @@ model User {
   // Set only when this user is also on the cap table (see Shareholder).
   shareholder        Shareholder?   @relation("UserShareholder")
 
+  // Finance records this user entered. Every finance row carries provenance so
+  // shareholders can see who booked what, and when.
+  marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
+  assetsCreated        Asset[]              @relation("AssetCreatedBy")
+  assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
+  investmentsCreated   Investment[]         @relation("InvestmentCreatedBy")
+  distributionsCreated ProfitDistribution[] @relation("ProfitDistributionCreatedBy")
+
   @@index([referredByUserId])
 }
 
@@ -615,6 +623,12 @@ model Job {
   clientPhone    String?
   clientLocation String?
   notes          String?
+  // Revenue analysis dimensions (§ finance: revenue by line, region, segment).
+  // Optional so existing jobs stay valid; the catalog code is free text rather
+  // than a relation because manual jobs may predate a catalog entry.
+  serviceLineCode String?
+  region          String?
+  clientSegment   ClientSegment?
   createdBy      User      @relation("JobsCreatedBy", fields: [createdById], references: [id])
   createdById    String
   reportedBy     User?     @relation("JobsReportedBy", fields: [reportedById], references: [id])
@@ -648,6 +662,11 @@ model Expense {
   amountCents Int
   description String?
   date        DateTime        @db.Date
+  // Source document: an M-Pesa code, invoice number, or an uploaded image.
+  // `reconciled` marks the entry as matched against a statement.
+  receiptRef  String?
+  receiptUrl  String?
+  reconciled  Boolean         @default(false)
   job         Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
   jobId       String?
   booking     Booking?        @relation(fields: [bookingId], references: [id])
@@ -660,6 +679,180 @@ model Expense {
   @@index([date])
   @@index([jobId])
   @@index([createdById])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Finance: marketing, assets, investments, profit distribution
+//
+// Every model here carries provenance (createdById + timestamps) and a source
+// reference, because these are the records shareholders audit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ClientSegment {
+  RESIDENTIAL
+  COMMERCIAL
+  MEDICAL
+  DEVELOPER
+}
+
+enum MarketingChannel {
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  GOOGLE
+  WHATSAPP
+  FLYERS
+  RADIO
+  REFERRAL
+  OTHER
+}
+
+model MarketingSpend {
+  id          String           @id @default(cuid())
+  campaign    String
+  channel     MarketingChannel
+  amountCents Int
+  date        DateTime         @db.Date
+  notes       String?
+  // Measured uplift, filled in when it can be attributed.
+  leadsCount    Int?
+  bookingsCount Int?
+  receiptRef  String?
+  receiptUrl  String?
+  reconciled  Boolean          @default(false)
+  createdBy   User             @relation("MarketingSpendCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([date])
+  @@index([channel])
+}
+
+enum AssetCategory {
+  MACHINE
+  VEHICLE
+  EQUIPMENT
+  TOOL
+  IT
+  FURNITURE
+  OTHER
+}
+
+enum AssetCondition {
+  NEW
+  GOOD
+  FAIR
+  POOR
+  RETIRED
+}
+
+model Asset {
+  id           String         @id @default(cuid())
+  name         String
+  category     AssetCategory
+  purchaseDate DateTime       @db.Date
+  costCents    Int
+  supplier     String?
+  serialNumber String?
+  location     String?
+  // Straight-line depreciation: cost spread evenly over the useful life down to
+  // the salvage value. Null life means the asset is not depreciated.
+  usefulLifeMonths  Int?
+  salvageValueCents Int       @default(0)
+  condition    AssetCondition @default(GOOD)
+  retiredAt    DateTime?
+  notes        String?
+  receiptRef   String?
+  receiptUrl   String?
+  maintenance  AssetMaintenance[]
+  createdBy    User           @relation("AssetCreatedBy", fields: [createdById], references: [id])
+  createdById  String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([category])
+  @@index([purchaseDate])
+}
+
+model AssetMaintenance {
+  id          String   @id @default(cuid())
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assetId     String
+  date        DateTime @db.Date
+  description String
+  costCents   Int      @default(0)
+  performedBy String?
+  receiptRef  String?
+  createdBy   User     @relation("AssetMaintenanceCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([assetId])
+  @@index([date])
+}
+
+enum InvestmentKind {
+  CAPITAL_INJECTION
+  LOAN
+  GRANT
+  OTHER
+}
+
+model Investment {
+  id            String         @id @default(cuid())
+  source        String // who put the money in
+  kind          InvestmentKind @default(CAPITAL_INJECTION)
+  amountCents   Int
+  date          DateTime       @db.Date
+  purpose       String
+  // Optional link when the investor is on the cap table.
+  shareholder   Shareholder?   @relation(fields: [shareholderId], references: [id])
+  shareholderId String?
+  reference     String?
+  documentUrl   String?
+  createdBy     User           @relation("InvestmentCreatedBy", fields: [createdById], references: [id])
+  createdById   String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([date])
+  @@index([shareholderId])
+}
+
+enum DistributionStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+/**
+ * One shareholder's payout for one period. `basisPoints` and `netProfitCents`
+ * are snapshots taken when the distribution is created — a later change to the
+ * cap table must never rewrite what was already declared or paid.
+ */
+model ProfitDistribution {
+  id             String             @id @default(cuid())
+  label          String // e.g. "Q1 2026" or "July 2026"
+  periodStart    DateTime           @db.Date
+  periodEnd      DateTime           @db.Date
+  shareholder    Shareholder        @relation(fields: [shareholderId], references: [id])
+  shareholderId  String
+  netProfitCents Int
+  basisPoints    Int
+  amountCents    Int
+  status         DistributionStatus @default(PENDING)
+  paidAt         DateTime?
+  reference      String? // M-Pesa code or bank transfer reference
+  notes          String?
+  createdBy      User               @relation("ProfitDistributionCreatedBy", fields: [createdById], references: [id])
+  createdById    String
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([periodStart, periodEnd, shareholderId])
+  @@index([status])
+  @@index([periodStart])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -690,6 +883,9 @@ model Shareholder {
   sortOrder   Int             @default(0)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
+  investments   Investment[]
+  distributions ProfitDistribution[]
 
   @@index([sortOrder])
 }

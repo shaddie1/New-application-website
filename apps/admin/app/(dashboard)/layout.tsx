@@ -26,6 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ...NAV,
         { href: '/team', label: 'Team' },
         { href: '/financials', label: 'Financials' },
+        { href: '/finance', label: 'Finance' },
         { href: '/equity', label: 'Ownership' },
       ]
     : [...NAV, { href: '/job-reports', label: 'Job Reports' }];

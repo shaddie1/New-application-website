@@ -173,6 +173,204 @@ export interface MonthlyTrendItem {
   jobCount: number;
 }
 
+// ── Finance: marketing, assets, investments, distributions ──────────────────
+
+/** Who entered a record and when — shown on every finance row. */
+export interface Provenance {
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ClientSegment = 'RESIDENTIAL' | 'COMMERCIAL' | 'MEDICAL' | 'DEVELOPER';
+
+export type MarketingChannel =
+  | 'FACEBOOK'
+  | 'INSTAGRAM'
+  | 'TIKTOK'
+  | 'GOOGLE'
+  | 'WHATSAPP'
+  | 'FLYERS'
+  | 'RADIO'
+  | 'REFERRAL'
+  | 'OTHER';
+
+export interface MarketingSpendDto extends Provenance {
+  id: string;
+  campaign: string;
+  channel: MarketingChannel;
+  amountCents: number;
+  date: string; // YYYY-MM-DD
+  notes: string | null;
+  leadsCount: number | null;
+  bookingsCount: number | null;
+  receiptRef: string | null;
+  receiptUrl: string | null;
+  reconciled: boolean;
+  /** Cost per booking, when bookings have been attributed. */
+  costPerBookingCents: number | null;
+}
+
+export interface CreateMarketingSpendInput {
+  campaign: string;
+  channel: MarketingChannel;
+  amountCents: number;
+  date: string;
+  notes?: string;
+  leadsCount?: number;
+  bookingsCount?: number;
+  receiptRef?: string;
+  receiptUrl?: string;
+}
+
+export type AssetCategory = 'MACHINE' | 'VEHICLE' | 'EQUIPMENT' | 'TOOL' | 'IT' | 'FURNITURE' | 'OTHER';
+export type AssetCondition = 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'RETIRED';
+
+export interface AssetMaintenanceDto {
+  id: string;
+  date: string;
+  description: string;
+  costCents: number;
+  performedBy: string | null;
+  receiptRef: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface AssetDto extends Provenance {
+  id: string;
+  name: string;
+  category: AssetCategory;
+  purchaseDate: string;
+  costCents: number;
+  supplier: string | null;
+  serialNumber: string | null;
+  location: string | null;
+  usefulLifeMonths: number | null;
+  salvageValueCents: number;
+  condition: AssetCondition;
+  retiredAt: string | null;
+  notes: string | null;
+  receiptRef: string | null;
+  receiptUrl: string | null;
+  /** Straight-line depreciation to date, and what the asset is worth now. */
+  accumulatedDepreciationCents: number;
+  bookValueCents: number;
+  maintenance: AssetMaintenanceDto[];
+  totalMaintenanceCents: number;
+}
+
+export interface CreateAssetInput {
+  name: string;
+  category: AssetCategory;
+  purchaseDate: string;
+  costCents: number;
+  supplier?: string;
+  serialNumber?: string;
+  location?: string;
+  usefulLifeMonths?: number;
+  salvageValueCents?: number;
+  condition?: AssetCondition;
+  notes?: string;
+  receiptRef?: string;
+  receiptUrl?: string;
+}
+
+export interface CreateAssetMaintenanceInput {
+  date: string;
+  description: string;
+  costCents?: number;
+  performedBy?: string;
+  receiptRef?: string;
+}
+
+export type InvestmentKind = 'CAPITAL_INJECTION' | 'LOAN' | 'GRANT' | 'OTHER';
+
+export interface InvestmentDto extends Provenance {
+  id: string;
+  source: string;
+  kind: InvestmentKind;
+  amountCents: number;
+  date: string;
+  purpose: string;
+  shareholderId: string | null;
+  shareholderName: string | null;
+  reference: string | null;
+  documentUrl: string | null;
+}
+
+export interface CreateInvestmentInput {
+  source: string;
+  kind: InvestmentKind;
+  amountCents: number;
+  date: string;
+  purpose: string;
+  shareholderId?: string | null;
+  reference?: string;
+  documentUrl?: string;
+}
+
+export type DistributionStatus = 'PENDING' | 'PAID' | 'CANCELLED';
+
+export interface ProfitDistributionDto extends Provenance {
+  id: string;
+  label: string;
+  periodStart: string;
+  periodEnd: string;
+  shareholderId: string;
+  shareholderName: string;
+  /** Snapshots taken when declared — a later cap-table edit must not rewrite history. */
+  netProfitCents: number;
+  basisPoints: number;
+  amountCents: number;
+  status: DistributionStatus;
+  paidAt: string | null;
+  reference: string | null;
+  notes: string | null;
+}
+
+/** Declare a period's distribution for every shareholder at once. */
+export interface DeclareDistributionInput {
+  label: string;
+  periodStart: string;
+  periodEnd: string;
+  /** Omit to use the net profit calculated for the period. */
+  netProfitCentsOverride?: number;
+}
+
+export interface MarkDistributionPaidInput {
+  status: DistributionStatus;
+  reference?: string;
+  notes?: string;
+}
+
+/** Revenue split by an analysis dimension. */
+export interface RevenueBreakdownItem {
+  key: string;
+  label: string;
+  incomeCents: number;
+  jobCount: number;
+}
+
+export interface RevenueBreakdown {
+  byServiceLine: RevenueBreakdownItem[];
+  byRegion: RevenueBreakdownItem[];
+  bySegment: RevenueBreakdownItem[];
+  totalIncomeCents: number;
+  fromDate: string;
+  toDate: string;
+}
+
+/** A record still missing a source document, for the reconciliation screen. */
+export interface UnreconciledItem {
+  id: string;
+  kind: 'EXPENSE' | 'MARKETING';
+  date: string;
+  description: string;
+  amountCents: number;
+  hasReceipt: boolean;
+}
+
 // ── Ownership / cap table (owner only) ──────────────────────────────────────
 
 export type ShareholderKind = 'COMPANY' | 'INDIVIDUAL';
