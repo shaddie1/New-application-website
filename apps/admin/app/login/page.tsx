@@ -12,9 +12,10 @@ export default function LoginPage() {
   const router = useRouter();
   const { session, setSession } = useAuth();
 
-  const [step, setStep] = useState<'phone' | 'code'>('phone');
+  const [step, setStep] = useState<'phone' | 'code' | 'password'>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,24 @@ export default function LoginPage() {
       // delivery failed a valid code still exists — show the entry box so a
       // code issued another way (scripts/issue-otp.ts) can be used.
       if (msg.startsWith('SMS')) setStep('code');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signInWithPassword = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await api.signInWithPassword(e164(phone), password);
+      if (!STAFF_ROLES.includes(res.session.user.role)) {
+        setError('This number is not a staff account.');
+        return;
+      }
+      setSession(res.session);
+      router.replace('/');
+    } catch (err) {
+      setError(messageFrom(err, 'Could not sign in.'));
     } finally {
       setBusy(false);
     }
@@ -113,6 +132,49 @@ export default function LoginPage() {
               className="mt-4 w-full rounded-lg bg-gold py-3 font-semibold text-surface-dark disabled:opacity-50"
             >
               {busy ? 'Sending…' : 'Send code'}
+            </button>
+            <button
+              onClick={() => { setStep('password'); setError(null); }}
+              className="mt-3 w-full text-text-muted text-sm underline"
+            >
+              Sign in with a password instead
+            </button>
+          </div>
+        ) : step === 'password' ? (
+          <div className="mt-6">
+            <label className="text-text-muted text-xs uppercase tracking-widest">Phone</label>
+            <div className="mt-2 flex items-center rounded-lg border border-border bg-surface px-4 py-3">
+              <span className="text-text-muted mr-2">+254</span>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="712 480 392"
+                inputMode="tel"
+                className="flex-1 bg-transparent outline-none text-text"
+              />
+            </div>
+            <label className="mt-4 block text-text-muted text-xs uppercase tracking-widest">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Your password"
+              autoComplete="current-password"
+              className="mt-2 w-full rounded-lg border border-border bg-surface px-4 py-3 outline-none text-text"
+              onKeyDown={(e) => e.key === 'Enter' && signInWithPassword()}
+            />
+            <button
+              onClick={signInWithPassword}
+              disabled={busy || !phone || !password}
+              className="mt-4 w-full rounded-lg bg-gold py-3 font-semibold text-surface-dark disabled:opacity-50"
+            >
+              {busy ? 'Signing in…' : 'Sign in'}
+            </button>
+            <button
+              onClick={() => { setStep('phone'); setPassword(''); setError(null); }}
+              className="mt-3 w-full text-text-muted text-sm underline"
+            >
+              Use an SMS code instead
             </button>
           </div>
         ) : (

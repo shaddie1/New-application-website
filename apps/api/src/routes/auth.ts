@@ -1,10 +1,12 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import type { RegisterInput, RequestOtpInput, VerifyOtpInput } from '@onyxhawk/types';
+import type { PasswordSignInInput, RegisterInput, RequestOtpInput, VerifyOtpInput } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { issueSignInOtp, verifySignInOtp, OtpError } from '../auth/otp.js';
 import { signRegistrationToken, verifyRegistrationToken } from '../auth/jwt.js';
+import { verifyPassword } from '../auth/password.js';
+import { lockoutSecondsRemaining, recordFailure, clearFailures } from '../auth/throttle.js';
 import { issueSession, rotateRefreshToken, revokeRefreshToken, toPublicUser, RefreshError } from '../auth/tokens.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
 import { requireAuth } from '../auth/middleware.js';
@@ -17,6 +19,10 @@ const phoneSchema = z
 
 const RequestOtpSchema = z.object({ phone: phoneSchema }) satisfies z.ZodType<RequestOtpInput>;
 const VerifyOtpSchema = z.object({ phone: phoneSchema, code: z.string().regex(/^\d{6}$/) }) satisfies z.ZodType<VerifyOtpInput>;
+const PasswordSignInSchema = z.object({
+  phone: phoneSchema,
+  password: z.string().min(1).max(200),
+}) satisfies z.ZodType<PasswordSignInInput>;
 const RefreshSchema = z.object({ refreshToken: z.string().min(1) });
 const LogoutSchema = z.object({ refreshToken: z.string().min(1) });
 const RegisterSchema = z.object({
@@ -82,6 +88,50 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const tokens = await issueSession({ id: user.id, role: user.role }, { device: req.headers['user-agent'] ?? undefined });
     return reply.send({
       kind: 'AUTHENTICATED',
+      session: {
+        user: toPublicUser(user),
+        accessToken: tokens.accessToken,
+        accessExpiresAt: tokens.accessExpiresAt.toISOString(),
+        refreshToken: tokens.refreshToken,
+        refreshExpiresAt: tokens.refreshExpiresAt.toISOString(),
+      },
+    });
+  });
+
+  // ── Password sign-in (staff; no SMS involved) ───────────────────────────
+  // Only accounts that have deliberately been given a password can use this;
+  // customers remain OTP-only. Set one with scripts/set-password.ts.
+
+  app.post('/sign-in-password', async (req, reply) => {
+    const parsed = PasswordSignInSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { phone, password } = parsed.data;
+
+    const lockedFor = lockoutSecondsRemaining(phone);
+    if (lockedFor > 0) {
+      return reply
+        .code(429)
+        .send({ error: `Too many attempts. Try again in ${Math.ceil(lockedFor / 60)} minute(s).` });
+    }
+
+    const user = await prisma.user.findUnique({ where: { phone } });
+
+    // One message for every failure mode, so the endpoint cannot be used to
+    // discover which numbers have accounts or passwords.
+    const reject = () => {
+      recordFailure(phone);
+      return reply.code(401).send({ error: 'Invalid phone number or password.' });
+    };
+
+    if (!user || user.deletedAt || !user.passwordHash) return reject();
+    if (!(await verifyPassword(password, user.passwordHash))) return reject();
+
+    clearFailures(phone);
+    const tokens = await issueSession(
+      { id: user.id, role: user.role },
+      { device: req.headers['user-agent'] ?? undefined },
+    );
+    return reply.send({
       session: {
         user: toPublicUser(user),
         accessToken: tokens.accessToken,

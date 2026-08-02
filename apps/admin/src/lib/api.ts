@@ -96,6 +96,12 @@ export const api = {
   verifyOtp: (phone: string, code: string) =>
     request<VerifyOtpResult>('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ phone, code }) }),
 
+  signInWithPassword: (phone: string, password: string) =>
+    request<{ session: Session }>('/auth/sign-in-password', {
+      method: 'POST',
+      body: JSON.stringify({ phone, password }),
+    }),
+
   logout: (refreshToken: string) =>
     request<{ ok: true }>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
 

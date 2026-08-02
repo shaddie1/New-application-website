@@ -49,6 +49,12 @@ export interface VerifyOtpInput {
   phone: string;
   code: string;
 }
+
+/** POST /auth/sign-in-password — staff sign-in that does not depend on SMS. */
+export interface PasswordSignInInput {
+  phone: string;
+  password: string;
+}
 export type VerifyOtpResult =
   | { kind: 'AUTHENTICATED'; session: Session }
   | { kind: 'NEEDS_REGISTRATION'; registrationToken: string; phone: string };
