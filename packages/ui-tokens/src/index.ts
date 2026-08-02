@@ -38,6 +38,14 @@ export const colors = {
   // Border / lines
   border: '#E2DCC9',
   borderStrong: '#C7BFA8',
+
+  // Dark theme for the marketing site: charcoal/near-black surfaces carrying
+  // the gold accent. Warm-tinted rather than neutral grey so gold sits on them
+  // without looking cold.
+  ink: '#12100E',          // page background
+  inkRaised: '#1B1814',    // cards on ink (matches surfaceDark)
+  inkSoft: '#241F1A',      // hovers, alternating bands, inputs
+  inkBorder: '#31291F',    // hairlines on ink
 } as const;
 
 export const radii = {

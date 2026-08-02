@@ -1,89 +1,38 @@
-'use client';
+import type { Metadata } from 'next';
 
-import { useEffect, useState } from 'react';
-import type { ServiceLineDto } from '@onyxhawk/types';
+import { Section, SectionHeading } from '../../../src/components/layout';
+import { ServicesSection } from '../../../src/components/marketing/Services';
+import { HowItWorks } from '../../../src/components/marketing/HowItWorks';
+import { WhoWeServe } from '../../../src/components/marketing/WhoWeServe';
+import { FinalCta } from '../../../src/components/marketing/FinalCta';
+import { ALL_SERVICES, SERVICE_AREAS } from '../../../src/content/site';
 
-import { api, apiErrorMessage } from '../../../src/lib/api';
-import { imageForService } from '../../../src/lib/serviceImages';
-import { Banner, ButtonLink, Card, Pill, Spinner } from '../../../src/components/ui';
+/**
+ * A server component so the page ships real metadata — the previous version was
+ * client-only and fetched the catalog on mount, which left search engines with
+ * an empty page and the site's default title.
+ */
+export const metadata: Metadata = {
+  title: 'Cleaning services in Nairobi — homes, offices, medical & post-construction',
+  description: `${ALL_SERVICES.map((s) => s.name).join(', ')}. Professional cleaning across Nairobi (${SERVICE_AREAS.join(', ')}) and countrywide, with vetted insured crews and M-Pesa payment.`,
+  alternates: { canonical: '/services' },
+};
 
 export default function ServicesPage() {
-  const [lines, setLines] = useState<ServiceLineDto[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .getServiceLines()
-      .then((r) => setLines(r.serviceLines))
-      .catch((e) => setError(apiErrorMessage(e, 'Could not load services.')));
-  }, []);
-
   return (
-    <div className="mx-auto max-w-6xl px-5 py-16">
-      <h1 className="font-serif text-4xl text-text">Services</h1>
-      <p className="mt-3 max-w-xl text-text-muted">
-        From a quick standard clean to specialist fumigation — pick what your space needs.
-      </p>
+    <>
+      <Section className="pb-0">
+        <SectionHeading
+          eyebrow="Services"
+          title="Cleaning for every kind of space"
+          lead="Everyday cleaning for homes and workplaces, plus specialist treatments for what a regular clean cannot reach. Every job is quoted up front and paid by M-Pesa."
+        />
+      </Section>
 
-      <div className="mt-10">
-        {error ? <Banner>{error}</Banner> : null}
-        {!lines && !error ? (
-          <div className="flex justify-center py-20 text-text-muted">
-            <Spinner />
-          </div>
-        ) : null}
-        {lines ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {lines.map((line) => (
-              <Card key={line.id} className="flex flex-col overflow-hidden">
-                <div className="relative -mx-5 -mt-5 mb-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={imageForService(line.code, line.imageUrl)}
-                    alt={`${line.name} cleaning`}
-                    loading="lazy"
-                    className="h-40 w-full bg-bg-muted object-cover"
-                  />
-                  {line.badge !== 'NONE' ? (
-                    <Pill className="absolute right-3 top-3 bg-surface text-gold-deep shadow-sm">
-                      {badgeLabel(line.badge)}
-                    </Pill>
-                  ) : null}
-                </div>
-                <h2 className="text-lg font-medium text-text">{line.name}</h2>
-                {line.tagline ? <p className="mt-1 text-sm text-text-muted">{line.tagline}</p> : null}
-                <div className="mt-auto flex items-center justify-between pt-4">
-                  <span className="text-sm text-text-muted">
-                    {line.quoteOnly ? 'Custom quote' : 'Book online'}
-                  </span>
-                  {line.quoteOnly ? (
-                    <ButtonLink href="/quote" variant="secondary" size="sm">
-                      Get a quote
-                    </ButtonLink>
-                  ) : (
-                    <ButtonLink href="/sign-in" size="sm">
-                      Book
-                    </ButtonLink>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
+      <ServicesSection heading={false} />
+      <HowItWorks />
+      <WhoWeServe />
+      <FinalCta />
+    </>
   );
-}
-
-function badgeLabel(badge: ServiceLineDto['badge']): string {
-  switch (badge) {
-    case 'MOST_BOOKED':
-      return 'Most booked';
-    case 'CERTIFIED':
-      return 'Certified';
-    case 'NEW':
-      return 'New';
-    default:
-      return '';
-  }
 }

@@ -63,17 +63,21 @@ const SOCIALS: { name: string; href: string; icon: ReactNode }[] = [
 ];
 
 export function Footer() {
+  // Only show socials that point somewhere — the rest are still placeholders.
+  const socials = SOCIALS.filter((s) => s.href !== '#');
+
   return (
-    <footer className="mt-24 bg-surface-dark text-text-on-dark-muted">
-      <div className="mx-auto max-w-6xl px-5 py-12">
+    <footer className="border-t border-ink-border bg-ink-raised text-text-on-dark-muted">
+      <div className="mx-auto max-w-6xl px-5 py-12 sm:px-6">
         <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
           <div className="max-w-xs">
             <Brand onDark />
             <p className="mt-3 text-sm">
-              Premium cleaning crews across Nairobi. Pay with M-Pesa, earn Hawk Points on every clean.
+              Professional cleaning for homes, offices, clinics and post-construction sites across Nairobi and
+              countrywide. Pay with M-Pesa, earn Hawk Points on every clean.
             </p>
             <div className="mt-5 flex gap-3">
-              {SOCIALS.map((s) => (
+              {socials.map((s) => (
                 <a
                   key={s.name}
                   href={s.href}
@@ -87,7 +91,7 @@ export function Footer() {
               ))}
             </div>
           </div>
-          <div className="flex gap-12">
+          <div className="flex flex-wrap gap-10 sm:gap-12">
             <div className="flex flex-col gap-2 text-sm">
               <span className="text-text-on-dark">Company</span>
               <Link href="/services" className="hover:text-text-on-dark">
@@ -95,6 +99,12 @@ export function Footer() {
               </Link>
               <Link href="/how-it-works" className="hover:text-text-on-dark">
                 How it works
+              </Link>
+              <Link href="/about" className="hover:text-text-on-dark">
+                About us
+              </Link>
+              <Link href="/contact" className="hover:text-text-on-dark">
+                Contact
               </Link>
               <Link href="/quote" className="hover:text-text-on-dark">
                 Get a quote
@@ -117,6 +127,7 @@ export function Footer() {
               <a href="mailto:info@onyxhawkcleaningservice.com" className="hover:text-text-on-dark">
                 info@onyxhawkcleaningservice.com
               </a>
+              <span>Hodamatt Building, Base Road, Roysambu</span>
               <span>Nairobi, Kenya</span>
             </div>
           </div>

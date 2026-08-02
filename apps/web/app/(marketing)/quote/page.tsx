@@ -32,8 +32,16 @@ export default function QuotePage() {
   useEffect(() => {
     api.getServiceLines().then((r) => {
       setLines(r.serviceLines);
-      const firstQuoteOnly = r.serviceLines.find((l) => l.quoteOnly) ?? r.serviceLines[0];
-      if (firstQuoteOnly) setServiceLineCode(firstQuoteOnly.code);
+
+      // Service cards link here as /quote?service=<code>; honour that when it
+      // matches a real line. Read from location rather than useSearchParams so
+      // the statically exported page needs no Suspense boundary.
+      const requested = new URLSearchParams(window.location.search).get('service');
+      const preselected = requested ? r.serviceLines.find((l) => l.code === requested) : undefined;
+
+      const fallback = r.serviceLines.find((l) => l.quoteOnly) ?? r.serviceLines[0];
+      const chosen = preselected ?? fallback;
+      if (chosen) setServiceLineCode(chosen.code);
     }).catch(() => undefined);
   }, []);
 
