@@ -81,6 +81,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.jpg" alt="OnyxHawk Cleaning Service" className="h-16 w-auto mb-4" />
         <p className="text-text-muted text-xs uppercase tracking-[0.2em]">OnyxHawk</p>
         <h1 className="text-4xl mt-2" style={{ fontFamily: 'Georgia, serif' }}>
           Back-office<span className="text-gold-deep italic">.</span>

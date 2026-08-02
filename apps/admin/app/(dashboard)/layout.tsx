@@ -35,8 +35,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <header className="border-b border-border bg-surface">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <span className="text-lg" style={{ fontFamily: 'Georgia, serif' }}>
-              OnyxHawk <span className="text-gold-deep">Admin</span>
+            <span className="flex items-center gap-2.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.jpg" alt="OnyxHawk Cleaning Service" className="h-10 w-auto" />
+              <span className="text-lg" style={{ fontFamily: 'Georgia, serif' }}>
+                OnyxHawk <span className="text-gold-deep">Admin</span>
+              </span>
             </span>
             <nav className="flex items-center gap-1">
               {nav.map((item) => {
