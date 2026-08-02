@@ -6,10 +6,11 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "_comment": "build and typecheck regenerate the Prisma client first: postinstall only runs when dependencies actually change, so a cached node_modules (as on CI) otherwise compiles against a client that predates the current schema.",
+    "build": "prisma generate && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "start:prod": "prisma migrate deploy && node dist/index.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",
