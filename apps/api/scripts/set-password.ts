@@ -33,11 +33,19 @@ async function main() {
     console.log(`Setting a password for ${user.fullName} (${phone}, ${user.role}${user.isOwner ? ', owner' : ''}).`);
     if (user.passwordHash) console.log('This account already has a password — it will be replaced.');
 
-    const password = (await rl.question(`New password (min ${MIN_PASSWORD_LENGTH} characters): `)).trim();
+    // Strip only the line terminator — never trim. The sign-in endpoint hashes
+    // exactly what the browser sends, so trimming here would silently store a
+    // different password from the one that was typed.
+    const readLine = async (prompt: string) => (await rl.question(prompt)).replace(/\r$/, '');
+
+    const password = await readLine(`New password (min ${MIN_PASSWORD_LENGTH} characters): `);
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
     }
-    const confirm = (await rl.question('Confirm password: ')).trim();
+    if (password !== password.trim()) {
+      console.log('Note: your password starts or ends with a space — it counts, so type it that way when signing in.');
+    }
+    const confirm = await readLine('Confirm password: ');
     if (password !== confirm) throw new Error('Passwords do not match.');
 
     await prisma.user.update({
