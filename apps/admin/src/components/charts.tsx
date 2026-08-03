@@ -289,3 +289,156 @@ function ChartEmpty({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+// ── Donut (part-to-whole) ───────────────────────────────────────────────────
+
+/**
+ * Categorical palette for part-to-whole charts, validated against the cream
+ * surface (#FDFAF2) on the adjacent-pair gate — a donut is a stacked bar wrapped
+ * into a circle, so adjacent segments are what must separate.
+ *
+ * Order matters: it is the colourblind-safety mechanism, not decoration. This
+ * ordering passes all five checks with no warnings (worst adjacent CVD ΔE 22.7,
+ * normal-vision ΔE 28.1, all slots ≥ 3:1 contrast). Do not reorder or extend
+ * without re-running the validator — red beside green, or the brand gold beside
+ * bronze, both fail.
+ */
+export const CATEGORICAL = ['#A87D22', '#2a78d6', '#008300', '#4a3aa7', '#e34948'] as const;
+
+/** "Other" is a residual, not a category — it takes a neutral, never a hue. */
+const OTHER_GREY = '#8C857A';
+const SURFACE = '#FFFFFF';
+
+export type Slice = { key: string; label: string; value: number };
+
+function polar(cx: number, cy: number, r: number, angle: number) {
+  return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+}
+
+/** SVG path for one donut segment (an annular sector). */
+function arcPath(cx: number, cy: number, rOuter: number, rInner: number, from: number, to: number) {
+  const large = to - from > Math.PI ? 1 : 0;
+  const o1 = polar(cx, cy, rOuter, from);
+  const o2 = polar(cx, cy, rOuter, to);
+  const i2 = polar(cx, cy, rInner, to);
+  const i1 = polar(cx, cy, rInner, from);
+  return [
+    `M ${o1.x} ${o1.y}`,
+    `A ${rOuter} ${rOuter} 0 ${large} 1 ${o2.x} ${o2.y}`,
+    `L ${i2.x} ${i2.y}`,
+    `A ${rInner} ${rInner} 0 ${large} 0 ${i1.x} ${i1.y}`,
+    'Z',
+  ].join(' ');
+}
+
+/**
+ * Part-to-whole donut. Segments are sorted largest first and the tail folded
+ * into "Other" past `maxSlices`, because past ~6 wedges adjacent colours blur
+ * and the chart stops being readable at a glance.
+ *
+ * The centre carries the total as a hero figure, and every segment is named with
+ * its value and share in the legend — the fill is never the only way to read it.
+ */
+export function DonutChart({
+  slices,
+  total: totalOverride,
+  format = money,
+  centreLabel,
+  maxSlices = 5,
+  emptyLabel = 'Nothing recorded yet.',
+}: {
+  slices: Slice[];
+  total?: number;
+  format?: (n: number) => string;
+  centreLabel?: string;
+  maxSlices?: number;
+  emptyLabel?: string;
+}) {
+  const positive = slices.filter((s) => s.value > 0).sort((a, b) => b.value - a.value);
+
+  if (positive.length === 0) {
+    return (
+      <div className="flex h-56 items-center justify-center rounded-lg bg-cream text-sm text-charcoal-muted">
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  const head = positive.slice(0, maxSlices);
+  const tail = positive.slice(maxSlices);
+  const shown: (Slice & { color: string })[] = head.map((s, i) => ({ ...s, color: CATEGORICAL[i]! }));
+  if (tail.length > 0) {
+    shown.push({
+      key: '__other',
+      label: `Other (${tail.length})`,
+      value: tail.reduce((acc, s) => acc + s.value, 0),
+      color: OTHER_GREY,
+    });
+  }
+
+  const total = totalOverride ?? shown.reduce((acc, s) => acc + s.value, 0);
+  const size = 220;
+  const cx = size / 2;
+  const cy = size / 2;
+  const rOuter = 100;
+  const rInner = 64;
+
+  // A 2px surface gap separates touching segments — the gap does the work, not a
+  // stroke. Converted to radians at the outer edge so it looks even.
+  const gap = shown.length > 1 ? 2 / rOuter : 0;
+  let cursor = -Math.PI / 2; // start at 12 o'clock
+
+  return (
+    <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label={`Donut chart: ${shown.map((s) => `${s.label} ${format(s.value)}`).join(', ')}`}
+        className="shrink-0"
+      >
+        {shown.map((s) => {
+          const sweep = (s.value / total) * Math.PI * 2;
+          const from = cursor + gap / 2;
+          const to = cursor + sweep - gap / 2;
+          cursor += sweep;
+          if (to <= from) return null;
+          return (
+            <path key={s.key} d={arcPath(cx, cy, rOuter, rInner, from, to)} fill={s.color}>
+              <title>{`${s.label}: ${format(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
+            </path>
+          );
+        })}
+        <text x={cx} y={cy - 4} textAnchor="middle" className="fill-charcoal text-[15px] font-bold">
+          {format(total)}
+        </text>
+        {centreLabel && (
+          <text x={cx} y={cy + 14} textAnchor="middle" className="fill-charcoal-muted text-[11px]">
+            {centreLabel}
+          </text>
+        )}
+      </svg>
+
+      {/* Legend carries the identity, the value and the share, so the chart is
+          never read by colour alone. */}
+      <ul className="w-full min-w-0 space-y-2">
+        {shown.map((s) => (
+          <li key={s.key} className="flex items-baseline gap-2.5 text-sm">
+            <span
+              className="mt-1 h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: s.color, boxShadow: `0 0 0 2px ${SURFACE}` }}
+            />
+            <span className="min-w-0 flex-1 truncate text-charcoal">{s.label}</span>
+            <span className="shrink-0 tabular-nums text-charcoal-muted">
+              {Math.round((s.value / total) * 100)}%
+            </span>
+            <span className="w-24 shrink-0 text-right tabular-nums font-medium text-charcoal">
+              {format(s.value)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

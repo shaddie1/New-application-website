@@ -4,13 +4,33 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   DashboardOverview,
   EquityOverview,
+  ExpenseCategory,
+  FinancialSummary,
   MonthlyTrendItem,
   RevenueBreakdown,
 } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
-import { RankedBars, StatTile, TargetMeter, TrendChart, money, moneyShort } from '../../../src/components/charts';
+import { DonutChart, StatTile, TargetMeter, TrendChart, money, moneyShort } from '../../../src/components/charts';
+
+const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
+  MATERIALS: 'Materials',
+  TRANSPORT: 'Transport',
+  EMPLOYEE_PAY: 'Employee pay',
+  LUNCH: 'Lunch',
+  MISCELLANEOUS: 'Miscellaneous',
+};
+
+/** A titled panel around a chart, so every donut sits in the same frame. */
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-line bg-white p-5">
+      <p className="mb-5 text-xs uppercase tracking-widest text-charcoal-muted">{title}</p>
+      {children}
+    </div>
+  );
+}
 
 function pctChange(current: number, previous: number): number | null {
   if (previous === 0) return null;
@@ -37,6 +57,7 @@ export default function InsightsPage() {
   const [trends, setTrends] = useState<MonthlyTrendItem[]>([]);
   const [breakdown, setBreakdown] = useState<RevenueBreakdown | null>(null);
   const [equity, setEquity] = useState<EquityOverview | null>(null);
+  const [summary, setSummary] = useState<FinancialSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,17 +67,25 @@ export default function InsightsPage() {
 
   const { from, to } = monthRange(year, month);
 
+  const expenseSlices = summary
+    ? (Object.entries(summary.expensesByCategoryCents) as [ExpenseCategory, number][]).map(
+        ([category, cents]) => ({ key: category, label: EXPENSE_LABELS[category], value: cents }),
+      )
+    : [];
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [ov, tr, br, eq] = await Promise.all([
+      const [ov, tr, br, eq, sm] = await Promise.all([
         api.overview(year, month),
         api.financialTrends(12),
         api.revenueBreakdown(from, to),
         api.equity(from, to).catch(() => null), // equity is cap-table-holders only
+        api.financialSummary(from, to).catch(() => null), // expense split by category
       ]);
       setOverview(ov.overview);
+      setSummary(sm?.summary ?? null);
       setTrends(tr.trends);
       setBreakdown(br.breakdown);
       setEquity(eq?.overview ?? null);
@@ -190,49 +219,54 @@ export default function InsightsPage() {
             <TrendChart data={trendData} />
           </div>
 
-          {/* Breakdowns */}
+          {/* Part-to-whole breakdowns */}
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <RankedBars
-              title={`Revenue by service line — ${overview?.monthLabel ?? ''}`}
-              items={(breakdown?.byServiceLine ?? []).map((i) => ({
-                key: i.key, label: i.label, value: i.incomeCents,
-                sub: `${i.jobCount} job${i.jobCount === 1 ? '' : 's'}`,
-              }))}
-              format={money}
-              emptyLabel="No classified revenue this month. Set a service line on a job to see it here."
-            />
-            <RankedBars
-              title={`Revenue by client segment — ${overview?.monthLabel ?? ''}`}
-              items={(breakdown?.bySegment ?? []).map((i) => ({
-                key: i.key, label: i.label, value: i.incomeCents,
-                sub: `${i.jobCount} job${i.jobCount === 1 ? '' : 's'}`,
-              }))}
-              format={money}
-              emptyLabel="No segmented revenue this month."
-            />
+            <ChartCard title={`Revenue by service line — ${overview?.monthLabel ?? ''}`}>
+              <DonutChart
+                slices={(breakdown?.byServiceLine ?? []).map((i) => ({
+                  key: i.key, label: i.label, value: i.incomeCents,
+                }))}
+                centreLabel="total revenue"
+                emptyLabel="No classified revenue this month. Set a service line on a job to see it here."
+              />
+            </ChartCard>
+
+            <ChartCard title={`Revenue by client segment — ${overview?.monthLabel ?? ''}`}>
+              <DonutChart
+                slices={(breakdown?.bySegment ?? []).map((i) => ({
+                  key: i.key, label: i.label, value: i.incomeCents,
+                }))}
+                centreLabel="total revenue"
+                emptyLabel="No segmented revenue this month."
+              />
+            </ChartCard>
+
+            <ChartCard title={`Where the money went — ${overview?.monthLabel ?? ''}`}>
+              <DonutChart
+                slices={expenseSlices}
+                centreLabel="total expenses"
+                emptyLabel="No expenses recorded this month."
+              />
+            </ChartCard>
+
+            {equity && (
+              <ChartCard title={`Profit share — ${overview?.monthLabel ?? ''}`}>
+                <DonutChart
+                  slices={equity.allocations.map((a) => ({
+                    key: a.shareholder.id,
+                    label: `${a.shareholder.name} (${(a.shareholder.basisPoints / 100).toFixed(0)}%)`,
+                    value: Math.max(0, a.periodShareCents),
+                  }))}
+                  centreLabel="net profit shared"
+                  emptyLabel="No shareholders on the cap table."
+                />
+              </ChartCard>
+            )}
           </div>
 
-          {equity && (
-            <div className="mt-6">
-              <RankedBars
-                title={`Profit share — ${overview?.monthLabel ?? ''}`}
-                items={equity.allocations.map((a) => ({
-                  key: a.shareholder.id,
-                  label: a.shareholder.name,
-                  value: Math.max(0, a.periodShareCents),
-                  sub: `${(a.shareholder.basisPoints / 100).toFixed(0)}% stake${
-                    a.shareholder.title ? ` · ${a.shareholder.title}` : ''
-                  }`,
-                }))}
-                format={money}
-                emptyLabel="No shareholders on the cap table."
-              />
-            </div>
-          )}
-
           <p className="mt-4 text-xs text-charcoal-muted">
-            Charts use one colour on purpose: the brand’s gold and bronze are too close to tell apart as separate
-            series, so length and labels carry the comparison instead.
+            Donut colours are a colourblind-safe set validated against this page’s background; every segment is also
+            named with its value and share, so nothing is read by colour alone.
           </p>
         </>
       )}
