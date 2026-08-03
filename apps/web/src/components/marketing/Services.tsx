@@ -1,26 +1,26 @@
 import Link from 'next/link';
 
-import { DarkCard, IconChip, Section, SectionHeading } from '../layout';
+import { SurfaceCard, IconChip, Section, SectionHeading } from '../layout';
 import { ArrowRightIcon } from '../icons';
 import { Icon } from './iconMap';
 import { EVERYDAY_SERVICES, SPECIALIST_SERVICES, type ServiceEntry } from '../../content/site';
 
 function ServiceCard({ service }: { service: ServiceEntry }) {
   return (
-    <DarkCard interactive className="flex flex-col">
+    <SurfaceCard interactive className="flex flex-col">
       <IconChip>
         <Icon name={service.icon} />
       </IconChip>
-      <h3 className="mt-4 text-lg font-semibold text-text-on-dark">{service.name}</h3>
-      <p className="mt-2 flex-1 text-sm leading-relaxed text-text-on-dark-muted">{service.description}</p>
+      <h3 className="mt-4 text-lg font-semibold text-charcoal">{service.name}</h3>
+      <p className="mt-2 flex-1 text-sm leading-relaxed text-charcoal-muted">{service.description}</p>
       <Link
         href={`/quote?service=${service.code}`}
-        className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-gold transition-colors hover:text-gold-soft"
+        className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-bronze transition-colors hover:text-charcoal"
       >
         Get quote
         <ArrowRightIcon className="h-4 w-4" />
       </Link>
-    </DarkCard>
+    </SurfaceCard>
   );
 }
 
@@ -36,7 +36,7 @@ export function ServicesSection({ heading = true }: { heading?: boolean }) {
       ) : null}
 
       <div className="mt-12">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-text-on-dark-muted">Everyday cleaning</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-charcoal-muted">Everyday cleaning</h3>
         <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {EVERYDAY_SERVICES.map((service) => (
             <ServiceCard key={service.code} service={service} />
@@ -45,7 +45,7 @@ export function ServicesSection({ heading = true }: { heading?: boolean }) {
       </div>
 
       <div className="mt-14">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-text-on-dark-muted">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-charcoal-muted">
           Specialist add-ons
         </h3>
         <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">

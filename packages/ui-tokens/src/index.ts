@@ -39,13 +39,23 @@ export const colors = {
   border: '#E2DCC9',
   borderStrong: '#C7BFA8',
 
-  // Dark theme for the marketing site: charcoal/near-black surfaces carrying
-  // the gold accent. Warm-tinted rather than neutral grey so gold sits on them
-  // without looking cold.
-  ink: '#12100E',          // page background
-  inkRaised: '#1B1814',    // cards on ink (matches surfaceDark)
-  inkSoft: '#241F1A',      // hovers, alternating bands, inputs
-  inkBorder: '#31291F',    // hairlines on ink
+  // Dark surfaces, used for the footer and other grounding bands.
+  ink: '#12100E',
+  inkRaised: '#1B1814',
+  inkSoft: '#241F1A',
+  inkBorder: '#31291F',
+
+  // Bright brand palette (company brand sheet): cream page, black structure,
+  // hawk gold as the accent, bronze wherever gold would be too pale to read.
+  cream: '#FDFAF2',        // page background
+  creamDeep: '#F4F1E6',    // alternating bands, hovers
+  neutralLight: '#F2F2F2',
+  goldBright: '#D4A843',   // accent: fills, icons, key numbers
+  bronze: '#A87D22',       // accent text and links on cream — gold alone is
+                           // too low-contrast for small type on a light page
+  charcoal: '#14120F',     // headings and body text
+  charcoalMuted: '#5A5348', // secondary text
+  line: '#E8E2D2',         // hairlines on cream
 } as const;
 
 export const radii = {

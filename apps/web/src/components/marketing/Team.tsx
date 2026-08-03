@@ -23,24 +23,24 @@ export function Team() {
         {TEAM.map((member) => (
           <li
             key={member.role}
-            className="overflow-hidden rounded-xl border border-ink-border bg-ink-raised text-center"
+            className="overflow-hidden rounded-xl border border-line bg-white text-center"
           >
-            <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-ink-soft to-ink">
+            <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-cream-deep to-cream">
               {member.photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={member.photo} alt={member.name ?? member.role} className="h-full w-full object-cover" />
               ) : (
-                <UsersIcon className="h-9 w-9 text-gold/40" />
+                <UsersIcon className="h-9 w-9 text-bronze/40" />
               )}
             </div>
             <div className="px-4 py-5">
               {member.name ? (
                 <>
-                  <p className="text-sm font-semibold text-text-on-dark">{member.name}</p>
-                  <p className="mt-1 text-xs text-text-on-dark-muted">{member.role}</p>
+                  <p className="text-sm font-semibold text-charcoal">{member.name}</p>
+                  <p className="mt-1 text-xs text-charcoal-muted">{member.role}</p>
                 </>
               ) : (
-                <p className="text-sm font-semibold text-text-on-dark">{member.role}</p>
+                <p className="text-sm font-semibold text-charcoal">{member.role}</p>
               )}
             </div>
           </li>

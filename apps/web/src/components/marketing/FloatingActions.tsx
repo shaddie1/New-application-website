@@ -14,7 +14,7 @@ export function FloatingActions() {
   return (
     <>
       {/* Mobile: sticky action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-border bg-ink/95 px-4 py-3 backdrop-blur sm:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-cream/95 px-4 py-3 backdrop-blur sm:hidden">
         <div className="flex items-center gap-3">
           <Link
             href="/quote"
@@ -27,7 +27,7 @@ export function FloatingActions() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Chat with OnyxHawk on WhatsApp"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-pill border border-gold/30 text-gold"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-pill border border-gold-bright/45 text-bronze"
           >
             <WhatsAppIcon className="h-6 w-6" />
           </a>

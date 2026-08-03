@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { DarkCard, IconChip, Section, SectionHeading } from '../../../src/components/layout';
+import { SurfaceCard, IconChip, Section, SectionHeading } from '../../../src/components/layout';
 import { ButtonLink } from '../../../src/components/ui';
 import {
   ArrowRightIcon,
@@ -75,63 +75,63 @@ export default function ContactPage() {
                 key={channel.label}
                 href={channel.href}
                 {...(channel.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                className="flex items-start gap-4 rounded-xl border border-ink-border bg-ink-raised p-5 transition-colors hover:border-gold/40 hover:bg-ink-soft"
+                className="flex items-start gap-4 rounded-xl border border-line bg-white p-5 transition-colors hover:border-gold-bright/55 hover:bg-cream-deep"
               >
                 <IconChip>
                   <channel.icon />
                 </IconChip>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-on-dark-muted">
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-charcoal-muted">
                     {channel.label}
                   </p>
-                  <p className="mt-1 truncate text-base font-medium text-text-on-dark">{channel.value}</p>
-                  <p className="mt-0.5 text-sm text-text-on-dark-muted">{channel.note}</p>
+                  <p className="mt-1 truncate text-base font-medium text-charcoal">{channel.value}</p>
+                  <p className="mt-0.5 text-sm text-charcoal-muted">{channel.note}</p>
                 </div>
               </a>
             ))}
 
-            <DarkCard>
+            <SurfaceCard>
               <div className="flex items-start gap-4">
                 <IconChip>
                   <PinIcon />
                 </IconChip>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-on-dark-muted">Visit us</p>
-                  <p className="mt-1 text-base text-text-on-dark">{COMPANY.addressLine}</p>
-                  <p className="text-sm text-text-on-dark-muted">{COMPANY.city}</p>
-                  <p className="mt-1 text-sm text-text-on-dark-muted">{COMPANY.postal}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-charcoal-muted">Visit us</p>
+                  <p className="mt-1 text-base text-charcoal">{COMPANY.addressLine}</p>
+                  <p className="text-sm text-charcoal-muted">{COMPANY.city}</p>
+                  <p className="mt-1 text-sm text-charcoal-muted">{COMPANY.postal}</p>
                 </div>
               </div>
-            </DarkCard>
+            </SurfaceCard>
 
-            <DarkCard>
+            <SurfaceCard>
               <div className="flex items-start gap-4">
                 <IconChip>
                   <ClockIcon />
                 </IconChip>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-on-dark-muted">Hours</p>
-                  <p className="mt-1 text-base text-text-on-dark">{COMPANY.hours}</p>
-                  <p className="mt-0.5 text-sm text-text-on-dark-muted">
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-charcoal-muted">Hours</p>
+                  <p className="mt-1 text-base text-charcoal">{COMPANY.hours}</p>
+                  <p className="mt-0.5 text-sm text-charcoal-muted">
                     Out-of-hours and weekend cleans available on request.
                   </p>
                 </div>
               </div>
-            </DarkCard>
+            </SurfaceCard>
           </div>
 
           {/* Booking panel */}
-          <div className="rounded-xl border border-gold/25 bg-gradient-to-br from-gold/[0.10] via-ink-raised to-ink-raised p-8">
-            <h2 className="text-2xl font-bold tracking-tight text-text-on-dark">Request a free quote</h2>
-            <p className="mt-3 text-sm leading-relaxed text-text-on-dark-muted">
+          <div className="rounded-xl border border-gold-bright/40 bg-gradient-to-br from-gold-bright/[0.14] via-white to-white p-8">
+            <h2 className="text-2xl font-bold tracking-tight text-charcoal">Request a free quote</h2>
+            <p className="mt-3 text-sm leading-relaxed text-charcoal-muted">
               Tell us the service, the size of the space and when you need it. We come back with a fixed price — no
               obligation, no hidden fees.
             </p>
 
             <ul className="mt-6 space-y-3">
               {QUOTE_INCLUDES.map((item) => (
-                <li key={item} className="flex items-start gap-3 text-sm text-text-on-dark-muted">
-                  <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+                <li key={item} className="flex items-start gap-3 text-sm text-charcoal-muted">
+                  <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-bronze" />
                   {item}
                 </li>
               ))}
@@ -145,23 +145,23 @@ export default function ContactPage() {
                 href="/book"
                 size="lg"
                 variant="secondary"
-                className="border-gold/30 bg-transparent text-text-on-dark hover:bg-gold/10"
+                className="border-gold-bright/45 bg-transparent text-charcoal hover:bg-gold-bright/15"
               >
                 Book online
               </ButtonLink>
             </div>
 
-            <div className="mt-8 flex items-start gap-3 border-t border-ink-border pt-6">
-              <PhonePayIcon className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
-              <p className="text-sm text-text-on-dark-muted">
-                <span className="font-medium text-text-on-dark">Pay by M-Pesa.</span> Approve the STK push on your
+            <div className="mt-8 flex items-start gap-3 border-t border-line pt-6">
+              <PhonePayIcon className="mt-0.5 h-5 w-5 shrink-0 text-bronze" />
+              <p className="text-sm text-charcoal-muted">
+                <span className="font-medium text-charcoal">Pay by M-Pesa.</span> Approve the STK push on your
                 phone when you book — no cash on site, and an instant receipt.
               </p>
             </div>
 
             <Link
               href="/services"
-              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-gold transition-colors hover:text-gold-soft"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-bronze transition-colors hover:text-charcoal"
             >
               Browse all services
               <ArrowRightIcon className="h-4 w-4" />
@@ -171,17 +171,17 @@ export default function ContactPage() {
       </Section>
 
       <Section tone="raised" className="py-14">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-text-on-dark-muted">Areas we cover</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-charcoal-muted">Areas we cover</h2>
         <ul className="mt-5 flex flex-wrap gap-2.5">
           {SERVICE_AREAS.map((area) => (
             <li
               key={area}
-              className="rounded-pill border border-ink-border bg-ink px-4 py-2 text-sm text-text-on-dark-muted"
+              className="rounded-pill border border-line bg-cream px-4 py-2 text-sm text-charcoal-muted"
             >
               {area}
             </li>
           ))}
-          <li className="rounded-pill border border-gold/30 bg-gold/10 px-4 py-2 text-sm text-gold">
+          <li className="rounded-pill border border-gold-bright/45 bg-gold-bright/15 px-4 py-2 text-sm text-bronze">
             …and countrywide
           </li>
         </ul>

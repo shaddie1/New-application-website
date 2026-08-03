@@ -10,15 +10,15 @@ export function Faq() {
         {FAQS.map((faq) => (
           <details
             key={faq.q}
-            className="group rounded-xl border border-ink-border bg-ink-raised px-6 py-5 transition-colors hover:border-gold/30"
+            className="group rounded-xl border border-line bg-white px-6 py-5 transition-colors hover:border-gold-bright/45"
           >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium text-text-on-dark [&::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium text-charcoal [&::-webkit-details-marker]:hidden">
               {faq.q}
-              <span className="shrink-0 text-xl leading-none text-gold transition-transform group-open:rotate-45">
+              <span className="shrink-0 text-xl leading-none text-bronze transition-transform group-open:rotate-45">
                 +
               </span>
             </summary>
-            <p className="mt-3 text-sm leading-relaxed text-text-on-dark-muted">{faq.a}</p>
+            <p className="mt-3 text-sm leading-relaxed text-charcoal-muted">{faq.a}</p>
           </details>
         ))}
       </div>

@@ -27,17 +27,17 @@ export function HowItWorks() {
         {HOW_IT_WORKS.map((step, index) => (
           <li key={step.title} className="relative flex gap-5 lg:block">
             <div className="relative shrink-0">
-              <IconChip className="border border-gold/25 bg-ink shadow-sm">
+              <IconChip className="border border-gold-bright/40 bg-cream shadow-sm">
                 <Icon name={step.icon} />
               </IconChip>
-              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-pill bg-gold text-[11px] font-bold text-ink">
+              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-pill bg-gold-bright text-[11px] font-bold text-charcoal">
                 {index + 1}
               </span>
             </div>
 
             <div className="lg:mt-5">
-              <h3 className="text-base font-semibold text-text-on-dark">{step.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-text-on-dark-muted lg:pr-4">{step.description}</p>
+              <h3 className="text-base font-semibold text-charcoal">{step.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-charcoal-muted lg:pr-4">{step.description}</p>
             </div>
           </li>
         ))}

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { DarkCard, IconChip, Section, SectionHeading } from '../../src/components/layout';
+import { SurfaceCard, IconChip, Section, SectionHeading } from '../../src/components/layout';
 import { ArrowRightIcon, BadgeCheckIcon, CameraIcon, LeafIcon, PhonePayIcon } from '../../src/components/icons';
 import { Hero } from '../../src/components/marketing/Hero';
 import { ServicesSection } from '../../src/components/marketing/Services';
@@ -52,7 +52,7 @@ export default function HomePage() {
             />
             <Link
               href="/about"
-              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-gold transition-colors hover:text-gold-soft"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-bronze transition-colors hover:text-charcoal"
             >
               Read our story
               <ArrowRightIcon className="h-4 w-4" />
@@ -61,13 +61,13 @@ export default function HomePage() {
 
           <div className="grid gap-5 sm:grid-cols-2">
             {DIFFERENTIATORS.map((item) => (
-              <DarkCard key={item.title}>
+              <SurfaceCard key={item.title}>
                 <IconChip>
                   <item.icon />
                 </IconChip>
-                <h3 className="mt-4 text-base font-semibold text-text-on-dark">{item.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-text-on-dark-muted">{item.text}</p>
-              </DarkCard>
+                <h3 className="mt-4 text-base font-semibold text-charcoal">{item.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-charcoal-muted">{item.text}</p>
+              </SurfaceCard>
             ))}
           </div>
         </div>

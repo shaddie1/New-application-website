@@ -26,8 +26,8 @@ export function Section({
 }) {
   const tones = {
     base: '',
-    raised: 'bg-ink-raised',
-    gold: 'bg-gradient-to-b from-gold/[0.07] to-transparent',
+    raised: 'bg-white',
+    gold: 'bg-gradient-to-b from-gold-bright/[0.12] to-transparent',
   } as const;
 
   return (
@@ -54,16 +54,16 @@ export function SectionHeading({
   return (
     <header className={cn('max-w-2xl', align === 'center' && 'mx-auto text-center', className)}>
       {eyebrow ? (
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-gold">{eyebrow}</p>
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-bronze">{eyebrow}</p>
       ) : null}
-      <h2 className="text-3xl font-bold leading-[1.1] tracking-tight text-text-on-dark sm:text-4xl">{title}</h2>
-      {lead ? <p className="mt-4 text-base leading-relaxed text-text-on-dark-muted sm:text-lg">{lead}</p> : null}
+      <h2 className="text-3xl font-bold leading-[1.1] tracking-tight text-charcoal sm:text-4xl">{title}</h2>
+      {lead ? <p className="mt-4 text-base leading-relaxed text-charcoal-muted sm:text-lg">{lead}</p> : null}
     </header>
   );
 }
 
-/** Card surface for dark sections. */
-export function DarkCard({
+/** White card sitting on the cream page. */
+export function SurfaceCard({
   className,
   children,
   interactive = false,
@@ -75,8 +75,8 @@ export function DarkCard({
   return (
     <div
       className={cn(
-        'rounded-xl border border-ink-border bg-ink-raised p-6 shadow-sm',
-        interactive && 'transition-colors hover:border-gold/40 hover:bg-ink-soft',
+        'rounded-xl border border-line bg-white p-6 shadow-sm',
+        interactive && 'transition-colors hover:border-gold-bright/55 hover:bg-cream-deep',
         className,
       )}
     >
@@ -90,7 +90,7 @@ export function IconChip({ children, className }: { children: ReactNode; classNa
   return (
     <span
       className={cn(
-        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-pill bg-gold/10 text-gold',
+        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-pill bg-gold-bright/15 text-bronze',
         className,
       )}
     >

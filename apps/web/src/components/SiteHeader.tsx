@@ -27,7 +27,7 @@ export function SiteHeader() {
   useEffect(() => setOpen(false), [pathname]);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-ink-border bg-ink/90 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-line bg-cream/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-6">
         <Brand />
 
@@ -40,7 +40,7 @@ export function SiteHeader() {
                 href={item.href}
                 className={cn(
                   'text-sm transition-colors',
-                  active ? 'font-medium text-gold' : 'text-text-on-dark-muted hover:text-text-on-dark',
+                  active ? 'font-medium text-bronze' : 'text-charcoal-muted hover:text-charcoal',
                 )}
               >
                 {item.label}
@@ -58,7 +58,7 @@ export function SiteHeader() {
             <>
               <Link
                 href="/sign-in"
-                className="hidden text-sm text-text-on-dark-muted transition-colors hover:text-text-on-dark sm:inline"
+                className="hidden text-sm text-charcoal-muted transition-colors hover:text-charcoal sm:inline"
               >
                 Sign in
               </Link>
@@ -73,7 +73,7 @@ export function SiteHeader() {
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? 'Close menu' : 'Open menu'}
             aria-expanded={open}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-text-on-dark md:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-charcoal md:hidden"
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               {open ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
@@ -83,7 +83,7 @@ export function SiteHeader() {
       </div>
 
       {open ? (
-        <nav className="border-t border-ink-border bg-ink px-5 py-4 md:hidden">
+        <nav className="border-t border-line bg-cream px-5 py-4 md:hidden">
           <ul className="space-y-1">
             {NAV.map((item) => (
               <li key={item.href}>
@@ -92,8 +92,8 @@ export function SiteHeader() {
                   className={cn(
                     'block rounded-md px-3 py-2.5 text-[15px]',
                     pathname === item.href
-                      ? 'bg-gold/10 font-medium text-gold'
-                      : 'text-text-on-dark-muted hover:bg-ink-soft hover:text-text-on-dark',
+                      ? 'bg-gold-bright/15 font-medium text-bronze'
+                      : 'text-charcoal-muted hover:bg-cream-deep hover:text-charcoal',
                   )}
                 >
                   {item.label}
@@ -104,7 +104,7 @@ export function SiteHeader() {
           {!signedIn ? (
             <Link
               href="/sign-in"
-              className="mt-3 block rounded-md px-3 py-2.5 text-[15px] text-text-on-dark-muted hover:bg-ink-soft hover:text-text-on-dark"
+              className="mt-3 block rounded-md px-3 py-2.5 text-[15px] text-charcoal-muted hover:bg-cream-deep hover:text-charcoal"
             >
               Sign in
             </Link>

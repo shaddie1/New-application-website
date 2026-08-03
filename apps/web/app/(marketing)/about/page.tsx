@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { DarkCard, IconChip, Section, SectionHeading } from '../../../src/components/layout';
+import { SurfaceCard, IconChip, Section, SectionHeading } from '../../../src/components/layout';
 import { SparkleIcon, StarIcon, ShieldIcon } from '../../../src/components/icons';
 import { Team } from '../../../src/components/marketing/Team';
 import { TrustBar } from '../../../src/components/marketing/Hero';
@@ -47,7 +47,7 @@ export default function AboutPage() {
 
       <Section>
         <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
-          <div className="space-y-5 text-base leading-relaxed text-text-on-dark-muted">
+          <div className="space-y-5 text-base leading-relaxed text-charcoal-muted">
             <p>
               We started in {COMPANY.foundedYear} in Nairobi, cleaning homes for clients who were tired of the same
               three problems: you could never get a straight answer on price, you never quite knew who was coming to
@@ -65,17 +65,17 @@ export default function AboutPage() {
               post-construction handovers, in Nairobi and on contracts countrywide. The equipment has grown. The
               standard has not moved.
             </p>
-            <p className="text-text-on-dark">
+            <p className="text-charcoal">
               We also invested in the boring things that make a service reliable: our own booking platform, a loyalty
               programme that rewards repeat clients, and scheduling that can put a crew on site the same day.
             </p>
           </div>
 
           {/* Image slot — a real crew or premises photo belongs here. */}
-          <div className="aspect-[4/3] overflow-hidden rounded-xl border border-ink-border bg-gradient-to-br from-ink-raised via-ink-soft to-ink-raised lg:aspect-auto">
+          <div className="aspect-[4/3] overflow-hidden rounded-xl border border-line bg-gradient-to-br from-white via-cream-deep to-white lg:aspect-auto">
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gold/70">Our team at work</span>
-              <p className="max-w-[18rem] text-sm text-text-on-dark-muted">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-bronze/70">Our team at work</span>
+              <p className="max-w-[18rem] text-sm text-charcoal-muted">
                 A photo of the crew on site in Nairobi goes here.
               </p>
             </div>
@@ -91,13 +91,13 @@ export default function AboutPage() {
         />
         <div className="mt-12 grid gap-5 lg:grid-cols-3">
           {PILLARS.map((pillar) => (
-            <DarkCard key={pillar.title} className="bg-ink">
+            <SurfaceCard key={pillar.title} className="bg-cream">
               <IconChip>
                 <pillar.icon />
               </IconChip>
-              <h3 className="mt-4 text-lg font-semibold text-text-on-dark">{pillar.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-text-on-dark-muted">{pillar.text}</p>
-            </DarkCard>
+              <h3 className="mt-4 text-lg font-semibold text-charcoal">{pillar.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-charcoal-muted">{pillar.text}</p>
+            </SurfaceCard>
           ))}
         </div>
       </Section>
