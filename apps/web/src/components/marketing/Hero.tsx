@@ -1,7 +1,8 @@
 import { Container } from '../layout';
 import { ButtonLink } from '../ui';
 import { CheckIcon } from '../icons';
-import { TRUST_STATS } from '../../content/site';
+import { Photo } from '../Photo';
+import { SITE_PHOTOS, TRUST_STATS } from '../../content/site';
 
 const HERO_PROOF = ['Vetted, insured crews', 'Pay by M-Pesa', 'Before & after photos'];
 
@@ -59,18 +60,9 @@ export function Hero() {
             </ul>
           </div>
 
-          {/* Image slot — swap the placeholder for a crew photo when one exists. */}
           <div className="relative">
-            <div className="aspect-[4/5] w-full overflow-hidden rounded-xl border border-line bg-gradient-to-br from-white via-cream-deep to-white">
-              <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-bronze/70">
-                  OnyxHawk crew
-                </span>
-                <p className="max-w-[16rem] text-sm text-charcoal-muted">
-                  Photo of a uniformed crew on site goes here.
-                </p>
-              </div>
-            </div>
+            {/* The one above-the-fold image, so it loads eagerly. */}
+            <Photo slot={SITE_PHOTOS.hero} priority className="aspect-[4/5] w-full" />
 
             {/* Rating chip overlapping the image corner. */}
             <div className="absolute -bottom-5 -left-4 rounded-xl border border-line bg-white px-5 py-4 shadow-lg sm:-left-6">

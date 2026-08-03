@@ -25,6 +25,47 @@ export const WHATSAPP_LINK = `https://wa.me/${COMPANY.whatsAppNumber}?text=${enc
   "Hi OnyxHawk, I'd like a cleaning quote.",
 )}`;
 
+/**
+ * Photo slots. `src` is null until a real photo exists for that slot, and the
+ * Photo component renders a styled placeholder instead — the site never ships a
+ * broken image, and adding a picture is a one-line change here.
+ *
+ * Files are produced by scripts/prepare-photos.ps1, which bakes in EXIF
+ * rotation and resizes for mobile.
+ */
+export type PhotoSlot = { src: string | null; alt: string; placeholder: string };
+
+export const SITE_PHOTOS: Record<
+  'hero' | 'aboutTeam' | 'upholstery' | 'proofResult' | 'detail',
+  PhotoSlot
+> = {
+  hero: {
+    src: null,
+    alt: 'An OnyxHawk crew member in branded uniform operating a floor scrubber',
+    placeholder: 'Photo of a uniformed crew on site goes here.',
+  },
+  aboutTeam: {
+    src: null,
+    alt: 'OnyxHawk crew cleaning a client site in Nairobi',
+    placeholder: 'A photo of the crew on site in Nairobi goes here.',
+  },
+  upholstery: {
+    src: null,
+    alt: 'An OnyxHawk crew member deep-cleaning an upholstered armchair',
+    placeholder: 'Upholstery cleaning in progress.',
+  },
+  proofResult: {
+    src: null,
+    alt: 'An armchair after an OnyxHawk deep clean',
+    placeholder: 'The finished result.',
+  },
+  detail: {
+    src: null,
+    alt: 'Close-up of an OnyxHawk crew member cleaning upholstery in protective gloves',
+    placeholder: 'Detail of the work.',
+  },
+};
+
 /** Headline proof points. Shown as the trust bar under the hero. */
 export const TRUST_STATS = [
   { value: '6+', label: 'Years in business' },

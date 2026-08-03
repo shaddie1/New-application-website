@@ -6,7 +6,8 @@ import { Team } from '../../../src/components/marketing/Team';
 import { TrustBar } from '../../../src/components/marketing/Hero';
 import { WhyChooseUs } from '../../../src/components/marketing/WhyChooseUs';
 import { FinalCta } from '../../../src/components/marketing/FinalCta';
-import { COMPANY } from '../../../src/content/site';
+import { Photo } from '../../../src/components/Photo';
+import { COMPANY, SITE_PHOTOS } from '../../../src/content/site';
 
 export const metadata: Metadata = {
   title: 'About OnyxHawk — our story',
@@ -71,15 +72,7 @@ export default function AboutPage() {
             </p>
           </div>
 
-          {/* Image slot — a real crew or premises photo belongs here. */}
-          <div className="aspect-[4/3] overflow-hidden rounded-xl border border-line bg-gradient-to-br from-white via-cream-deep to-white lg:aspect-auto">
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-bronze/70">Our team at work</span>
-              <p className="max-w-[18rem] text-sm text-charcoal-muted">
-                A photo of the crew on site in Nairobi goes here.
-              </p>
-            </div>
-          </div>
+          <Photo slot={SITE_PHOTOS.aboutTeam} className="aspect-[4/3] lg:aspect-auto" />
         </div>
       </Section>
 
