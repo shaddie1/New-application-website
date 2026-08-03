@@ -2,9 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { AdminStats } from '@onyxhawk/types';
+import type { AdminStats, DashboardOverview, MonthlyTrendItem } from '@onyxhawk/types';
 import { api, ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
+import { StatTile, TargetMeter, TrendChart, money } from '../../src/components/charts';
+
+// Finance data is not served to every staff role, so only ask for it when the
+// signed-in user is actually allowed it — otherwise the request 403s.
+const FINANCE_ROLES = ['ADMIN', 'FINANCIAL_MANAGER', 'SHAREHOLDER'];
 
 type OtpRow = { phone: string; codePlain: string; createdAt: string; expiresAt: string };
 
@@ -21,6 +26,9 @@ export default function DashboardPage() {
         setError(err instanceof ApiError ? `Could not load stats (${err.status}).` : 'Could not load stats.'),
       );
   }, []);
+
+  const canSeeFinance =
+    !!session && (session.user.isOwner || FINANCE_ROLES.includes(session.user.role));
 
   return (
     <div>
@@ -47,6 +55,8 @@ export default function DashboardPage() {
           <p className="text-text-muted text-sm mt-1">Respond to walkthrough requests with a price.</p>
         </Link>
       </div>
+
+      {canSeeFinance && <FinanceSnapshot />}
 
       {/* Live OTP panel — visible to owner in non-production only */}
       {session?.user.isOwner && <LiveOtpPanel />}
@@ -160,5 +170,88 @@ function StatCard({ label, value, href, accent }: { label: string; value?: numbe
         {value ?? '—'}
       </p>
     </Link>
+  );
+}
+
+/** Percent change, or null when there is no previous figure to compare against. */
+function pctChange(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / Math.abs(previous)) * 100);
+}
+
+/**
+ * Headline financials on the landing page: this month against target, and the
+ * 12-month shape of the business. The full breakdowns live on Insights.
+ */
+function FinanceSnapshot() {
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [trends, setTrends] = useState<MonthlyTrendItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const now = new Date();
+    Promise.all([api.overview(now.getFullYear(), now.getMonth() + 1), api.financialTrends(12)])
+      .then(([o, t]) => {
+        setOverview(o.overview);
+        setTrends(t.trends);
+      })
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="mt-10 rounded-xl border border-line bg-white py-10 text-center text-sm text-charcoal-muted">
+        Loading financials…
+      </div>
+    );
+  }
+  if (!overview) return null;
+
+  const trendData = trends.map((t) => ({
+    label: t.label,
+    incomeCents: t.incomeCents,
+    netCents: t.netCents,
+  }));
+
+  return (
+    <section className="mt-10">
+      <div className="mb-4 flex items-baseline justify-between gap-3">
+        <h2 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>
+          This month
+        </h2>
+        <Link href="/insights" className="text-sm font-medium text-bronze hover:underline">
+          Full insights →
+        </Link>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <TargetMeter
+          label="Revenue"
+          actual={overview.revenue.actual}
+          target={overview.revenue.target}
+          format={money}
+        />
+        <TargetMeter
+          label="Net profit"
+          actual={overview.netProfit.actual}
+          target={overview.netProfit.target}
+          format={money}
+        />
+        <StatTile
+          label="Jobs completed"
+          value={String(overview.jobs.actual)}
+          delta={pctChange(overview.jobs.actual, overview.previousJobCount)}
+          deltaLabel="vs last month"
+        />
+      </div>
+
+      <div className="mt-4 rounded-xl border border-line bg-white p-5">
+        <p className="mb-4 text-xs uppercase tracking-widest text-charcoal-muted">
+          Income &amp; net profit — last 12 months
+        </p>
+        <TrendChart data={trendData} />
+      </div>
+    </section>
   );
 }
