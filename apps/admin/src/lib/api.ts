@@ -35,6 +35,9 @@ import type {
   MarkDistributionPaidInput,
   RevenueBreakdown,
   UnreconciledItem,
+  MonthlyTargetDto,
+  SetMonthlyTargetInput,
+  DashboardOverview,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -329,6 +332,23 @@ export const api = {
       method: 'PATCH',
       auth: true,
       body: JSON.stringify(input),
+    }),
+
+  // ── Targets & dashboard overview ─────────────────────────────────────────
+  targets: () =>
+    request<{ targets: MonthlyTargetDto[] }>('/admin/finance/targets', { method: 'GET', auth: true }),
+
+  setTarget: (input: SetMonthlyTargetInput) =>
+    request<{ target: MonthlyTargetDto }>('/admin/finance/targets', {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  overview: (year: number, month: number) =>
+    request<{ overview: DashboardOverview }>(`/admin/finance/overview?year=${year}&month=${month}`, {
+      method: 'GET',
+      auth: true,
     }),
 
   distributions: () =>

@@ -24,6 +24,9 @@ import type {
   RevenueBreakdown,
   RevenueBreakdownItem,
   UnreconciledItem,
+  MonthlyTargetDto,
+  DashboardOverview,
+  TargetProgress,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
@@ -396,6 +399,73 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ ok: true });
   });
 
+  // ── Targets & dashboard overview ──────────────────────────────────────────
+
+  app.get('/targets', async (_req, reply) => {
+    const rows = await prisma.monthlyTarget.findMany({ orderBy: [{ year: 'desc' }, { month: 'desc' }] });
+    return reply.send({ targets: rows.map(toTargetDto) });
+  });
+
+  app.put('/targets', async (req, reply) => {
+    const Schema = z.object({
+      year: z.number().int().min(2000).max(2100),
+      month: z.number().int().min(1).max(12),
+      revenueTargetCents: z.number().int().nonnegative(),
+      netProfitTargetCents: z.number().int().nonnegative(),
+      jobsTarget: z.number().int().nonnegative(),
+      notes: z.string().trim().max(500).optional(),
+    });
+    const parsed = Schema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const { year, month, ...rest } = parsed.data;
+    const row = await prisma.monthlyTarget.upsert({
+      where: { year_month: { year, month } },
+      create: { year, month, ...rest, createdById: req.auth!.sub },
+      update: rest,
+    });
+    return reply.send({ target: toTargetDto(row) });
+  });
+
+  /** Headline numbers for one month, each paired with its target. */
+  app.get('/overview', async (req, reply) => {
+    const Schema = z.object({
+      year: z.coerce.number().int().min(2000).max(2100),
+      month: z.coerce.number().int().min(1).max(12),
+    });
+    const parsed = Schema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { year, month } = parsed.data;
+
+    const prev = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+
+    const [current, previous, target] = await Promise.all([
+      monthTotals(year, month),
+      monthTotals(prev.year, prev.month),
+      prisma.monthlyTarget.findUnique({ where: { year_month: { year, month } } }),
+    ]);
+
+    const progress = (actual: number, goal: number): TargetProgress => ({
+      actual,
+      target: goal,
+      percent: goal > 0 ? Math.round((actual / goal) * 100) : 0,
+    });
+
+    const overview: DashboardOverview = {
+      year,
+      month,
+      monthLabel: new Date(year, month - 1, 1).toLocaleDateString('en-KE', { month: 'long', year: 'numeric' }),
+      revenue: progress(current.incomeCents, target?.revenueTargetCents ?? 0),
+      netProfit: progress(current.netCents, target?.netProfitTargetCents ?? 0),
+      jobs: progress(current.jobCount, target?.jobsTarget ?? 0),
+      previousRevenueCents: previous.incomeCents,
+      previousNetCents: previous.netCents,
+      previousJobCount: previous.jobCount,
+      hasTargets: Boolean(target),
+    };
+    return reply.send({ overview });
+  });
+
   // ── Profit distributions (cap-table holders and the owner only) ───────────
 
   app.get('/distributions', { preHandler: requireEquityAccess }, async (_req, reply) => {
@@ -556,6 +626,50 @@ function isoDate(d: Date): string {
 function humanise(value: string): string {
   const spaced = value.replace(/[_-]+/g, ' ').trim().toLowerCase();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function toTargetDto(row: {
+  year: number;
+  month: number;
+  revenueTargetCents: number;
+  netProfitTargetCents: number;
+  jobsTarget: number;
+  notes: string | null;
+}): MonthlyTargetDto {
+  return {
+    year: row.year,
+    month: row.month,
+    revenueTargetCents: row.revenueTargetCents,
+    netProfitTargetCents: row.netProfitTargetCents,
+    jobsTarget: row.jobsTarget,
+    notes: row.notes,
+  };
+}
+
+/** Income, net and job count for one calendar month. */
+async function monthTotals(year: number, month: number) {
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0);
+  to.setHours(23, 59, 59, 999);
+
+  const [jobs, expenses] = await Promise.all([
+    prisma.job.aggregate({
+      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+      _sum: { incomeCents: true, discountCents: true },
+      _count: { _all: true },
+    }),
+    prisma.expense.aggregate({
+      where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
+      _sum: { amountCents: true },
+    }),
+  ]);
+
+  const incomeCents = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
+  return {
+    incomeCents,
+    netCents: incomeCents - (expenses._sum.amountCents ?? 0),
+    jobCount: jobs._count._all,
+  };
 }
 
 /** Net profit (counted job income less discounts and expenses) over a period. */

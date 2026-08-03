@@ -95,6 +95,7 @@ model User {
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
   investmentsCreated   Investment[]         @relation("InvestmentCreatedBy")
   distributionsCreated ProfitDistribution[] @relation("ProfitDistributionCreatedBy")
+  targetsCreated       MonthlyTarget[]      @relation("MonthlyTargetCreatedBy")
 
   @@index([referredByUserId])
 }
@@ -853,6 +854,27 @@ model ProfitDistribution {
   @@unique([periodStart, periodEnd, shareholderId])
   @@index([status])
   @@index([periodStart])
+}
+
+/**
+ * Monthly goals the dashboard measures actuals against. One row per calendar
+ * month; a month with no row simply has no target set.
+ */
+model MonthlyTarget {
+  id                   String   @id @default(cuid())
+  year                 Int
+  month                Int // 1-12
+  revenueTargetCents   Int      @default(0)
+  netProfitTargetCents Int      @default(0)
+  jobsTarget           Int      @default(0)
+  notes                String?
+  createdBy            User     @relation("MonthlyTargetCreatedBy", fields: [createdById], references: [id])
+  createdById          String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([year, month])
+  @@index([year])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

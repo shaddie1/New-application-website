@@ -25,6 +25,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ? [
         ...NAV,
         { href: '/team', label: 'Team' },
+        { href: '/insights', label: 'Insights' },
         { href: '/financials', label: 'Financials' },
         { href: '/finance', label: 'Finance' },
         { href: '/equity', label: 'Ownership' },
@@ -33,7 +34,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border bg-surface">
+      <header className="border-b border-line bg-white">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <span className="flex items-center gap-2.5">
@@ -50,7 +51,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-lg px-3 py-1.5 text-sm ${active ? 'bg-surface-dark text-text-on-dark' : 'text-text-muted hover:bg-bg-muted'}`}
+                    className={`rounded-lg px-3 py-1.5 text-sm ${active ? 'bg-charcoal text-white' : 'text-charcoal-muted hover:bg-cream-deep'}`}
                   >
                     {item.label}
                   </Link>
@@ -59,8 +60,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-text-muted text-sm">{session.user.fullName}</span>
-            <button onClick={signOut} className="rounded-lg border border-border px-3 py-1.5 text-sm text-danger">
+            <span className="text-charcoal-muted text-sm">{session.user.fullName}</span>
+            <button onClick={signOut} className="rounded-lg border border-line px-3 py-1.5 text-sm text-danger">
               Sign out
             </button>
           </div>

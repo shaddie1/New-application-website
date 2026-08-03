@@ -371,6 +371,48 @@ export interface UnreconciledItem {
   hasReceipt: boolean;
 }
 
+// ── Targets & dashboard ─────────────────────────────────────────────────────
+
+export interface MonthlyTargetDto {
+  year: number;
+  month: number;
+  revenueTargetCents: number;
+  netProfitTargetCents: number;
+  jobsTarget: number;
+  notes: string | null;
+}
+
+export interface SetMonthlyTargetInput {
+  year: number;
+  month: number;
+  revenueTargetCents: number;
+  netProfitTargetCents: number;
+  jobsTarget: number;
+  notes?: string;
+}
+
+/** An actual measured against its goal, for a progress meter. */
+export interface TargetProgress {
+  actual: number;
+  target: number;
+  /** Percent of target achieved, 0 when no target is set. */
+  percent: number;
+}
+
+export interface DashboardOverview {
+  year: number;
+  month: number;
+  monthLabel: string;
+  revenue: TargetProgress;
+  netProfit: TargetProgress;
+  jobs: TargetProgress;
+  /** Same month last period, for the "vs last month" line. */
+  previousRevenueCents: number;
+  previousNetCents: number;
+  previousJobCount: number;
+  hasTargets: boolean;
+}
+
 // ── Ownership / cap table (owner only) ──────────────────────────────────────
 
 export type ShareholderKind = 'COMPANY' | 'INDIVIDUAL';
