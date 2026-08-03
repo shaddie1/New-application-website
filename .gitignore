@@ -40,3 +40,8 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Source media (raw phone photos and video, ~4GB). Working library only —
+# 14 of the videos exceed GitHub's 100MB per-file limit. Web-ready derivatives
+# live in apps/web/public/photos/ and are committed.
+/Media/

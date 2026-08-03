@@ -7,6 +7,7 @@ import { Hero } from '../../src/components/marketing/Hero';
 import { ServicesSection } from '../../src/components/marketing/Services';
 import { HowItWorks } from '../../src/components/marketing/HowItWorks';
 import { WhyChooseUs } from '../../src/components/marketing/WhyChooseUs';
+import { ProofOfWork } from '../../src/components/marketing/ProofOfWork';
 import { WhoWeServe } from '../../src/components/marketing/WhoWeServe';
 import { Team } from '../../src/components/marketing/Team';
 import { Faq } from '../../src/components/marketing/Faq';
@@ -76,6 +77,7 @@ export default function HomePage() {
       <ServicesSection />
       <HowItWorks />
       <WhyChooseUs />
+      <ProofOfWork />
       <WhoWeServe />
       <Team />
       <Faq />

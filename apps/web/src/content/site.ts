@@ -40,27 +40,27 @@ export const SITE_PHOTOS: Record<
   PhotoSlot
 > = {
   hero: {
-    src: null,
-    alt: 'An OnyxHawk crew member in branded uniform operating a floor scrubber',
+    src: '/photos/crew-floor-machine.jpg',
+    alt: 'An OnyxHawk crew member in branded uniform cleaning on site in Nairobi',
     placeholder: 'Photo of a uniformed crew on site goes here.',
   },
   aboutTeam: {
-    src: null,
-    alt: 'OnyxHawk crew cleaning a client site in Nairobi',
+    src: '/photos/crew-on-site.jpg',
+    alt: 'An OnyxHawk crew member deep-cleaning armchairs in a Nairobi office',
     placeholder: 'A photo of the crew on site in Nairobi goes here.',
   },
   upholstery: {
-    src: null,
+    src: '/photos/upholstery-clean.jpg',
     alt: 'An OnyxHawk crew member deep-cleaning an upholstered armchair',
     placeholder: 'Upholstery cleaning in progress.',
   },
   proofResult: {
-    src: null,
+    src: '/photos/armchair-result.jpg',
     alt: 'An armchair after an OnyxHawk deep clean',
     placeholder: 'The finished result.',
   },
   detail: {
-    src: null,
+    src: '/photos/upholstery-detail.jpg',
     alt: 'Close-up of an OnyxHawk crew member cleaning upholstery in protective gloves',
     placeholder: 'Detail of the work.',
   },
