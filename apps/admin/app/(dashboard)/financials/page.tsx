@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
   AllTimeTotals,
+  ClientSegment,
   ExpenseCategory,
   ExpenseDto,
   FinancialSummary,
@@ -14,6 +15,17 @@ import { useRequireAdmin } from '../../../src/lib/auth';
 
 // How many months of history the Monthly trends tab can show at once.
 const TREND_RANGES = [6, 12, 24];
+
+const SEGMENT_LABELS: Record<ClientSegment, string> = {
+  RESIDENTIAL: 'Residential',
+  COMMERCIAL: 'Commercial',
+  MEDICAL: 'Medical',
+  DEVELOPER: 'Developer',
+};
+const SEGMENTS = Object.keys(SEGMENT_LABELS) as ClientSegment[];
+
+/** Nairobi areas we work in most — free text is still allowed. */
+const REGIONS = ['Westlands', 'Karen', 'Kilimani', 'Lavington', 'Kileleshwa', 'Runda', 'Roysambu', 'CBD'];
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -67,7 +79,13 @@ export default function FinancialsPage() {
 
   // New job form
   const [showJobForm, setShowJobForm] = useState(false);
-  const [jobForm, setJobForm] = useState({ title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '' });
+  const [jobForm, setJobForm] = useState({
+    title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '',
+    clientLocation: '', notes: '', serviceLineCode: '', region: '', clientSegment: '' as '' | ClientSegment,
+  });
+  // Service lines come from the catalog rather than a hardcoded list, so the
+  // options cannot drift from what the business actually sells.
+  const [serviceLines, setServiceLines] = useState<{ code: string; name: string }[]>([]);
   const [savingJob, setSavingJob] = useState(false);
 
   // Per-job expansion + expense form
@@ -107,6 +125,12 @@ export default function FinancialsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    api.serviceLines()
+      .then((r) => setServiceLines(r.serviceLines))
+      .catch(() => undefined); // classification stays optional if the catalog is unreachable
+  }, []);
+
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear((y) => y - 1); }
     else setMonth((m) => m - 1);
@@ -136,6 +160,9 @@ export default function FinancialsPage() {
         clientName: jobForm.clientName.trim() || undefined,
         clientPhone: jobForm.clientPhone.trim() || undefined,
         clientLocation: jobForm.clientLocation.trim() || undefined,
+        serviceLineCode: jobForm.serviceLineCode || undefined,
+        region: jobForm.region.trim() || undefined,
+        clientSegment: jobForm.clientSegment || undefined,
         notes: jobForm.notes.trim() || undefined,
       });
       setJobs((prev) => [res.job, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
@@ -144,7 +171,9 @@ export default function FinancialsPage() {
         incomeCents: prev.incomeCents + res.job.actualIncomeCents,
         netCents: prev.netCents + res.job.actualIncomeCents,
       } : prev);
-      setJobForm({ title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '' });
+      setJobForm((f) => ({
+        ...f, title: '', incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '',
+      }));
       setShowJobForm(false);
       setExpandedJobId(res.job.id);
       setExpenseForm(blankExpenseForm());
@@ -456,6 +485,49 @@ export default function FinancialsPage() {
                   value={jobForm.clientLocation}
                   onChange={(e) => setJobForm((f) => ({ ...f, clientLocation: e.target.value }))}
                 />
+              </div>
+              {/* Classification — feeds the revenue breakdown charts on Insights. */}
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Service line</label>
+                <select
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                  value={jobForm.serviceLineCode}
+                  onChange={(e) => setJobForm((f) => ({ ...f, serviceLineCode: e.target.value }))}
+                >
+                  <option value="">Unclassified</option>
+                  {serviceLines.map((l) => (
+                    <option key={l.code} value={l.code}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Client segment</label>
+                <select
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                  value={jobForm.clientSegment}
+                  onChange={(e) =>
+                    setJobForm((f) => ({ ...f, clientSegment: e.target.value as '' | ClientSegment }))
+                  }
+                >
+                  <option value="">Unspecified</option>
+                  {SEGMENTS.map((seg) => (
+                    <option key={seg} value={seg}>{SEGMENT_LABELS[seg]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Region</label>
+                <input
+                  type="text"
+                  list="job-regions"
+                  placeholder="e.g. Westlands"
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                  value={jobForm.region}
+                  onChange={(e) => setJobForm((f) => ({ ...f, region: e.target.value }))}
+                />
+                <datalist id="job-regions">
+                  {REGIONS.map((r) => <option key={r} value={r} />)}
+                </datalist>
               </div>
               <div className="col-span-full">
                 <label className="block text-xs text-text-muted mb-1">Notes (optional)</label>
@@ -787,6 +859,25 @@ function JobList({
                     {job.clientName && <span>👤 {job.clientName}</span>}
                     {job.clientPhone && <span>📞 {job.clientPhone}</span>}
                     {job.clientLocation && <span>📍 {job.clientLocation}</span>}
+                  </div>
+                )}
+                {(job.serviceLineCode || job.clientSegment || job.region) && (
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {job.serviceLineCode && (
+                      <span className="rounded-full bg-bg-muted px-2 py-0.5 text-xs text-text-muted">
+                        {job.serviceLineCode.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                    {job.clientSegment && (
+                      <span className="rounded-full bg-bg-muted px-2 py-0.5 text-xs text-text-muted">
+                        {SEGMENT_LABELS[job.clientSegment]}
+                      </span>
+                    )}
+                    {job.region && (
+                      <span className="rounded-full bg-bg-muted px-2 py-0.5 text-xs text-text-muted">
+                        {job.region}
+                      </span>
+                    )}
                   </div>
                 )}
                 {job.notes && <p className="text-text-muted text-xs mt-0.5">{job.notes}</p>}

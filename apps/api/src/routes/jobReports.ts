@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { ExpenseCategory } from '@prisma/client';
+import { ExpenseCategory, ClientSegment } from '@prisma/client';
 import type {
   ExpenseDto,
   JobDto,
@@ -131,6 +131,9 @@ type JobRow = {
   clientPhone: string | null;
   clientLocation: string | null;
   notes: string | null;
+  serviceLineCode: string | null;
+  region: string | null;
+  clientSegment: ClientSegment | null;
   createdAt: Date;
   expenses: ExpenseRow[];
   reportedBy: { fullName: string } | null;
@@ -163,6 +166,9 @@ function toJobDto(row: JobRow): JobDto {
     clientName: row.clientName,
     clientPhone: row.clientPhone,
     clientLocation: row.clientLocation,
+    serviceLineCode: row.serviceLineCode,
+    region: row.region,
+    clientSegment: row.clientSegment,
     notes: row.notes,
     expenses,
     totalExpensesCents,

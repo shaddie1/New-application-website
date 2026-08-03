@@ -116,6 +116,9 @@ export interface JobDto {
   clientPhone: string | null;
   clientLocation: string | null;
   notes: string | null;
+  serviceLineCode: string | null;
+  region: string | null;
+  clientSegment: ClientSegment | null;
   expenses: ExpenseDto[];
   totalExpensesCents: number;
   netCents: number; // actualIncomeCents - totalExpensesCents
@@ -131,9 +134,16 @@ export interface CreateJobInput {
   clientPhone?: string;
   clientLocation?: string;
   notes?: string;
+  /** Analysis dimensions — drive the revenue breakdown charts. */
+  serviceLineCode?: string;
+  region?: string;
+  clientSegment?: ClientSegment;
 }
 
 export interface UpdateJobInput {
+  serviceLineCode?: string | null;
+  region?: string | null;
+  clientSegment?: ClientSegment | null;
   title?: string;
   incomeCents?: number;
   discountCents?: number;

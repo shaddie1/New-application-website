@@ -120,6 +120,12 @@ export const api = {
   logout: (refreshToken: string) =>
     request<{ ok: true }>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
 
+  /** Public service catalog — used to classify a job by its real service line. */
+  serviceLines: () =>
+    request<{ serviceLines: { id: string; code: string; name: string }[] }>('/catalog/service-lines', {
+      method: 'GET',
+    }),
+
   // ── Admin ──────────────────────────────────────────────────────────────
   stats: () => request<{ stats: AdminStats }>('/admin/stats', { method: 'GET', auth: true }),
 

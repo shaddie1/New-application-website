@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ExpenseCategory, JobStatus, ShareholderKind } from '@prisma/client';
+import { ClientSegment, ExpenseCategory, JobStatus, ShareholderKind } from '@prisma/client';
 import type {
   ExpenseDto,
   FinancialSummary,
@@ -27,6 +27,8 @@ const DateRangeSchema = z.object({
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
 });
 
+const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
+
 const CreateJobSchema = z.object({
   title: z.string().trim().min(1).max(200),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
@@ -36,6 +38,9 @@ const CreateJobSchema = z.object({
   clientPhone: z.string().trim().max(30).optional(),
   clientLocation: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(1000).optional(),
+  serviceLineCode: z.string().trim().max(60).optional(),
+  region: z.string().trim().max(120).optional(),
+  clientSegment: z.enum(SEGMENTS).optional(),
 }) satisfies z.ZodType<CreateJobInput>;
 
 const UpdateJobSchema = z.object({
@@ -46,6 +51,9 @@ const UpdateJobSchema = z.object({
   clientPhone: z.string().trim().max(30).optional(),
   clientLocation: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(1000).optional(),
+  serviceLineCode: z.string().trim().max(60).nullable().optional(),
+  region: z.string().trim().max(120).nullable().optional(),
+  clientSegment: z.enum(SEGMENTS).nullable().optional(),
 }) satisfies z.ZodType<UpdateJobInput>;
 
 const CreateExpenseSchema = z.object({
@@ -207,6 +215,9 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         clientPhone: parsed.data.clientPhone,
         clientLocation: parsed.data.clientLocation,
         notes: parsed.data.notes,
+        serviceLineCode: parsed.data.serviceLineCode,
+        region: parsed.data.region,
+        clientSegment: parsed.data.clientSegment as ClientSegment | undefined,
         createdById: req.auth!.sub,
       },
       include: { expenses: true, reportedBy: { select: { fullName: true } } },
@@ -231,6 +242,11 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.clientPhone !== undefined && { clientPhone: parsed.data.clientPhone }),
         ...(parsed.data.clientLocation !== undefined && { clientLocation: parsed.data.clientLocation }),
         ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
+        ...(parsed.data.serviceLineCode !== undefined && { serviceLineCode: parsed.data.serviceLineCode }),
+        ...(parsed.data.region !== undefined && { region: parsed.data.region }),
+        ...(parsed.data.clientSegment !== undefined && {
+          clientSegment: parsed.data.clientSegment as ClientSegment | null,
+        }),
       },
       include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
     });
@@ -569,6 +585,9 @@ type JobRow = {
   clientPhone: string | null;
   clientLocation: string | null;
   notes: string | null;
+  serviceLineCode: string | null;
+  region: string | null;
+  clientSegment: ClientSegment | null;
   createdAt: Date;
   expenses: ExpenseRow[];
   reportedBy: { fullName: string } | null;
@@ -602,6 +621,9 @@ function toJobDto(row: JobRow): JobDto {
     clientPhone: row.clientPhone,
     clientLocation: row.clientLocation,
     notes: row.notes,
+    serviceLineCode: row.serviceLineCode,
+    region: row.region,
+    clientSegment: row.clientSegment,
     expenses,
     totalExpensesCents,
     netCents: actualIncomeCents - totalExpensesCents,
