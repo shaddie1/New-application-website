@@ -27,7 +27,7 @@ export function FloatingActions() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Chat with OnyxHawk on WhatsApp"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-pill border border-gold-bright/45 text-bronze"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-pill bg-[#25D366] text-white"
           >
             <WhatsAppIcon className="h-6 w-6" />
           </a>

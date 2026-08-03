@@ -8,6 +8,8 @@ import { useAuth } from '../lib/auth';
 import { cn } from '../lib/cn';
 import { Brand } from './Brand';
 import { ButtonLink } from './ui';
+import { WhatsAppIcon } from './icons';
+import { WHATSAPP_LINK } from '../content/site';
 
 const NAV = [
   { href: '/services', label: 'Services' },
@@ -50,6 +52,19 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Always-visible WhatsApp entry point — the fastest way most
+              Kenyan customers want to reach a business. */}
+          <a
+            href={WHATSAPP_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Chat with OnyxHawk on WhatsApp"
+            title="Chat on WhatsApp"
+            className="flex h-9 w-9 items-center justify-center rounded-pill bg-[#25D366] text-white transition-transform hover:scale-105"
+          >
+            <WhatsAppIcon className="h-5 w-5" />
+          </a>
+
           {signedIn ? (
             <ButtonLink href="/dashboard" size="sm">
               My dashboard

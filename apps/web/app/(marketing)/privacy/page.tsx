@@ -89,7 +89,7 @@ export default function PrivacyPage() {
             <a href="mailto:info@onyxhawkcleaningservice.com" className="text-bronze hover:underline">
               info@onyxhawkcleaningservice.com
             </a>{' '}
-            · <a href="tel:+254115247988" className="text-bronze hover:underline">+254 115 247 988</a> · Nairobi, Kenya.
+            · <a href="tel:+254702416697" className="text-bronze hover:underline">+254 702 416 697</a> · Nairobi, Kenya.
           </p>
         </Section>
       </div>
