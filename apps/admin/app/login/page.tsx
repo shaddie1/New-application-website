@@ -59,9 +59,23 @@ export default function LoginPage() {
 
   const signInWithPassword = async () => {
     setError(null);
+
+    // Guard here rather than relying on the button's disabled state — pressing
+    // Enter in the password field bypasses that, and an empty phone produced a
+    // bare "+" that the API rejected as a confusing 400.
+    const normalised = e164(phone);
+    if (!/^\+[1-9]\d{7,14}$/.test(normalised)) {
+      setError('Enter your phone number, e.g. 712 345 678.');
+      return;
+    }
+    if (!password) {
+      setError('Enter your password.');
+      return;
+    }
+
     setBusy(true);
     try {
-      const res = await api.signInWithPassword(e164(phone), password);
+      const res = await api.signInWithPassword(normalised, password);
       if (!STAFF_ROLES.includes(res.session.user.role)) {
         setError('This number is not a staff account.');
         return;
@@ -152,6 +166,7 @@ export default function LoginPage() {
                 placeholder="712 480 392"
                 inputMode="tel"
                 className="flex-1 bg-transparent outline-none text-text"
+                onKeyDown={(e) => { if (e.key === 'Enter' && phone && password) void signInWithPassword(); }}
               />
             </div>
             <label className="mt-4 block text-text-muted text-xs uppercase tracking-widest">Password</label>
@@ -163,7 +178,7 @@ export default function LoginPage() {
                 placeholder="Your password"
                 autoComplete="current-password"
                 className="flex-1 bg-transparent outline-none text-text"
-                onKeyDown={(e) => e.key === 'Enter' && signInWithPassword()}
+                onKeyDown={(e) => { if (e.key === 'Enter' && phone && password) void signInWithPassword(); }}
               />
               <button
                 type="button"
