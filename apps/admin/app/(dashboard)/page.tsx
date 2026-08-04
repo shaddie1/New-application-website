@@ -2,10 +2,35 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { AdminStats, DashboardOverview, MonthlyTrendItem } from '@onyxhawk/types';
+import type {
+  AdminStats,
+  DashboardOverview,
+  EquityOverview,
+  ExpenseCategory,
+  FinancialSummary,
+  MonthlyTrendItem,
+  RevenueBreakdown,
+} from '@onyxhawk/types';
 import { api, ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
-import { StatTile, TargetMeter, TrendChart, money } from '../../src/components/charts';
+import { DonutChart, StatTile, TargetMeter, TrendChart, money } from '../../src/components/charts';
+
+const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
+  MATERIALS: 'Materials',
+  TRANSPORT: 'Transport',
+  EMPLOYEE_PAY: 'Employee pay',
+  LUNCH: 'Lunch',
+  MISCELLANEOUS: 'Miscellaneous',
+};
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-line bg-white p-5">
+      <p className="mb-5 text-xs uppercase tracking-widest text-charcoal-muted">{title}</p>
+      {children}
+    </div>
+  );
+}
 
 // Finance data is not served to every staff role, so only ask for it when the
 // signed-in user is actually allowed it — otherwise the request 403s.
@@ -186,14 +211,32 @@ function pctChange(current: number, previous: number): number | null {
 function FinanceSnapshot() {
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
   const [trends, setTrends] = useState<MonthlyTrendItem[]>([]);
+  const [breakdown, setBreakdown] = useState<RevenueBreakdown | null>(null);
+  const [summary, setSummary] = useState<FinancialSummary | null>(null);
+  const [equity, setEquity] = useState<EquityOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const now = new Date();
-    Promise.all([api.overview(now.getFullYear(), now.getMonth() + 1), api.financialTrends(12)])
-      .then(([o, t]) => {
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const from = `${y}-${pad(m)}-01`;
+    const to = `${y}-${pad(m)}-${new Date(y, m, 0).getDate()}`;
+
+    Promise.all([
+      api.overview(y, m),
+      api.financialTrends(12),
+      api.revenueBreakdown(from, to).catch(() => null),
+      api.financialSummary(from, to).catch(() => null),
+      api.equity(from, to).catch(() => null), // cap-table holders only
+    ])
+      .then(([o, t, b, sm, eq]) => {
         setOverview(o.overview);
         setTrends(t.trends);
+        setBreakdown(b?.breakdown ?? null);
+        setSummary(sm?.summary ?? null);
+        setEquity(eq?.overview ?? null);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -207,6 +250,12 @@ function FinanceSnapshot() {
     );
   }
   if (!overview) return null;
+
+  const expenseSlices = summary
+    ? (Object.entries(summary.expensesByCategoryCents) as [ExpenseCategory, number][]).map(
+        ([category, cents]) => ({ key: category, label: EXPENSE_LABELS[category], value: cents }),
+      )
+    : [];
 
   const trendData = trends.map((t) => ({
     label: t.label,
@@ -251,6 +300,51 @@ function FinanceSnapshot() {
           Income &amp; net profit — last 12 months
         </p>
         <TrendChart data={trendData} />
+      </div>
+
+      {/* Part-to-whole views of the month */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Revenue by service line">
+          <DonutChart
+            slices={(breakdown?.byServiceLine ?? []).map((i) => ({
+              key: i.key, label: i.label, value: i.incomeCents,
+            }))}
+            centreLabel="total revenue"
+            emptyLabel="No classified revenue yet. Set a service line when you record a job."
+          />
+        </ChartCard>
+
+        <ChartCard title="Where the money went">
+          <DonutChart
+            slices={expenseSlices}
+            centreLabel="total expenses"
+            emptyLabel="No expenses recorded this month."
+          />
+        </ChartCard>
+
+        <ChartCard title="Revenue by client segment">
+          <DonutChart
+            slices={(breakdown?.bySegment ?? []).map((i) => ({
+              key: i.key, label: i.label, value: i.incomeCents,
+            }))}
+            centreLabel="total revenue"
+            emptyLabel="No segmented revenue yet."
+          />
+        </ChartCard>
+
+        {equity && (
+          <ChartCard title="Profit share">
+            <DonutChart
+              slices={equity.allocations.map((a) => ({
+                key: a.shareholder.id,
+                label: `${a.shareholder.name} (${(a.shareholder.basisPoints / 100).toFixed(0)}%)`,
+                value: Math.max(0, a.periodShareCents),
+              }))}
+              centreLabel="net profit shared"
+              emptyLabel="No shareholders on the cap table."
+            />
+          </ChartCard>
+        )}
       </div>
     </section>
   );

@@ -297,13 +297,13 @@ function ChartEmpty({ children }: { children: React.ReactNode }) {
  * surface (#FDFAF2) on the adjacent-pair gate — a donut is a stacked bar wrapped
  * into a circle, so adjacent segments are what must separate.
  *
- * Order matters: it is the colourblind-safety mechanism, not decoration. This
- * ordering passes all five checks with no warnings (worst adjacent CVD ΔE 22.7,
- * normal-vision ΔE 28.1, all slots ≥ 3:1 contrast). Do not reorder or extend
- * without re-running the validator — red beside green, or the brand gold beside
- * bronze, both fail.
+ * Order matters: it is the colourblind-safety mechanism, not decoration. Green
+ * leads by request; this ordering still passes all five checks with no warnings
+ * (worst adjacent CVD ΔE 22.7, normal-vision ΔE 28.1, all slots ≥ 3:1 contrast).
+ * Do not reorder or extend without re-running the validator — red beside green,
+ * or the brand gold beside bronze, both fail.
  */
-export const CATEGORICAL = ['#A87D22', '#2a78d6', '#008300', '#4a3aa7', '#e34948'] as const;
+export const CATEGORICAL = ['#008300', '#2a78d6', '#A87D22', '#4a3aa7', '#e34948'] as const;
 
 /** "Other" is a residual, not a category — it takes a neutral, never a hue. */
 const OTHER_GREY = '#8C857A';
