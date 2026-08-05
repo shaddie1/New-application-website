@@ -29,6 +29,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { href: '/financials', label: 'Financials' },
         { href: '/finance', label: 'Finance' },
         { href: '/equity', label: 'Ownership' },
+        // Shareholder-only; the API refuses non-shareholders regardless.
+        { href: '/documents', label: 'Documents' },
       ]
     : [...NAV, { href: '/job-reports', label: 'Job Reports' }];
 

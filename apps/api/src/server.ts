@@ -18,6 +18,7 @@ import { quoteRoutes } from './routes/quotes.js';
 import { adminRoutes } from './routes/admin.js';
 import { financialsRoutes } from './routes/financials.js';
 import { financeRoutes } from './routes/finance.js';
+import { documentRoutes } from './routes/documents.js';
 import { jobReportsRoutes } from './routes/jobReports.js';
 import { notificationRoutes } from './routes/notifications.js';
 
@@ -54,6 +55,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminRoutes, { prefix: '/admin' });
   await app.register(financialsRoutes, { prefix: '/admin/financials' });
   await app.register(financeRoutes, { prefix: '/admin/finance' });
+  await app.register(documentRoutes, { prefix: '/admin/documents' });
   await app.register(jobReportsRoutes, { prefix: '/admin/job-reports' });
   await app.register(notificationRoutes, { prefix: '/notifications' });
   await app.register(mpesaRoutes, { prefix: '/webhooks/mpesa' });

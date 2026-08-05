@@ -423,6 +423,66 @@ export interface DashboardOverview {
   hasTargets: boolean;
 }
 
+// ── Company documents (shareholders only) ───────────────────────────────────
+
+export type DocumentCategory =
+  | 'INCORPORATION'
+  | 'TAX'
+  | 'LICENCE'
+  | 'INSURANCE'
+  | 'CONTRACT'
+  | 'BANK'
+  | 'POLICY'
+  | 'MINUTES'
+  | 'OTHER';
+
+export interface CompanyDocumentDto {
+  id: string;
+  title: string;
+  category: DocumentCategory;
+  description: string | null;
+  fileUrl: string;
+  fileName: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  isExternal: boolean;
+  expiresAt: string | null; // YYYY-MM-DD
+  /** Days until expiry; negative when already lapsed, null when it never expires. */
+  daysUntilExpiry: number | null;
+  uploadedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCompanyDocumentInput {
+  title: string;
+  category: DocumentCategory;
+  description?: string;
+  fileUrl: string;
+  fileName?: string;
+  contentType?: string;
+  sizeBytes?: number;
+  isExternal?: boolean;
+  expiresAt?: string | null;
+}
+
+export interface DocumentsResult {
+  documents: CompanyDocumentDto[];
+  /** False when object storage is not configured — the UI then offers links only. */
+  uploadEnabled: boolean;
+}
+
+export interface DocumentUploadUrlInput {
+  fileName: string;
+  contentType: string;
+}
+
+export interface DocumentUploadUrlResult {
+  uploadUrl: string;
+  publicUrl: string;
+  expiresAt: string;
+}
+
 // ── Ownership / cap table (owner only) ──────────────────────────────────────
 
 export type ShareholderKind = 'COMPANY' | 'INDIVIDUAL';

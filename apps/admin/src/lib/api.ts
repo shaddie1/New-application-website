@@ -38,6 +38,10 @@ import type {
   MonthlyTargetDto,
   SetMonthlyTargetInput,
   DashboardOverview,
+  CompanyDocumentDto,
+  CreateCompanyDocumentInput,
+  DocumentsResult,
+  DocumentUploadUrlResult,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -381,6 +385,26 @@ export const api = {
       method: 'DELETE',
       auth: true,
     }),
+
+  // ── Company documents (shareholders only) ────────────────────────────────
+  documents: () => request<DocumentsResult>('/admin/documents', { method: 'GET', auth: true }),
+
+  documentUploadUrl: (fileName: string, contentType: string) =>
+    request<DocumentUploadUrlResult>('/admin/documents/upload-url', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ fileName, contentType }),
+    }),
+
+  addDocument: (input: CreateCompanyDocumentInput) =>
+    request<{ document: CompanyDocumentDto }>('/admin/documents', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteDocument: (id: string) =>
+    request<{ ok: true }>(`/admin/documents/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
 
   // ── Pending report submissions (owner only) ──────────────────────────────
   pendingReports: () =>

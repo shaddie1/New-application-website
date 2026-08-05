@@ -90,6 +90,7 @@ model User {
 
   // Finance records this user entered. Every finance row carries provenance so
   // shareholders can see who booked what, and when.
+  documentsUploaded    CompanyDocument[]    @relation("CompanyDocumentUploadedBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -875,6 +876,50 @@ model MonthlyTarget {
 
   @@unique([year, month])
   @@index([year])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Company documents — governance/compliance records, shareholder-visible only
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DocumentCategory {
+  INCORPORATION
+  TAX
+  LICENCE
+  INSURANCE
+  CONTRACT
+  BANK
+  POLICY
+  MINUTES
+  OTHER
+}
+
+/**
+ * A company document. `fileUrl` is either an uploaded object in our own storage
+ * or an external link (Drive, Dropbox), so the feature works whether or not
+ * object storage is configured. `expiresAt` drives renewal reminders for the
+ * documents that lapse — licences, insurance, tax compliance.
+ */
+model CompanyDocument {
+  id           String           @id @default(cuid())
+  title        String
+  category     DocumentCategory @default(OTHER)
+  description  String?
+  fileUrl      String
+  fileName     String?
+  contentType  String?
+  sizeBytes    Int?
+  /** True when fileUrl points outside our storage. */
+  isExternal   Boolean          @default(false)
+  /** Renewal date for documents that lapse; null for permanent records. */
+  expiresAt    DateTime?        @db.Date
+  uploadedBy   User             @relation("CompanyDocumentUploadedBy", fields: [uploadedById], references: [id])
+  uploadedById String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([category])
+  @@index([expiresAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
