@@ -91,6 +91,8 @@ model User {
   // Finance records this user entered. Every finance row carries provenance so
   // shareholders can see who booked what, and when.
   documentsUploaded    CompanyDocument[]    @relation("CompanyDocumentUploadedBy")
+  projectsCreated      Project[]            @relation("ProjectCreatedBy")
+  projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -876,6 +878,76 @@ model MonthlyTarget {
 
   @@unique([year, month])
   @@index([year])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projects — a client engagement tracked through stages, with a checklist
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ProjectStage {
+  ENQUIRY
+  SURVEY
+  SCHEDULED
+  IN_PROGRESS
+  SNAGGING
+  COMPLETE
+  CANCELLED
+}
+
+/**
+ * A project groups the work for one client engagement — a post-construction
+ * handover, a recurring office contract, a multi-room deep clean. Distinct from
+ * Job, which is the money record for a single completed piece of work.
+ */
+model Project {
+  id              String        @id @default(cuid())
+  title           String
+  clientName      String?
+  clientPhone     String?
+  siteLocation    String?
+  serviceLineCode String?
+  clientSegment   ClientSegment?
+  stage           ProjectStage  @default(ENQUIRY)
+  startDate       DateTime?     @db.Date
+  targetEndDate   DateTime?     @db.Date
+  completedAt     DateTime?
+  /** Agreed value, when one has been quoted. */
+  valueCents      Int?
+  notes           String?
+  checklist       ProjectCheck[]
+  createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  createdById     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([stage])
+  @@index([startDate])
+}
+
+/**
+ * One question on a project's checklist. Answers are yes/no/not-applicable plus
+ * an optional note, and each carries who answered it and when — the same
+ * provenance the finance records use.
+ */
+model ProjectCheck {
+  id           String    @id @default(cuid())
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  question     String
+  /** Grouping label, e.g. "Site survey" or "Handover". */
+  section      String?
+  sortOrder    Int       @default(0)
+  /** Null until answered; true = yes, false = no. */
+  answer       Boolean?
+  notApplicable Boolean  @default(false)
+  note         String?
+  answeredBy   User?     @relation("ProjectCheckAnsweredBy", fields: [answeredById], references: [id])
+  answeredById String?
+  answeredAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([projectId, sortOrder])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

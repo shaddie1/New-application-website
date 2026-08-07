@@ -423,6 +423,97 @@ export interface DashboardOverview {
   hasTargets: boolean;
 }
 
+// ── Projects ────────────────────────────────────────────────────────────────
+
+export type ProjectStage =
+  | 'ENQUIRY'
+  | 'SURVEY'
+  | 'SCHEDULED'
+  | 'IN_PROGRESS'
+  | 'SNAGGING'
+  | 'COMPLETE'
+  | 'CANCELLED';
+
+export interface ProjectCheckDto {
+  id: string;
+  question: string;
+  section: string | null;
+  sortOrder: number;
+  /** Null until answered; true = yes, false = no. */
+  answer: boolean | null;
+  notApplicable: boolean;
+  note: string | null;
+  answeredByName: string | null;
+  answeredAt: string | null;
+}
+
+export interface ProjectDto {
+  id: string;
+  title: string;
+  clientName: string | null;
+  clientPhone: string | null;
+  siteLocation: string | null;
+  serviceLineCode: string | null;
+  clientSegment: ClientSegment | null;
+  stage: ProjectStage;
+  startDate: string | null;
+  targetEndDate: string | null;
+  completedAt: string | null;
+  valueCents: number | null;
+  notes: string | null;
+  checklist: ProjectCheckDto[];
+  /** Answered (or N/A) as a share of the checklist, 0–100. */
+  progressPercent: number;
+  answeredCount: number;
+  checklistCount: number;
+  /** Questions answered "no" — the outstanding problems on the job. */
+  blockerCount: number;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProjectInput {
+  title: string;
+  clientName?: string;
+  clientPhone?: string;
+  siteLocation?: string;
+  serviceLineCode?: string;
+  clientSegment?: ClientSegment;
+  stage?: ProjectStage;
+  startDate?: string | null;
+  targetEndDate?: string | null;
+  valueCents?: number;
+  notes?: string;
+  /** Omit to seed the standard checklist. */
+  questions?: { question: string; section?: string }[];
+}
+
+export interface UpdateProjectInput {
+  title?: string;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  siteLocation?: string | null;
+  serviceLineCode?: string | null;
+  clientSegment?: ClientSegment | null;
+  stage?: ProjectStage;
+  startDate?: string | null;
+  targetEndDate?: string | null;
+  valueCents?: number | null;
+  notes?: string | null;
+}
+
+export interface AnswerProjectCheckInput {
+  answer?: boolean | null;
+  notApplicable?: boolean;
+  note?: string | null;
+}
+
+export interface AddProjectCheckInput {
+  question: string;
+  section?: string;
+}
+
 // ── Company documents (shareholders only) ───────────────────────────────────
 
 export type DocumentCategory =

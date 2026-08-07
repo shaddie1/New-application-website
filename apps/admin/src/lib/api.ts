@@ -38,6 +38,11 @@ import type {
   MonthlyTargetDto,
   SetMonthlyTargetInput,
   DashboardOverview,
+  ProjectDto,
+  CreateProjectInput,
+  UpdateProjectInput,
+  AddProjectCheckInput,
+  AnswerProjectCheckInput,
   CompanyDocumentDto,
   CreateCompanyDocumentInput,
   DocumentsResult,
@@ -385,6 +390,45 @@ export const api = {
       method: 'DELETE',
       auth: true,
     }),
+
+  // ── Projects (all staff) ─────────────────────────────────────────────────
+  projects: () => request<{ projects: ProjectDto[] }>('/admin/projects', { method: 'GET', auth: true }),
+
+  createProject: (input: CreateProjectInput) =>
+    request<{ project: ProjectDto }>('/admin/projects', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  updateProject: (id: string, input: UpdateProjectInput) =>
+    request<{ project: ProjectDto }>(`/admin/projects/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteProject: (id: string) =>
+    request<{ ok: true }>(`/admin/projects/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  addProjectCheck: (projectId: string, input: AddProjectCheckInput) =>
+    request<{ project: ProjectDto }>(`/admin/projects/${encodeURIComponent(projectId)}/checks`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  answerProjectCheck: (projectId: string, checkId: string, input: AnswerProjectCheckInput) =>
+    request<{ project: ProjectDto }>(
+      `/admin/projects/${encodeURIComponent(projectId)}/checks/${encodeURIComponent(checkId)}`,
+      { method: 'PATCH', auth: true, body: JSON.stringify(input) },
+    ),
+
+  deleteProjectCheck: (projectId: string, checkId: string) =>
+    request<{ project: ProjectDto }>(
+      `/admin/projects/${encodeURIComponent(projectId)}/checks/${encodeURIComponent(checkId)}`,
+      { method: 'DELETE', auth: true },
+    ),
 
   // ── Company documents (shareholders only) ────────────────────────────────
   documents: () => request<DocumentsResult>('/admin/documents', { method: 'GET', auth: true }),
