@@ -434,6 +434,8 @@ export type ProjectStage =
   | 'COMPLETE'
   | 'CANCELLED';
 
+export type PaymentFrequency = 'ONE_OFF' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
 export interface ProjectCheckDto {
   id: string;
   question: string;
@@ -459,7 +461,16 @@ export interface ProjectDto {
   startDate: string | null;
   targetEndDate: string | null;
   completedAt: string | null;
+  /** With ONE_OFF this is the whole job; otherwise the rate per period. */
   valueCents: number | null;
+  paymentFrequency: PaymentFrequency;
+  /**
+   * Rate × periods between start and target end. Null for one-off projects or
+   * when either date is missing — an estimate needs a span to run over.
+   */
+  estimatedTotalCents: number | null;
+  /** Whole billing periods in the span, for showing the working. */
+  billingPeriods: number | null;
   notes: string | null;
   checklist: ProjectCheckDto[];
   /** Answered (or N/A) as a share of the checklist, 0–100. */
@@ -484,6 +495,7 @@ export interface CreateProjectInput {
   startDate?: string | null;
   targetEndDate?: string | null;
   valueCents?: number;
+  paymentFrequency?: PaymentFrequency;
   notes?: string;
   /** Omit to seed the standard checklist. */
   questions?: { question: string; section?: string }[];
@@ -500,6 +512,7 @@ export interface UpdateProjectInput {
   startDate?: string | null;
   targetEndDate?: string | null;
   valueCents?: number | null;
+  paymentFrequency?: PaymentFrequency;
   notes?: string | null;
 }
 

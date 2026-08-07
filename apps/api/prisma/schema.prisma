@@ -894,6 +894,14 @@ enum ProjectStage {
   CANCELLED
 }
 
+/** How the client is billed. ONE_OFF means valueCents is the whole job. */
+enum PaymentFrequency {
+  ONE_OFF
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
 /**
  * A project groups the work for one client engagement — a post-construction
  * handover, a recurring office contract, a multi-room deep clean. Distinct from
@@ -911,8 +919,12 @@ model Project {
   startDate       DateTime?     @db.Date
   targetEndDate   DateTime?     @db.Date
   completedAt     DateTime?
-  /** Agreed value, when one has been quoted. */
+  /**
+   * Agreed value. With ONE_OFF this is the whole job; otherwise it is the rate
+   * per billing period (per day, per week, per month).
+   */
   valueCents      Int?
+  paymentFrequency PaymentFrequency @default(ONE_OFF)
   notes           String?
   checklist       ProjectCheck[]
   createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])

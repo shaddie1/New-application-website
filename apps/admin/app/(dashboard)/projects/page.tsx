@@ -1,7 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ClientSegment, ProjectCheckDto, ProjectDto, ProjectStage } from '@onyxhawk/types';
+import type {
+  ClientSegment,
+  PaymentFrequency,
+  ProjectCheckDto,
+  ProjectDto,
+  ProjectStage,
+} from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
@@ -26,6 +32,22 @@ const SEGMENT_LABELS: Record<ClientSegment, string> = {
   DEVELOPER: 'Developer',
 };
 const SEGMENTS = Object.keys(SEGMENT_LABELS) as ClientSegment[];
+
+const FREQUENCY_LABELS: Record<PaymentFrequency, string> = {
+  ONE_OFF: 'One-off (whole job)',
+  DAILY: 'Per day',
+  WEEKLY: 'Per week',
+  MONTHLY: 'Per month',
+};
+const FREQUENCIES = Object.keys(FREQUENCY_LABELS) as PaymentFrequency[];
+
+/** Short suffix for showing a rate inline, e.g. "KSh 45,000/month". */
+const FREQUENCY_SUFFIX: Record<PaymentFrequency, string> = {
+  ONE_OFF: '',
+  DAILY: '/day',
+  WEEKLY: '/week',
+  MONTHLY: '/month',
+};
 
 const input = 'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm';
 const btn = 'rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
@@ -77,6 +99,7 @@ export default function ProjectsPage() {
     title: '', clientName: '', clientPhone: '', siteLocation: '',
     serviceLineCode: '', clientSegment: '' as '' | ClientSegment,
     startDate: todayIso(), targetEndDate: '', valueKes: '', notes: '',
+    paymentFrequency: 'ONE_OFF' as PaymentFrequency,
   });
 
   const load = useCallback(async () => {
@@ -112,6 +135,7 @@ export default function ProjectsPage() {
         startDate: form.startDate || null,
         targetEndDate: form.targetEndDate || null,
         valueCents: form.valueKes ? Math.round(parseFloat(form.valueKes) * 100) : undefined,
+        paymentFrequency: form.paymentFrequency,
         notes: form.notes.trim() || undefined,
       });
       setForm({ ...form, title: '', clientName: '', clientPhone: '', siteLocation: '', valueKes: '', notes: '' });
@@ -213,7 +237,16 @@ export default function ProjectsPage() {
               onChange={(e) => setForm((f) => ({ ...f, siteLocation: e.target.value }))} />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-charcoal-muted">Agreed value (KSh)</label>
+            <label className="mb-1 block text-xs text-charcoal-muted">Payment</label>
+            <select className={input} value={form.paymentFrequency}
+              onChange={(e) => setForm((f) => ({ ...f, paymentFrequency: e.target.value as PaymentFrequency }))}>
+              {FREQUENCIES.map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-charcoal-muted">
+              {form.paymentFrequency === 'ONE_OFF' ? 'Agreed value (KSh)' : `Rate (KSh${FREQUENCY_SUFFIX[form.paymentFrequency]})`}
+            </label>
             <input type="number" min="0" className={input} value={form.valueKes}
               onChange={(e) => setForm((f) => ({ ...f, valueKes: e.target.value }))} />
           </div>
@@ -336,7 +369,20 @@ function ProjectCard({
             {p.siteLocation && <span>· {p.siteLocation}</span>}
             {p.startDate && <span>· from {p.startDate}</span>}
             {p.targetEndDate && <span>· due {p.targetEndDate}</span>}
-            {typeof p.valueCents === 'number' && <span>· {money(p.valueCents)}</span>}
+            {typeof p.valueCents === 'number' && (
+              <span className="font-medium text-charcoal">
+                · {money(p.valueCents)}
+                {FREQUENCY_SUFFIX[p.paymentFrequency]}
+              </span>
+            )}
+            {/* Show the working, so the estimate is never a mystery number. */}
+            {typeof p.estimatedTotalCents === 'number' && p.billingPeriods ? (
+              <span>
+                · est. {money(p.estimatedTotalCents)} over {p.billingPeriods}{' '}
+                {p.paymentFrequency === 'DAILY' ? 'day' : p.paymentFrequency === 'WEEKLY' ? 'week' : 'month'}
+                {p.billingPeriods === 1 ? '' : 's'}
+              </span>
+            ) : null}
           </div>
 
           <div className="mt-3 max-w-md">

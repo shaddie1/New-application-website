@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { ClientSegment, Prisma, ProjectStage } from '@prisma/client';
+import { ClientSegment, PaymentFrequency, Prisma, ProjectStage } from '@prisma/client';
 import type {
   AddProjectCheckInput,
   AnswerProjectCheckInput,
@@ -15,6 +15,7 @@ import { requireAuth } from '../auth/middleware.js';
 
 const STAGES = ['ENQUIRY', 'SURVEY', 'SCHEDULED', 'IN_PROGRESS', 'SNAGGING', 'COMPLETE', 'CANCELLED'] as const;
 const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
+const FREQUENCIES = ['ONE_OFF', 'DAILY', 'WEEKLY', 'MONTHLY'] as const;
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 
 /**
@@ -50,6 +51,7 @@ const CreateSchema = z.object({
   startDate: DateStr.nullable().optional(),
   targetEndDate: DateStr.nullable().optional(),
   valueCents: z.number().int().nonnegative().optional(),
+  paymentFrequency: z.enum(FREQUENCIES).optional(),
   notes: z.string().trim().max(2000).optional(),
   questions: z
     .array(z.object({ question: z.string().trim().min(1).max(300), section: z.string().trim().max(80).optional() }))
@@ -67,6 +69,7 @@ const UpdateSchema = z.object({
   startDate: DateStr.nullable().optional(),
   targetEndDate: DateStr.nullable().optional(),
   valueCents: z.number().int().nonnegative().nullable().optional(),
+  paymentFrequency: z.enum(FREQUENCIES).optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
 }) satisfies z.ZodType<UpdateProjectInput>;
 
@@ -106,7 +109,7 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     const parsed = CreateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    const { questions, startDate, targetEndDate, stage, clientSegment, ...rest } = parsed.data;
+    const { questions, startDate, targetEndDate, stage, clientSegment, paymentFrequency, ...rest } = parsed.data;
     const seed = questions?.length ? questions : DEFAULT_QUESTIONS;
 
     const row = await prisma.project.create({
@@ -114,6 +117,7 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
         ...rest,
         stage: (stage ?? 'ENQUIRY') as ProjectStage,
         clientSegment: clientSegment as ClientSegment | undefined,
+        paymentFrequency: (paymentFrequency ?? 'ONE_OFF') as PaymentFrequency,
         startDate: startDate ? new Date(startDate) : null,
         targetEndDate: targetEndDate ? new Date(targetEndDate) : null,
         createdById: req.auth!.sub,
@@ -137,13 +141,14 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'project not found' });
 
-    const { startDate, targetEndDate, stage, clientSegment, ...rest } = parsed.data;
+    const { startDate, targetEndDate, stage, clientSegment, paymentFrequency, ...rest } = parsed.data;
     const row = await prisma.project.update({
       where: { id: req.params.id },
       data: {
         ...rest,
         ...(stage !== undefined && { stage: stage as ProjectStage }),
         ...(clientSegment !== undefined && { clientSegment: clientSegment as ClientSegment | null }),
+        ...(paymentFrequency !== undefined && { paymentFrequency: paymentFrequency as PaymentFrequency }),
         ...(startDate !== undefined && { startDate: startDate ? new Date(startDate) : null }),
         ...(targetEndDate !== undefined && { targetEndDate: targetEndDate ? new Date(targetEndDate) : null }),
         // Stamp completion once, when the project first reaches COMPLETE.
@@ -239,6 +244,24 @@ type Row = Prisma.ProjectGetPayload<{
   };
 }>;
 
+/**
+ * Whole billing periods between two dates, inclusive of the start day. Months
+ * count calendar months rather than 30-day blocks, so a 1 Jan → 31 Mar contract
+ * bills three months rather than 2.97.
+ */
+function periodsBetween(from: Date, to: Date, frequency: PaymentFrequency): number | null {
+  if (frequency === 'ONE_OFF') return null;
+  const days = Math.floor((to.getTime() - from.getTime()) / 86_400_000) + 1;
+  if (days <= 0) return null;
+
+  if (frequency === 'DAILY') return days;
+  if (frequency === 'WEEKLY') return Math.max(1, Math.ceil(days / 7));
+
+  const months =
+    (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth()) + 1;
+  return Math.max(1, months);
+}
+
 function toDto(row: Row): ProjectDto {
   const checklist: ProjectCheckDto[] = row.checklist.map((c) => ({
     id: c.id,
@@ -257,6 +280,11 @@ function toDto(row: Row): ProjectDto {
   const answered = checklist.filter((c) => c.notApplicable || c.answer !== null).length;
   const blockers = checklist.filter((c) => c.answer === false && !c.notApplicable).length;
 
+  const periods =
+    row.startDate && row.targetEndDate
+      ? periodsBetween(row.startDate, row.targetEndDate, row.paymentFrequency)
+      : null;
+
   return {
     id: row.id,
     title: row.title,
@@ -270,6 +298,9 @@ function toDto(row: Row): ProjectDto {
     targetEndDate: row.targetEndDate ? row.targetEndDate.toISOString().slice(0, 10) : null,
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     valueCents: row.valueCents,
+    paymentFrequency: row.paymentFrequency,
+    billingPeriods: periods,
+    estimatedTotalCents: periods !== null && row.valueCents !== null ? periods * row.valueCents : null,
     notes: row.notes,
     checklist,
     progressPercent: checklist.length > 0 ? Math.round((answered / checklist.length) * 100) : 0,
