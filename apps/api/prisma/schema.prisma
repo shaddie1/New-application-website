@@ -93,6 +93,7 @@ model User {
   documentsUploaded    CompanyDocument[]    @relation("CompanyDocumentUploadedBy")
   projectsCreated      Project[]            @relation("ProjectCreatedBy")
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
+  projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -927,6 +928,7 @@ model Project {
   paymentFrequency PaymentFrequency @default(ONE_OFF)
   notes           String?
   checklist       ProjectCheck[]
+  events          ProjectEvent[]
   createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   createdById     String
   createdAt       DateTime      @default(now())
@@ -934,6 +936,40 @@ model Project {
 
   @@index([stage])
   @@index([startDate])
+}
+
+/** What kind of thing happened. Drives the icon and colour in the timeline. */
+enum ProjectEventKind {
+  CREATED
+  DETAILS_CHANGED
+  STAGE_CHANGED
+  QUESTION_ANSWERED
+  QUESTION_ADDED
+  QUESTION_REMOVED
+  NOTE_CHANGED
+}
+
+/**
+ * Append-only history of a project. Written on every change so the project can
+ * answer "who did what, and when" long after the fact. Rows are never edited or
+ * deleted on their own — only cascaded away with the project itself.
+ */
+model ProjectEvent {
+  id        String           @id @default(cuid())
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  kind      ProjectEventKind
+  /** One-line human summary, written at the time so it never needs re-deriving. */
+  summary   String
+  /** Optional second line: the note left, or the old → new value. */
+  detail    String?
+  /** Kept even if the staff member is later removed, hence the name snapshot. */
+  actor     User?            @relation("ProjectEventActor", fields: [actorId], references: [id])
+  actorId   String?
+  actorName String?
+  createdAt DateTime         @default(now())
+
+  @@index([projectId, createdAt])
 }
 
 /**

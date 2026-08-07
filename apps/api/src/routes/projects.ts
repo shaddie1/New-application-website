@@ -1,12 +1,13 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { ClientSegment, PaymentFrequency, Prisma, ProjectStage } from '@prisma/client';
+import { ClientSegment, PaymentFrequency, Prisma, ProjectEventKind, ProjectStage } from '@prisma/client';
 import type {
   AddProjectCheckInput,
   AnswerProjectCheckInput,
   CreateProjectInput,
   ProjectCheckDto,
   ProjectDto,
+  ProjectEventDto,
   UpdateProjectInput,
 } from '@onyxhawk/types';
 
@@ -90,7 +91,54 @@ const withChecklist = {
     orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
     include: { answeredBy: { select: { fullName: true } } },
   },
+  _count: { select: { events: true } },
 };
+
+/** Labels used in event summaries, kept next to the enums they describe. */
+const STAGE_LABELS: Record<string, string> = {
+  ENQUIRY: 'Enquiry', SURVEY: 'Survey', SCHEDULED: 'Scheduled', IN_PROGRESS: 'In progress',
+  SNAGGING: 'Snagging', COMPLETE: 'Complete', CANCELLED: 'Cancelled',
+};
+const FIELD_LABELS: Record<string, string> = {
+  title: 'Title', clientName: 'Client', clientPhone: 'Client phone', siteLocation: 'Site',
+  serviceLineCode: 'Service line', clientSegment: 'Segment', startDate: 'Start date',
+  targetEndDate: 'Target completion', valueCents: 'Value', paymentFrequency: 'Payment frequency',
+};
+
+/**
+ * Append one line to a project's history. Deliberately fire-and-forget at the
+ * call site: a failure to log must never fail the change the user asked for,
+ * so callers await it but the route wraps its own work first.
+ */
+async function logEvent(
+  projectId: string,
+  kind: ProjectEventKind,
+  summary: string,
+  actorId: string | null,
+  detail?: string | null,
+) {
+  const actor = actorId
+    ? await prisma.user.findUnique({ where: { id: actorId }, select: { fullName: true } })
+    : null;
+  await prisma.projectEvent.create({
+    data: { projectId, kind, summary, detail: detail ?? null, actorId, actorName: actor?.fullName ?? null },
+  });
+}
+
+/** Re-read a project with everything the DTO needs, after a write. */
+function reload(id: string) {
+  return prisma.project.findUniqueOrThrow({ where: { id }, include: withChecklist });
+}
+
+/** Human-readable value for a diff line. */
+function shown(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (field === 'valueCents' && typeof value === 'number') {
+    return `KSh ${(value / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
+  }
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
+}
 
 export const projectRoutes: FastifyPluginAsync = async (app) => {
   // Projects are day-to-day operations, so any signed-in staff member can use
@@ -131,7 +179,15 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       },
       include: withChecklist,
     });
-    return reply.code(201).send({ project: toDto(row) });
+
+    await logEvent(
+      row.id,
+      'CREATED',
+      'Project created',
+      req.auth!.sub,
+      `${seed.length} question${seed.length === 1 ? '' : 's'} added to the checklist`,
+    );
+    return reply.code(201).send({ project: toDto(await reload(row.id)) });
   });
 
   app.patch<{ Params: { id: string } }>('/:id', async (req, reply) => {
@@ -157,7 +213,43 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       },
       include: withChecklist,
     });
-    return reply.send({ project: toDto(row) });
+
+    // A stage move is the headline change, so it gets its own entry. Everything
+    // else collapses into one "details changed" line listing what moved.
+    if (stage !== undefined && stage !== existing.stage) {
+      await logEvent(
+        row.id,
+        'STAGE_CHANGED',
+        `Stage moved to ${STAGE_LABELS[stage] ?? stage}`,
+        req.auth!.sub,
+        `from ${STAGE_LABELS[existing.stage] ?? existing.stage}`,
+      );
+    }
+
+    if (rest.notes !== undefined && rest.notes !== existing.notes) {
+      await logEvent(row.id, 'NOTE_CHANGED', 'Notes updated', req.auth!.sub, rest.notes || null);
+    }
+
+    const changes: string[] = [];
+    const before = existing as unknown as Record<string, unknown>;
+    const after = row as unknown as Record<string, unknown>;
+    for (const field of Object.keys(FIELD_LABELS)) {
+      if (!(field in parsed.data)) continue;
+      const a = shown(field, before[field]);
+      const b = shown(field, after[field]);
+      if (a !== b) changes.push(`${FIELD_LABELS[field]}: ${a} → ${b}`);
+    }
+    if (changes.length > 0) {
+      await logEvent(
+        row.id,
+        'DETAILS_CHANGED',
+        `${changes.length} detail${changes.length === 1 ? '' : 's'} updated`,
+        req.auth!.sub,
+        changes.join(' · '),
+      );
+    }
+
+    return reply.send({ project: toDto(await reload(row.id)) });
   });
 
   app.delete<{ Params: { id: string } }>('/:id', async (req, reply) => {
@@ -191,8 +283,8 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    const row = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, include: withChecklist });
-    return reply.code(201).send({ project: toDto(row) });
+    await logEvent(project.id, 'QUESTION_ADDED', 'Question added', req.auth!.sub, parsed.data.question);
+    return reply.code(201).send({ project: toDto(await reload(project.id)) });
   });
 
   app.patch<{ Params: { id: string; checkId: string } }>('/:id/checks/:checkId', async (req, reply) => {
@@ -221,8 +313,37 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    const row = await prisma.project.findUniqueOrThrow({ where: { id: req.params.id }, include: withChecklist });
-    return reply.send({ project: toDto(row) });
+    // Only log a real change of position. A note edited on its own logs the note.
+    const answerChanged =
+      (parsed.data.answer !== undefined && parsed.data.answer !== check.answer) ||
+      (parsed.data.notApplicable !== undefined && parsed.data.notApplicable !== check.notApplicable);
+
+    if (answerChanged) {
+      const verdict = parsed.data.notApplicable
+        ? 'N/A'
+        : parsed.data.answer === true
+          ? 'Yes'
+          : parsed.data.answer === false
+            ? 'No'
+            : 'cleared';
+      await logEvent(
+        req.params.id,
+        'QUESTION_ANSWERED',
+        `Answered ${verdict}`,
+        req.auth!.sub,
+        check.question,
+      );
+    } else if (parsed.data.note !== undefined && parsed.data.note !== check.note) {
+      await logEvent(
+        req.params.id,
+        'NOTE_CHANGED',
+        'Note updated on a question',
+        req.auth!.sub,
+        `${check.question} — ${parsed.data.note || 'note cleared'}`,
+      );
+    }
+
+    return reply.send({ project: toDto(await reload(req.params.id)) });
   });
 
   app.delete<{ Params: { id: string; checkId: string } }>('/:id/checks/:checkId', async (req, reply) => {
@@ -232,8 +353,32 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     }
     await prisma.projectCheck.delete({ where: { id: check.id } });
 
-    const row = await prisma.project.findUniqueOrThrow({ where: { id: req.params.id }, include: withChecklist });
-    return reply.send({ project: toDto(row) });
+    await logEvent(req.params.id, 'QUESTION_REMOVED', 'Question removed', req.auth!.sub, check.question);
+    return reply.send({ project: toDto(await reload(req.params.id)) });
+  });
+
+  // ── History ───────────────────────────────────────────────────────────────
+
+  /** Newest first. Loaded on demand, so the projects list stays light. */
+  app.get<{ Params: { id: string } }>('/:id/events', async (req, reply) => {
+    const project = await prisma.project.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+
+    const rows = await prisma.projectEvent.findMany({
+      where: { projectId: project.id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    const events: ProjectEventDto[] = rows.map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      summary: e.summary,
+      detail: e.detail,
+      actorName: e.actorName,
+      createdAt: e.createdAt.toISOString(),
+    }));
+    return reply.send({ events });
   });
 };
 
@@ -241,6 +386,7 @@ type Row = Prisma.ProjectGetPayload<{
   include: {
     createdBy: { select: { fullName: true } };
     checklist: { include: { answeredBy: { select: { fullName: true } } } };
+    _count: { select: { events: true } };
   };
 }>;
 
@@ -307,6 +453,7 @@ function toDto(row: Row): ProjectDto {
     answeredCount: answered,
     checklistCount: checklist.length,
     blockerCount: blockers,
+    eventCount: row._count.events,
     createdByName: row.createdBy?.fullName ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

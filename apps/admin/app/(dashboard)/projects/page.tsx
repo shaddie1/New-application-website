@@ -6,6 +6,8 @@ import type {
   PaymentFrequency,
   ProjectCheckDto,
   ProjectDto,
+  ProjectEventDto,
+  ProjectEventKind,
   ProjectStage,
 } from '@onyxhawk/types';
 
@@ -61,6 +63,28 @@ function money(cents: number) {
   return `KSh ${(cents / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
 }
 
+/** Colour of the timeline dot, by what kind of change it was. */
+const EVENT_TONE: Record<ProjectEventKind, string> = {
+  CREATED: 'var(--chart-accent-deep)',
+  STAGE_CHANGED: 'var(--chart-accent)',
+  QUESTION_ANSWERED: 'var(--chart-positive)',
+  QUESTION_ADDED: 'var(--chart-muted)',
+  QUESTION_REMOVED: 'var(--chart-negative)',
+  DETAILS_CHANGED: 'var(--chart-muted)',
+  NOTE_CHANGED: 'var(--chart-muted)',
+};
+
+/** "3 minutes ago" for recent events, an absolute date once it stops mattering. */
+function whenText(iso: string) {
+  const then = new Date(iso);
+  const mins = Math.round((Date.now() - then.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  return then.toLocaleString('en-KE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function stageTone(stage: ProjectStage) {
   if (stage === 'COMPLETE') return 'bg-success/10 text-success';
   if (stage === 'CANCELLED') return 'bg-danger/10 text-danger';
@@ -94,6 +118,11 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [newQuestion, setNewQuestion] = useState('');
+  /**
+   * Answers save the instant they are clicked, with no submit step. That is only
+   * trustworthy if it is visible, so every write reports itself here.
+   */
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
 
   const [form, setForm] = useState({
     title: '', clientName: '', clientPhone: '', siteLocation: '',
@@ -118,6 +147,14 @@ export default function ProjectsPage() {
   useEffect(() => {
     api.serviceLines().then((r) => setServiceLines(r.serviceLines)).catch(() => undefined);
   }, []);
+
+  // Let the "Saved" tick fade back to the running count. A failure stays put —
+  // that one has to be noticed.
+  useEffect(() => {
+    if (saveState !== 'saved') return;
+    const t = setTimeout(() => setSaveState('idle'), 2500);
+    return () => clearTimeout(t);
+  }, [saveState]);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,10 +190,13 @@ export default function ProjectsPage() {
     setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
 
   const answer = async (projectId: string, checkId: string, body: Parameters<typeof api.answerProjectCheck>[2]) => {
+    setSaveState('saving');
     try {
       patchProject((await api.answerProjectCheck(projectId, checkId, body)).project);
+      setSaveState('saved');
     } catch {
-      setError('Could not save that answer.');
+      setSaveState('failed');
+      setError('Could not save that answer. Check your connection and click it again.');
     }
   };
 
@@ -305,16 +345,22 @@ export default function ProjectsPage() {
               expanded={expanded === p.id}
               onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
               onStage={async (stage) => {
-                try { patchProject((await api.updateProject(p.id, { stage })).project); }
-                catch { setError('Could not change the stage.'); }
+                setSaveState('saving');
+                try {
+                  patchProject((await api.updateProject(p.id, { stage })).project);
+                  setSaveState('saved');
+                } catch { setSaveState('failed'); setError('Could not change the stage.'); }
               }}
               onAnswer={(checkId, body) => void answer(p.id, checkId, body)}
+              saveState={saveState}
               onAddQuestion={async () => {
                 if (!newQuestion.trim()) return;
+                setSaveState('saving');
                 try {
                   patchProject((await api.addProjectCheck(p.id, { question: newQuestion.trim() })).project);
                   setNewQuestion('');
-                } catch { setError('Could not add that question.'); }
+                  setSaveState('saved');
+                } catch { setSaveState('failed'); setError('Could not add that question.'); }
               }}
               newQuestion={newQuestion}
               setNewQuestion={setNewQuestion}
@@ -331,19 +377,66 @@ export default function ProjectsPage() {
   );
 }
 
+/** The project's history, fetched the first time the log tab is opened. */
+function ActivityLog({ projectId, reloadKey }: { projectId: string; reloadKey: number }) {
+  const [events, setEvents] = useState<ProjectEventDto[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setFailed(false);
+    api
+      .projectEvents(projectId)
+      .then((r) => { if (live) setEvents(r.events); })
+      .catch(() => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [projectId, reloadKey]);
+
+  if (failed) return <p className="py-6 text-center text-sm text-danger">Could not load the history.</p>;
+  if (!events) return <p className="py-6 text-center text-sm text-charcoal-muted">Loading history…</p>;
+  if (events.length === 0) {
+    return (
+      <p className="py-6 text-center text-sm text-charcoal-muted">
+        Nothing recorded yet. Every answer, stage move and edit from here on will be listed.
+      </p>
+    );
+  }
+
+  return (
+    <ol className="relative space-y-4 border-l border-line pl-5">
+      {events.map((e) => (
+        <li key={e.id} className="relative">
+          <span
+            className="absolute -left-[27px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-cream"
+            style={{ backgroundColor: EVENT_TONE[e.kind] }}
+          />
+          <p className="text-sm text-charcoal">{e.summary}</p>
+          {e.detail && <p className="mt-0.5 text-xs text-charcoal-muted">{e.detail}</p>}
+          <p className="mt-0.5 text-xs text-charcoal-muted">
+            {e.actorName ?? 'Unknown'} · {whenText(e.createdAt)}
+          </p>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function ProjectCard({
-  project: p, expanded, onToggle, onStage, onAnswer, onAddQuestion, newQuestion, setNewQuestion, onDelete,
+  project: p, expanded, onToggle, onStage, onAnswer, saveState, onAddQuestion, newQuestion, setNewQuestion, onDelete,
 }: {
   project: ProjectDto;
   expanded: boolean;
   onToggle: () => void;
   onStage: (stage: ProjectStage) => void;
   onAnswer: (checkId: string, body: { answer?: boolean | null; notApplicable?: boolean; note?: string | null }) => void;
+  saveState: 'idle' | 'saving' | 'saved' | 'failed';
   onAddQuestion: () => void;
   newQuestion: string;
   setNewQuestion: (v: string) => void;
   onDelete: () => void;
 }) {
+  const [tab, setTab] = useState<'questions' | 'log'>('questions');
+
   // Group the checklist by its section headings.
   const sections = new Map<string, ProjectCheckDto[]>();
   for (const c of p.checklist) {
@@ -431,6 +524,46 @@ function ProjectCard({
 
       {expanded && (
         <div className="border-t border-line bg-cream/40 px-5 py-4">
+          <div className="mb-4 flex items-center gap-1 border-b border-line">
+            <button
+              onClick={() => setTab('questions')}
+              className={`border-b-2 px-3 py-2 text-sm ${tab === 'questions' ? 'border-gold-deep font-medium text-gold-deep' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+            >
+              Questions ({p.checklistCount})
+            </button>
+            <button
+              onClick={() => setTab('log')}
+              className={`border-b-2 px-3 py-2 text-sm ${tab === 'log' ? 'border-gold-deep font-medium text-gold-deep' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+            >
+              Activity log ({p.eventCount})
+            </button>
+          </div>
+
+          {tab === 'log' ? (
+            <ActivityLog projectId={p.id} reloadKey={p.eventCount} />
+          ) : (
+        <>
+          {/* Answers write straight to the server, so say so — an admin who
+              expects a submit button will otherwise assume nothing was kept. */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white px-4 py-2 text-xs">
+            <span className="text-charcoal-muted">
+              Answers save the moment you click. There is nothing to submit.
+            </span>
+            <span
+              className={
+                saveState === 'failed' ? 'font-medium text-danger'
+                : saveState === 'saving' ? 'text-charcoal-muted'
+                : saveState === 'saved' ? 'font-medium text-success'
+                : 'text-charcoal-muted'
+              }
+            >
+              {saveState === 'saving' ? 'Saving…'
+                : saveState === 'saved' ? '✓ Saved'
+                : saveState === 'failed' ? '⚠ Not saved — try again'
+                : `${p.answeredCount} of ${p.checklistCount} saved`}
+            </span>
+          </div>
+
           {[...sections.entries()].map(([section, items]) => (
             <div key={section} className="mb-4 last:mb-0">
               <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-charcoal-muted">{section}</p>
@@ -499,13 +632,21 @@ function ProjectCard({
             <input
               value={newQuestion}
               onChange={(e) => setNewQuestion(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAddQuestion(); } }}
               placeholder="Add a question specific to this project"
               className={input}
             />
             <button onClick={onAddQuestion} className={btn}>Add</button>
           </div>
 
-          <div className="mt-3 flex items-center justify-between text-xs text-charcoal-muted">
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+            <button onClick={() => setTab('log')} className={btnGhost}>View activity log</button>
+            <button onClick={onToggle} className={btn}>Done</button>
+          </div>
+        </>
+          )}
+
+          <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs text-charcoal-muted">
             <span>Created by {p.createdByName ?? 'unknown'} · {new Date(p.createdAt).toLocaleDateString('en-KE')}</span>
             <button onClick={onDelete} className="text-danger hover:underline">Delete project</button>
           </div>

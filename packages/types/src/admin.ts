@@ -449,6 +449,27 @@ export interface ProjectCheckDto {
   answeredAt: string | null;
 }
 
+export type ProjectEventKind =
+  | 'CREATED'
+  | 'DETAILS_CHANGED'
+  | 'STAGE_CHANGED'
+  | 'QUESTION_ANSWERED'
+  | 'QUESTION_ADDED'
+  | 'QUESTION_REMOVED'
+  | 'NOTE_CHANGED';
+
+/** One entry in a project's history. Written once, never edited. */
+export interface ProjectEventDto {
+  id: string;
+  kind: ProjectEventKind;
+  summary: string;
+  /** Second line: the note left, or the old → new value. */
+  detail: string | null;
+  /** Name as it stood when the event happened, so it survives staff changes. */
+  actorName: string | null;
+  createdAt: string;
+}
+
 export interface ProjectDto {
   id: string;
   title: string;
@@ -479,6 +500,8 @@ export interface ProjectDto {
   checklistCount: number;
   /** Questions answered "no" — the outstanding problems on the job. */
   blockerCount: number;
+  /** History entries, so the log tab can show a count before it loads. */
+  eventCount: number;
   createdByName: string | null;
   createdAt: string;
   updatedAt: string;

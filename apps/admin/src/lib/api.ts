@@ -39,6 +39,7 @@ import type {
   SetMonthlyTargetInput,
   DashboardOverview,
   ProjectDto,
+  ProjectEventDto,
   CreateProjectInput,
   UpdateProjectInput,
   AddProjectCheckInput,
@@ -429,6 +430,11 @@ export const api = {
       `/admin/projects/${encodeURIComponent(projectId)}/checks/${encodeURIComponent(checkId)}`,
       { method: 'DELETE', auth: true },
     ),
+
+  projectEvents: (projectId: string) =>
+    request<{ events: ProjectEventDto[] }>(`/admin/projects/${encodeURIComponent(projectId)}/events`, {
+      auth: true,
+    }),
 
   // ── Company documents (shareholders only) ────────────────────────────────
   documents: () => request<DocumentsResult>('/admin/documents', { method: 'GET', auth: true }),
