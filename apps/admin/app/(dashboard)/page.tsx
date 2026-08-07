@@ -2,18 +2,24 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type {
   AdminStats,
   DashboardOverview,
   EquityOverview,
   ExpenseCategory,
   FinancialSummary,
-  MonthlyTrendItem,
   RevenueBreakdown,
 } from '@onyxhawk/types';
 import { api, ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
-import { DonutChart, StatTile, TargetMeter, TrendChart, money } from '../../src/components/charts';
+import {
+  AchievementRing,
+  AchievementRow,
+  DonutChart,
+  StatTile,
+  money,
+} from '../../src/components/charts';
 
 const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -209,8 +215,8 @@ function pctChange(current: number, previous: number): number | null {
  * 12-month shape of the business. The full breakdowns live on Insights.
  */
 function FinanceSnapshot() {
+  const router = useRouter();
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
-  const [trends, setTrends] = useState<MonthlyTrendItem[]>([]);
   const [breakdown, setBreakdown] = useState<RevenueBreakdown | null>(null);
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
   const [equity, setEquity] = useState<EquityOverview | null>(null);
@@ -226,14 +232,12 @@ function FinanceSnapshot() {
 
     Promise.all([
       api.overview(y, m),
-      api.financialTrends(12),
       api.revenueBreakdown(from, to).catch(() => null),
       api.financialSummary(from, to).catch(() => null),
       api.equity(from, to).catch(() => null), // cap-table holders only
     ])
-      .then(([o, t, b, sm, eq]) => {
+      .then(([o, b, sm, eq]) => {
         setOverview(o.overview);
-        setTrends(t.trends);
         setBreakdown(b?.breakdown ?? null);
         setSummary(sm?.summary ?? null);
         setEquity(eq?.overview ?? null);
@@ -257,12 +261,6 @@ function FinanceSnapshot() {
       )
     : [];
 
-  const trendData = trends.map((t) => ({
-    label: t.label,
-    incomeCents: t.incomeCents,
-    netCents: t.netCents,
-  }));
-
   return (
     <section className="mt-10">
       <div className="mb-4 flex items-baseline justify-between gap-3">
@@ -274,33 +272,85 @@ function FinanceSnapshot() {
         </Link>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <TargetMeter
-          label="Revenue"
-          actual={overview.revenue.actual}
-          target={overview.revenue.target}
-          format={money}
-        />
-        <TargetMeter
-          label="Net profit"
-          actual={overview.netProfit.actual}
-          target={overview.netProfit.target}
-          format={money}
-        />
-        <StatTile
-          label="Jobs completed"
-          value={String(overview.jobs.actual)}
-          delta={pctChange(overview.jobs.actual, overview.previousJobCount)}
-          deltaLabel="vs last month"
-        />
+      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StatTile
+            label="Revenue"
+            value={money(overview.revenue.actual)}
+            delta={pctChange(overview.revenue.actual, overview.previousRevenueCents)}
+            deltaLabel="vs last month"
+            context="Income from approved jobs this month"
+            progressPercent={overview.revenue.target > 0 ? overview.revenue.percent : null}
+            progressLabel={
+              overview.revenue.target > 0
+                ? `${overview.revenue.percent}% of ${money(overview.revenue.target)} target`
+                : undefined
+            }
+          />
+          <StatTile
+            label="Net profit"
+            value={money(overview.netProfit.actual)}
+            delta={pctChange(overview.netProfit.actual, overview.previousNetCents)}
+            deltaLabel="vs last month"
+            context="After job expenses, before any reserve"
+            progressPercent={overview.netProfit.target > 0 ? overview.netProfit.percent : null}
+            progressLabel={
+              overview.netProfit.target > 0
+                ? `${overview.netProfit.percent}% of ${money(overview.netProfit.target)} target`
+                : undefined
+            }
+          />
+          <StatTile
+            label="Jobs completed"
+            value={String(overview.jobs.actual)}
+            delta={pctChange(overview.jobs.actual, overview.previousJobCount)}
+            deltaLabel="vs last month"
+            context="Approved jobs recorded this month"
+            progressPercent={overview.jobs.target > 0 ? overview.jobs.percent : null}
+            progressLabel={
+              overview.jobs.target > 0 ? `${overview.jobs.actual} of ${overview.jobs.target} planned` : undefined
+            }
+          />
+          <StatTile
+            label="Margin"
+            value={
+              overview.revenue.actual > 0
+                ? `${Math.round((overview.netProfit.actual / overview.revenue.actual) * 100)}%`
+                : '—'
+            }
+            context="Net profit as a share of revenue"
+          />
+        </div>
+
+        {/* Rings replace the old flat "no target set" bar: with no target they
+            render an empty track carrying the action, not dead space. */}
+        <AchievementRow>
+          <AchievementRing
+            label="Revenue"
+            percent={overview.revenue.target > 0 ? overview.revenue.percent : null}
+            caption="of monthly target"
+            onSetTarget={() => router.push('/insights')}
+          />
+          <AchievementRing
+            label="Net profit"
+            percent={overview.netProfit.target > 0 ? overview.netProfit.percent : null}
+            caption="of monthly target"
+            onSetTarget={() => router.push('/insights')}
+          />
+          <AchievementRing
+            label="Jobs"
+            percent={overview.jobs.target > 0 ? overview.jobs.percent : null}
+            caption="of jobs planned"
+            onSetTarget={() => router.push('/insights')}
+          />
+        </AchievementRow>
       </div>
 
-      <div className="mt-4 rounded-xl border border-line bg-white p-5">
-        <p className="mb-4 text-xs uppercase tracking-widest text-charcoal-muted">
-          Income &amp; net profit — last 12 months
-        </p>
-        <TrendChart data={trendData} />
-      </div>
+      {/* The 12-month trend chart was here. Removed from the dashboard: with a
+          single month of recorded data it renders as one spike in a row of
+          zeros, which reads as broken rather than informative. The chart still
+          lives on Insights, where a sparse series is expected while history
+          accumulates. */}
 
       {/* Part-to-whole views of the month */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

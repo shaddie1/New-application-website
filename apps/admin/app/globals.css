@@ -4,11 +4,31 @@
 
 :root {
   color-scheme: light;
+
+  /* ── Chart theme ─────────────────────────────────────────────────────────
+     Charts read these rather than hard-coded hex, so a second mode
+     (Boardroom: black surface, cream text, gold data) can re-theme every
+     chart by overriding this block alone. */
+  --chart-surface: #ffffff;
+  --chart-ink: #14120f;      /* headings, axis labels, the net-profit line */
+  --chart-muted: #5a5348;    /* secondary labels */
+  --chart-grid: #eae4d4;     /* horizontal gridlines — deliberately faint */
+  --chart-track: #eeeae0;    /* ring/progress track */
+  --chart-accent: #d4a843;   /* hawk gold: the primary data colour */
+  --chart-accent-deep: #a87d22; /* bronze: accent text on light surfaces */
+  --chart-positive: #1f7a4d;
+  --chart-negative: #b14747;
 }
 
 body {
   /* Bright brand surface: cream page, charcoal text (company brand sheet). */
   background-color: #fdfaf2;
   color: #14120f;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-raleway), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Tabular figures keep KPI numbers and deltas from shifting width as they
+   animate or update. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }

@@ -1,7 +1,12 @@
 'use client';
 
+import { useState, type ReactNode } from 'react';
+
 /**
  * Charts for the admin dashboard.
+ *
+ * Colours come from CSS variables (--chart-*) declared in globals.css, not from
+ * hard-coded hex, so a second theme can re-skin every chart from one block.
  *
  * Palette decision (validated, not eyeballed): the brand's gold #D4A843 and
  * bronze #A87D22 are only ΔE 13.8 apart in normal vision — below the 15 floor —
@@ -41,29 +46,141 @@ export function StatTile({
   delta,
   deltaLabel,
   hint,
+  context,
+  progressPercent,
+  progressLabel,
 }: {
   label: string;
   value: string;
   delta?: number | null;
   deltaLabel?: string;
   hint?: string;
+  /** One line saying what the number actually means. */
+  context?: string;
+  /** 0–100+; renders a thin capacity bar under the number when provided. */
+  progressPercent?: number | null;
+  progressLabel?: string;
 }) {
   const showDelta = typeof delta === 'number' && Number.isFinite(delta);
+  const showProgress = typeof progressPercent === 'number' && Number.isFinite(progressPercent);
+
   return (
     <div className="rounded-xl border border-line bg-white p-5">
       <p className="text-xs uppercase tracking-widest text-charcoal-muted">{label}</p>
-      <p className="mt-2 text-3xl font-bold tracking-tight text-charcoal">{value}</p>
-      <div className="mt-1 flex items-center gap-2 text-xs">
+
+      <p className="mt-2 text-3xl font-bold tracking-tight text-charcoal tabular-nums">{value}</p>
+
+      {/* Delta stays small and secondary — it supports the headline, never competes. */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         {showDelta && (
-          <span className={delta >= 0 ? 'font-medium text-success' : 'font-medium text-danger'}>
+          <span
+            className="font-medium tabular-nums"
+            style={{ color: delta >= 0 ? 'var(--chart-positive)' : 'var(--chart-negative)' }}
+          >
             {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}%
           </span>
         )}
         {deltaLabel && <span className="text-charcoal-muted">{deltaLabel}</span>}
       </div>
+
+      {showProgress && (
+        <div className="mt-3">
+          <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'var(--chart-track)' }}>
+            <div
+              className="h-full rounded-full transition-[width] duration-500"
+              style={{
+                width: `${Math.min(100, Math.max(0, progressPercent))}%`,
+                backgroundColor: 'var(--chart-accent)',
+              }}
+            />
+          </div>
+          {progressLabel && <p className="mt-1 text-xs text-charcoal-muted">{progressLabel}</p>}
+        </div>
+      )}
+
+      {context && <p className="mt-2 text-xs text-charcoal-muted">{context}</p>}
       {hint && <p className="mt-1 text-xs text-charcoal-muted">{hint}</p>}
     </div>
   );
+}
+
+// ── Achievement ring ────────────────────────────────────────────────────────
+
+/**
+ * Circular progress against a target. When no target is set the ring renders as
+ * an empty track with an inline "Set target" action inside it, so the widget
+ * still reads as a deliberate control rather than a broken or empty state.
+ */
+export function AchievementRing({
+  label,
+  percent,
+  caption,
+  onSetTarget,
+  setTargetLabel = 'Set target',
+}: {
+  label: string;
+  /** Null when no target exists — draws the empty-track state. */
+  percent: number | null;
+  caption?: string;
+  onSetTarget?: () => void;
+  setTargetLabel?: string;
+}) {
+  const size = 92;
+  const stroke = 7;
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const hasTarget = typeof percent === 'number' && Number.isFinite(percent);
+  const shown = hasTarget ? Math.max(0, percent) : 0;
+  // Cap the arc at a full turn so 180% does not wrap and read as 80%.
+  const dash = (Math.min(shown, 100) / 100) * circumference;
+
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-line bg-white p-4">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90" role="img" aria-label={`${label}: ${hasTarget ? `${Math.round(shown)}% of target` : 'no target set'}`}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--chart-track)" strokeWidth={stroke} />
+          {hasTarget && (
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke="var(--chart-accent)"
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              strokeDasharray={`${dash} ${circumference}`}
+              className="transition-[stroke-dasharray] duration-700"
+            />
+          )}
+        </svg>
+
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          {hasTarget ? (
+            <span className="text-lg font-bold tabular-nums text-charcoal">{Math.round(shown)}%</span>
+          ) : onSetTarget ? (
+            <button
+              onClick={onSetTarget}
+              className="rounded-full border border-gold-bright/60 px-2 py-1 text-[10px] font-medium text-bronze hover:bg-gold-bright/10"
+            >
+              + {setTargetLabel}
+            </button>
+          ) : (
+            <span className="text-xs text-charcoal-muted">—</span>
+          )}
+        </div>
+      </div>
+
+      <div className="text-center">
+        <p className="text-xs font-medium text-charcoal">{label}</p>
+        {caption && <p className="mt-0.5 text-[11px] text-charcoal-muted">{caption}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** Row wrapper so the rings sit consistently wherever they are used. */
+export function AchievementRow({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{children}</div>;
 }
 
 // ── Target meter ────────────────────────────────────────────────────────────
@@ -132,94 +249,222 @@ export function TargetMeter({
   );
 }
 
-// ── Monthly trend: income bars + net profit line ────────────────────────────
+// ── Monthly trend: income area + net profit line ────────────────────────────
 
-export type TrendPoint = { label: string; incomeCents: number; netCents: number };
+export type TrendPoint = {
+  label: string;
+  incomeCents: number;
+  netCents: number;
+  /** Optional tooltip context; points without it simply hide that row. */
+  jobCount?: number;
+};
 
 /**
- * Two series on ONE axis — both are KSh, so a shared scale is honest (a second
- * y-axis would invent a relationship). Income is a gold column, net profit a
- * charcoal line: different colour AND different mark.
+ * Income as a gold gradient area, net profit as a line over it.
+ *
+ * Both series share ONE axis deliberately. They are the same unit (KSh) and net
+ * profit is a component of income, so a second y-scale could render the profit
+ * line above the income area — stating something false. The density the brief
+ * asks for comes from the tooltip, gridlines and fill instead of a second scale.
  */
 export function TrendChart({ data }: { data: TrendPoint[] }) {
-  if (data.length === 0) {
-    return <ChartEmpty>No monthly data yet.</ChartEmpty>;
-  }
+  const [hover, setHover] = useState<number | null>(null);
 
   const width = 760;
-  const height = 260;
-  const pad = { top: 16, right: 16, bottom: 34, left: 16 };
+  const height = 280;
+  const pad = { top: 18, right: 18, bottom: 38, left: 56 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
 
+  const hasData = data.some((d) => d.incomeCents !== 0 || d.netCents !== 0);
   const values = data.flatMap((d) => [d.incomeCents, d.netCents]);
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
   const span = max - min || 1;
 
   const y = (v: number) => pad.top + plotH - ((v - min) / span) * plotH;
-  const bandW = plotW / data.length;
-  const barW = Math.min(28, bandW * 0.5);
-
-  const linePoints = data.map((d, i) => `${pad.left + bandW * i + bandW / 2},${y(d.netCents)}`).join(' ');
+  const bandW = data.length > 0 ? plotW / data.length : plotW;
+  const cx = (i: number) => pad.left + bandW * i + bandW / 2;
   const zeroY = y(0);
 
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => min + span * t);
+
+  const areaPath =
+    data.length > 0
+      ? [
+          `M ${cx(0)} ${zeroY}`,
+          ...data.map((d, i) => `L ${cx(i)} ${y(Math.max(d.incomeCents, 0))}`),
+          `L ${cx(data.length - 1)} ${zeroY}`,
+          'Z',
+        ].join(' ')
+      : '';
+
+  const active = hover !== null ? data[hover] : null;
+
   return (
-    <figure className="rounded-xl border border-line bg-white p-5">
-      <figcaption className="mb-1 flex flex-wrap items-center justify-between gap-3">
+    <figure className="relative rounded-xl border border-line bg-white p-5">
+      <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
         <span className="text-sm font-medium text-charcoal">Income and net profit by month</span>
-        <span className="flex items-center gap-4 text-xs text-charcoal-muted">
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: GOLD }} /> Income
+        {!hasData && (
+          <span className="text-xs text-charcoal-muted">
+            Awaiting data — the dashed line marks the zero baseline
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[2px] w-4" style={{ backgroundColor: CHARCOAL }} /> Net profit
-          </span>
-        </span>
+        )}
       </figcaption>
 
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img"
-        aria-label="Monthly income columns with a net profit line">
-        {/* Baseline only — no gridline clutter. */}
-        <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="#E8E2D2" strokeWidth="1" />
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full"
+        role="img"
+        aria-label="Monthly income area with a net profit line"
+        onMouseLeave={() => setHover(null)}
+      >
+        <defs>
+          <linearGradient id="incomeFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--chart-accent)" stopOpacity="0.38" />
+            <stop offset="100%" stopColor="var(--chart-accent)" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
 
-        {data.map((d, i) => {
-          const cx = pad.left + bandW * i + bandW / 2;
-          const value = Math.max(d.incomeCents, 0);
-          // Grow upward from the baseline. A zero month draws no bar at all —
-          // a minimum-height stub would hang below the axis and read as debt.
-          const h = value > 0 ? Math.max(2, zeroY - y(value)) : 0;
-          return (
-            <g key={d.label}>
-              <title>{`${d.label} — income ${money(d.incomeCents)}, net ${money(d.netCents)}`}</title>
-              {h > 0 && <rect x={cx - barW / 2} y={zeroY - h} width={barW} height={h} rx="4" fill={GOLD} />}
-              <text x={cx} y={height - 12} textAnchor="middle" fontSize="11" fill="#5A5348">
-                {d.label}
-              </text>
-            </g>
-          );
-        })}
+        {ticks.map((t) => (
+          <g key={t}>
+            <line
+              x1={pad.left}
+              y1={y(t)}
+              x2={width - pad.right}
+              y2={y(t)}
+              stroke="var(--chart-grid)"
+              strokeWidth="1"
+            />
+            <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="var(--chart-muted)">
+              {moneyShort(t)}
+            </text>
+          </g>
+        ))}
 
-        <polyline points={linePoints} fill="none" stroke={CHARCOAL} strokeWidth="2"
-          strokeLinejoin="round" strokeLinecap="round" />
+        {/* Zero baseline. Dashed when there is nothing to plot, so an empty
+            chart shows the shape of the plot rather than blank white. */}
+        <line
+          x1={pad.left}
+          y1={zeroY}
+          x2={width - pad.right}
+          y2={zeroY}
+          stroke={hasData ? 'var(--chart-grid)' : 'var(--chart-accent-deep)'}
+          strokeWidth={hasData ? 1 : 1.5}
+          strokeDasharray={hasData ? undefined : '6 5'}
+          opacity={hasData ? 1 : 0.55}
+        />
 
-        {data.map((d, i) => {
-          const cx = pad.left + bandW * i + bandW / 2;
-          const isLast = i === data.length - 1;
-          return (
-            <g key={`${d.label}-pt`}>
-              {/* 2px surface ring so the marker stays readable over the column. */}
-              <circle cx={cx} cy={y(d.netCents)} r="4.5" fill={CHARCOAL} stroke="#FFFFFF" strokeWidth="2" />
-              {/* Label only the latest point — never a number on every point. */}
-              {isLast && (
-                <text x={cx} y={y(d.netCents) - 12} textAnchor="end" fontSize="11" fontWeight="600" fill={CHARCOAL}>
-                  {moneyShort(d.netCents)}
-                </text>
-              )}
-            </g>
-          );
-        })}
+        {hasData && (
+          <>
+            <path d={areaPath} fill="url(#incomeFill)" />
+            <polyline
+              points={data.map((d, i) => `${cx(i)},${y(Math.max(d.incomeCents, 0))}`).join(' ')}
+              fill="none"
+              stroke="var(--chart-accent)"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <polyline
+              points={data.map((d, i) => `${cx(i)},${y(d.netCents)}`).join(' ')}
+              fill="none"
+              stroke="var(--chart-ink)"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          </>
+        )}
+
+        {data.map((d, i) => (
+          <g key={d.label}>
+            <text x={cx(i)} y={height - 14} textAnchor="middle" fontSize="11" fill="var(--chart-muted)">
+              {d.label}
+            </text>
+            {hover === i && hasData && (
+              <line
+                x1={cx(i)}
+                y1={pad.top}
+                x2={cx(i)}
+                y2={pad.top + plotH}
+                stroke="var(--chart-ink)"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+                opacity="0.35"
+              />
+            )}
+            {/* Full-height band — a far bigger hit target than the mark itself. */}
+            <rect
+              x={pad.left + bandW * i}
+              y={pad.top}
+              width={bandW}
+              height={plotH}
+              fill="transparent"
+              onMouseEnter={() => setHover(i)}
+            />
+          </g>
+        ))}
+
+        {hasData &&
+          data.map((d, i) => (
+            <circle
+              key={`${d.label}-pt`}
+              cx={cx(i)}
+              cy={y(d.netCents)}
+              r={hover === i ? 5.5 : 4}
+              fill="var(--chart-ink)"
+              stroke="var(--chart-surface)"
+              strokeWidth="2"
+            />
+          ))}
       </svg>
+
+      {active && hasData && (
+        <div
+          className="pointer-events-none absolute top-16 z-10 rounded-lg border border-line bg-white px-3 py-2 shadow-lg"
+          style={{ left: `${(cx(hover!) / width) * 100}%`, transform: 'translateX(-50%)' }}
+        >
+          <p className="text-xs font-semibold text-charcoal">{active.label}</p>
+          <dl className="mt-1 space-y-0.5 text-xs">
+            <div className="flex items-center justify-between gap-5">
+              <dt className="flex items-center gap-1.5 text-charcoal-muted">
+                <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: 'var(--chart-accent)' }} />
+                Income
+              </dt>
+              <dd className="tabular-nums font-medium text-charcoal">{money(active.incomeCents)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-5">
+              <dt className="flex items-center gap-1.5 text-charcoal-muted">
+                <span className="h-[2px] w-3" style={{ backgroundColor: 'var(--chart-ink)' }} />
+                Net profit
+              </dt>
+              <dd className="tabular-nums font-medium text-charcoal">{money(active.netCents)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-5">
+              <dt className="text-charcoal-muted">Margin</dt>
+              <dd className="tabular-nums font-medium text-charcoal">
+                {active.incomeCents > 0 ? `${Math.round((active.netCents / active.incomeCents) * 100)}%` : '—'}
+              </dd>
+            </div>
+            {typeof active.jobCount === 'number' && (
+              <div className="flex items-center justify-between gap-5">
+                <dt className="text-charcoal-muted">Jobs</dt>
+                <dd className="tabular-nums font-medium text-charcoal">{active.jobCount}</dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-4 text-xs text-charcoal-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: 'var(--chart-accent)' }} /> Income
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-[2px] w-4" style={{ backgroundColor: 'var(--chart-ink)' }} /> Net profit
+        </span>
+      </div>
     </figure>
   );
 }
