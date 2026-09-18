@@ -44,7 +44,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { title: 'Finance', items: OWNER_FINANCE },
         { title: 'Governance', items: OWNER_GOVERNANCE },
       ]
-    : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }];
+    : session.user.role === 'COO'
+      // The COO runs the readiness gates and the reserve, so gets the finance rail.
+      ? [
+          { title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] },
+          { title: 'Finance', items: OWNER_FINANCE.filter((i) => i.href !== '/financials') },
+        ]
+      : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }];
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 

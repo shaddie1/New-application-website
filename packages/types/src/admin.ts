@@ -53,7 +53,8 @@ export type StaffRole =
   | 'FINANCIAL_MANAGER'
   | 'MARKETING'
   | 'CLEANING_SUPERVISOR'
-  | 'SHAREHOLDER';
+  | 'SHAREHOLDER'
+  | 'COO';
 
 export interface AdminStaffDto {
   id: string;
@@ -119,6 +120,8 @@ export interface JobDto {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  /** Laundry-line jobs only: kilograms washed. */
+  laundryKg: number | null;
   expenses: ExpenseDto[];
   totalExpensesCents: number;
   netCents: number; // actualIncomeCents - totalExpensesCents
@@ -138,9 +141,11 @@ export interface CreateJobInput {
   serviceLineCode?: string;
   region?: string;
   clientSegment?: ClientSegment;
+  laundryKg?: number;
 }
 
 export interface UpdateJobInput {
+  laundryKg?: number | null;
   serviceLineCode?: string | null;
   region?: string | null;
   clientSegment?: ClientSegment | null;
@@ -171,6 +176,8 @@ export interface CreateJobReportInput {
   clientPhone?: string;
   clientLocation?: string;
   notes?: string;
+  serviceLineCode?: string;
+  laundryKg?: number;
 }
 
 export interface MonthlyTrendItem {

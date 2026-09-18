@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ExpenseCategory, ExpenseDto, JobDto } from '@onyxhawk/types';
+import { LAUNDRY_LINE_CODE } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
@@ -46,9 +47,28 @@ export default function JobReportsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     title: '', date: todayIso(), incomeKes: '', discountKes: '',
-    clientName: '', clientPhone: '', clientLocation: '', notes: '',
+    clientName: '', clientPhone: '', clientLocation: '', notes: '', serviceLineCode: '', laundryKg: '',
   });
   const [saving, setSaving] = useState(false);
+  // Laundry only lists once its go decision is GO; its "from" price is the per-kg rate.
+  const [serviceLines, setServiceLines] = useState<{ code: string; name: string; fromPriceCents: number | null }[]>([]);
+  const [incomeOverridden, setIncomeOverridden] = useState(false);
+  const laundryPriceCents = serviceLines.find((l) => l.code === LAUNDRY_LINE_CODE)?.fromPriceCents ?? null;
+  const isLaundryJob = form.serviceLineCode === LAUNDRY_LINE_CODE;
+  useEffect(() => {
+    api.serviceLines().then((r) => setServiceLines(r.serviceLines)).catch(() => setServiceLines([]));
+  }, []);
+  /** kg × price per kg, unless the amount has been overridden by hand. */
+  const setLaundryKg = (kg: string, overridden = incomeOverridden) => {
+    setForm((f) => {
+      const next = { ...f, laundryKg: kg };
+      const n = parseFloat(kg);
+      if (!overridden && laundryPriceCents !== null && Number.isFinite(n)) {
+        next.incomeKes = String(Math.round(n * laundryPriceCents) / 100);
+      }
+      return next;
+    });
+  };
 
   // Expanded expense form
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -88,9 +108,12 @@ export default function JobReportsPage() {
         clientPhone: form.clientPhone.trim() || undefined,
         clientLocation: form.clientLocation.trim() || undefined,
         notes: form.notes.trim() || undefined,
+        serviceLineCode: form.serviceLineCode || undefined,
+        laundryKg: isLaundryJob && form.laundryKg !== '' ? parseFloat(form.laundryKg) : undefined,
       });
       setReports((prev) => [res.report, ...prev]);
-      setForm({ title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '' });
+      setForm({ title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '', serviceLineCode: '', laundryKg: '' });
+      setIncomeOverridden(false);
       setShowForm(false);
       setExpandedId(res.report.id);
       setExpenseForm(blankExpenseForm());
@@ -219,9 +242,42 @@ export default function JobReportsPage() {
               placeholder="e.g. 5000"
               className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
               value={form.incomeKes}
-              onChange={(e) => setForm((f) => ({ ...f, incomeKes: e.target.value }))}
+              onChange={(e) => { setIncomeOverridden(true); setForm((f) => ({ ...f, incomeKes: e.target.value })); }}
             />
+            {isLaundryJob && laundryPriceCents !== null && (
+              <p className="mt-1 text-xs text-text-muted">
+                {incomeOverridden
+                  ? <>Overridden · <button type="button" className="underline" onClick={() => { setIncomeOverridden(false); setLaundryKg(form.laundryKg, false); }}>use kg × KSh {laundryPriceCents / 100}</button></>
+                  : `kg × KSh ${laundryPriceCents / 100}/kg — edit to override`}
+              </p>
+            )}
           </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Service line</label>
+            <select
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+              value={form.serviceLineCode}
+              onChange={(e) => setForm((f) => ({ ...f, serviceLineCode: e.target.value }))}
+            >
+              <option value="">Unclassified</option>
+              {serviceLines.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+            </select>
+          </div>
+          {isLaundryJob && (
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Weight (kg)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="e.g. 12.5"
+                aria-label="Laundry kg"
+                className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                value={form.laundryKg}
+                onChange={(e) => setLaundryKg(e.target.value)}
+              />
+            </div>
+          )}
           <div>
             <label className="block text-xs text-text-muted mb-1">Discount given (KSh)</label>
             <input

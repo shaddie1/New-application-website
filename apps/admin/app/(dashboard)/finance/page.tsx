@@ -8,6 +8,9 @@ import type {
   InvestmentDto,
   InvestmentKind,
   MarketingChannel,
+  ReserveEntryDto,
+  ReserveEntryKind,
+  ReserveLedgerDto,
   MarketingSpendDto,
   ProfitDistributionDto,
   RevenueBreakdown,
@@ -46,13 +49,14 @@ const ASSET_CATEGORIES: AssetCategory[] = ['MACHINE', 'VEHICLE', 'EQUIPMENT', 'T
 const ASSET_CONDITIONS: AssetCondition[] = ['NEW', 'GOOD', 'FAIR', 'POOR', 'RETIRED'];
 const INVESTMENT_KINDS: InvestmentKind[] = ['CAPITAL_INJECTION', 'LOAN', 'GRANT', 'OTHER'];
 
-type Tab = 'revenue' | 'marketing' | 'assets' | 'investments' | 'sharing' | 'receipts';
+type Tab = 'revenue' | 'marketing' | 'assets' | 'investments' | 'reserve' | 'sharing' | 'receipts';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'revenue', label: 'Revenue' },
   { key: 'marketing', label: 'Marketing' },
   { key: 'assets', label: 'Assets' },
   { key: 'investments', label: 'Investments' },
+  { key: 'reserve', label: 'Reserve' },
   { key: 'sharing', label: 'Profit sharing' },
   { key: 'receipts', label: 'Receipts' },
 ];
@@ -128,6 +132,7 @@ export default function FinancePage() {
       {tab === 'marketing' && <MarketingTab from={from} to={to} onError={fail} />}
       {tab === 'assets' && <AssetsTab onError={fail} />}
       {tab === 'investments' && <InvestmentsTab onError={fail} />}
+      {tab === 'reserve' && <ReserveTab onError={fail} />}
       {tab === 'sharing' && <SharingTab onError={fail} />}
       {tab === 'receipts' && <ReceiptsTab from={from} to={to} onError={fail} />}
     </div>
@@ -752,6 +757,168 @@ function InvestmentsTab({ onError }: TabProps) {
                         try { await api.deleteInvestment(r.id); await load(); }
                         catch (err) { onError(err, 'Could not delete'); }
                       }}>Delete</button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Reserve account ─────────────────────────────────────────────────────────
+
+const RESERVE_KINDS: ReserveEntryKind[] = ['DEPOSIT', 'WITHDRAWAL'];
+
+/**
+ * The running ledger behind readiness gates 2 and 3. Same shape as
+ * Investments; the balance is the signed sum and is never stored.
+ */
+function ReserveTab({ onError }: TabProps) {
+  const [ledger, setLedger] = useState<ReserveLedgerDto | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    kind: 'DEPOSIT' as ReserveEntryKind, amountKes: '', date: todayIso(), note: '', reference: '',
+  });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setLedger((await api.reserveLedger()).ledger);
+    } catch (err) {
+      onError(err, 'Could not load the reserve ledger');
+    } finally {
+      setLoading(false);
+    }
+  }, [onError]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const rows = ledger?.entries ?? [];
+  const canEdit = ledger?.canEdit ?? false;
+  const signed = (r: ReserveEntryDto) => (r.kind === 'DEPOSIT' ? r.amountCents : -r.amountCents);
+
+  return (
+    <div>
+      <div className="mb-4 rounded-xl border border-border bg-surface p-5">
+        <p className="text-xs uppercase tracking-widest text-text-muted">Reserve balance</p>
+        <p className="mt-1 text-3xl font-medium tabular-nums" style={{ fontFamily: 'Georgia, serif' }} aria-label="Reserve balance">
+          {fmt(ledger?.balanceCents ?? 0)}
+        </p>
+        <p className="mt-1 text-xs text-text-muted">
+          Deposits less withdrawals. Readiness gates 2 and 3 on Insights are measured against this balance alone — cash on hand is not counted.
+        </p>
+      </div>
+
+      <Toolbar
+        summary={`${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}`}
+        onExport={() =>
+          downloadCsv('reserve-account', [
+            { header: 'Date', value: (r: ReserveEntryDto) => r.date },
+            { header: 'Type', value: (r) => label(r.kind) },
+            { header: 'Amount (KSh)', value: (r) => csvMoney(signed(r)) },
+            { header: 'Note', value: (r) => r.note },
+            { header: 'Reference', value: (r) => r.reference ?? '' },
+            { header: 'Recorded by', value: (r) => r.createdByName ?? '' },
+          ], rows)
+        }
+        onToggleForm={canEdit ? () => setShowForm((v) => !v) : undefined}
+        formOpen={showForm}
+        addLabel="reserve entry"
+      />
+
+      {showForm && canEdit && (
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const amount = parseFloat(form.amountKes);
+            if (!amount || !form.note.trim()) return;
+            if (form.kind === 'WITHDRAWAL' && !confirm(`Record a withdrawal of ${fmt(Math.round(amount * 100))} from the reserve?`)) return;
+            setSaving(true);
+            try {
+              const res = await api.addReserveEntry({
+                kind: form.kind,
+                amountCents: Math.round(amount * 100),
+                date: form.date,
+                note: form.note.trim(),
+                reference: form.reference.trim() || undefined,
+              });
+              setLedger(res.ledger);
+              setForm({ ...form, amountKes: '', note: '', reference: '' });
+              setShowForm(false);
+            } catch (err) { onError(err, 'Could not save the reserve entry'); }
+            finally { setSaving(false); }
+          }}
+          className="mb-4 grid gap-3 rounded-xl border border-gold bg-gold-soft/10 p-5 sm:grid-cols-3"
+        >
+          <Labelled label="Type">
+            <select className={input} value={form.kind} aria-label="Reserve entry type"
+              onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as ReserveEntryKind }))}>
+              {RESERVE_KINDS.map((k) => <option key={k} value={k}>{label(k)}</option>)}
+            </select>
+          </Labelled>
+          <Labelled label="Amount (KSh)">
+            <input required type="number" min="1" className={input} value={form.amountKes} aria-label="Reserve amount"
+              onChange={(e) => setForm((f) => ({ ...f, amountKes: e.target.value }))} />
+          </Labelled>
+          <Labelled label="Date">
+            <input required type="date" className={input} value={form.date}
+              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
+          </Labelled>
+          <div className="sm:col-span-2">
+            <Labelled label="Note">
+              <input required className={input} value={form.note} placeholder="Why the money moved" aria-label="Reserve note"
+                onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
+            </Labelled>
+          </div>
+          <Labelled label="Reference">
+            <input className={input} value={form.reference} placeholder="Bank / M-Pesa ref"
+              onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
+          </Labelled>
+          <div className="sm:col-span-3 flex justify-end">
+            <button type="submit" disabled={saving} className={btn}>{saving ? 'Saving…' : 'Add entry'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
+        <Empty>Nothing in the reserve account yet.</Empty>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">
+                <Th>Date</Th><Th>Type</Th><Th>Note</Th><Th right>Amount</Th><Th />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-bg-muted/30">
+                  <Td>{r.date}</Td>
+                  <Td>
+                    <div>{label(r.kind)}</div>
+                    <Provenance by={r.createdByName} at={r.createdAt} />
+                  </Td>
+                  <Td>
+                    {r.note}
+                    {r.reference && <div className="text-xs text-text-muted">Ref {r.reference}</div>}
+                  </Td>
+                  <Td right className={`font-medium tabular-nums ${r.kind === 'WITHDRAWAL' ? 'text-danger' : ''}`}>
+                    {r.kind === 'WITHDRAWAL' ? '−' : ''}{fmt(r.amountCents)}
+                  </Td>
+                  <Td right>
+                    {canEdit && (
+                      <button className="text-xs text-danger hover:underline"
+                        onClick={async () => {
+                          if (!confirm(`Delete this ${label(r.kind).toLowerCase()} of ${fmt(r.amountCents)}?`)) return;
+                          try { setLedger((await api.deleteReserveEntry(r.id)).ledger); }
+                          catch (err) { onError(err, 'Could not delete'); }
+                        }}>Delete</button>
+                    )}
                   </Td>
                 </tr>
               ))}

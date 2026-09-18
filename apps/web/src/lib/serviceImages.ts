@@ -22,6 +22,7 @@ export const serviceImage: Record<ServiceLineCode, string> = {
   curtain: lf('curtains,window', 82),
   ac_duct: lf('air,conditioner', 83),
   mould: lf('cleaning,wall', 84),
+  laundry: lf('laundry,folded', 85),
 };
 
 /** Hero banner image for the landing page. */
