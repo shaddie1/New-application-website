@@ -34,6 +34,7 @@ enum UserRole {
   CLEANING_SUPERVISOR
   SHAREHOLDER
   COO
+  BUSINESS_DEVELOPMENT_LEAD
 }
 
 enum LoyaltyTier {
@@ -100,6 +101,12 @@ model User {
   quoteEstimatesSubmitted QuoteEstimate[]   @relation("QuoteEstimateSubmittedBy")
   quoteEstimatesDecided   QuoteEstimate[]   @relation("QuoteEstimateDecidedBy")
   quoteRatesUpdated    QuoteRates[]         @relation("QuoteRatesUpdatedBy")
+  leadsBroughtIn       Lead[]               @relation("LeadBroughtInBy")
+  leadsCreated         Lead[]               @relation("LeadCreatedBy")
+  leadEvents           LeadEvent[]          @relation("LeadEventActor")
+  tendersCreated       Tender[]             @relation("TenderCreatedBy")
+  tenderEvents         TenderEvent[]        @relation("TenderEventActor")
+  funnelTargetsUpdated FunnelTargets[]      @relation("FunnelTargetsUpdatedBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -429,6 +436,7 @@ model QuoteRequest {
   photos          QuoteRequestPhoto[]
   survey          QuoteSurvey?
   estimates       QuoteEstimate[]
+  linkedLead      Lead?
 
   @@index([userId, status])
 }
@@ -514,6 +522,158 @@ model QuoteRates {
   id          String   @id @default("default")
   data        Json
   updatedBy   User?    @relation("QuoteRatesUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline tracker — leads, tenders and the locked funnel targets
+// (field names follow the Pipeline_Tracker and Tender_Tracker sheets)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum LeadStage {
+  CONTACTED
+  CONVERSATION
+  SITE_VISIT
+  PROPOSAL_SENT
+  WON
+  LOST
+}
+
+enum LeadEventKind {
+  CREATED
+  STAGE_CHANGED
+  DETAILS_CHANGED
+  NOTE_ADDED
+  QUOTE_LINKED
+  COMMISSION_PAID
+}
+
+model Lead {
+  id                     String        @id @default(cuid())
+  leadId                 String        @unique // display ref, "L-001"
+  dateLogged             DateTime      @db.Date
+  clientOrg              String
+  segment                String        // free text on the sheet ("Clinic or laboratory", "Household", …)
+  broughtInBy            User?         @relation("LeadBroughtInBy", fields: [broughtInById], references: [id], onDelete: SetNull)
+  broughtInById          String?       // whoever logged it first — the commission-bearing field
+  channel                String        // free text, matches the Funnel_Targets channels
+  contactName            String
+  contactPhone           String?
+  stage                  LeadStage     @default(CONTACTED)
+  quoteValueCents        Int?
+  contractType           String?       // matches the Quote Builder's frequency labels
+  expectedClose          DateTime?     @db.Date
+  linkedQuote            QuoteRequest? @relation(fields: [linkedQuoteId], references: [id], onDelete: SetNull)
+  linkedQuoteId          String?       @unique
+  notes                  String?
+  // Outcome — filled when the lead is won or lost. Net profit is computed.
+  wonAt                  DateTime?
+  lostAt                 DateTime?
+  lostReason             String?
+  revenueReceivedCents   Int?
+  actualDirectCostsCents Int?
+  commissionPct          Float?        // snapshot at the win
+  commissionCents        Int?
+  commissionPaidAt       DateTime?
+  commissionReference    String?
+  events                 LeadEvent[]
+  createdBy              User?         @relation("LeadCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById            String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  @@index([stage])
+  @@index([broughtInById])
+  @@index([dateLogged])
+}
+
+/** Append-only history, the shape of Projects' log plus from/to stage. STAGE_CHANGED rows feed the funnel actuals. */
+model LeadEvent {
+  id        String        @id @default(cuid())
+  lead      Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId    String
+  kind      LeadEventKind
+  fromStage LeadStage?
+  toStage   LeadStage?
+  summary   String
+  detail    String?
+  actor     User?         @relation("LeadEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId   String?
+  actorName String?
+  createdAt DateTime      @default(now())
+
+  @@index([leadId, createdAt])
+  @@index([kind, createdAt])
+}
+
+enum TenderType {
+  TENDER
+  EOI
+  RFQ
+  PREQUALIFICATION
+}
+
+enum BidDecision {
+  BID
+  NO_BID
+}
+
+enum TenderEventKind {
+  CREATED
+  STATUS_CHANGED
+  DETAILS_CHANGED
+  NOTE_ADDED
+}
+
+model Tender {
+  id                 String       @id @default(cuid())
+  tenderRef          String
+  title              String
+  issuingOrg         String
+  sourcePortal       String?
+  type               TenderType
+  agpoReserved       Boolean      @default(false)
+  dateFound          DateTime     @db.Date
+  submissionDeadline DateTime     @db.Date
+  packToCooBy        DateTime     @db.Date // default: two days before the deadline, 5 pm
+  bidDecision        BidDecision?
+  status             String       @default("Identified") // free text; varies by tender type and stage
+  dateSentToCoo      DateTime?    @db.Date
+  notes              String?
+  events             TenderEvent[]
+  createdBy          User?        @relation("TenderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById       String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([submissionDeadline])
+}
+
+model TenderEvent {
+  id         String          @id @default(cuid())
+  tender     Tender          @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  tenderId   String
+  kind       TenderEventKind
+  fromStatus String?
+  toStatus   String?
+  summary    String
+  detail     String?
+  actor      User?           @relation("TenderEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  actorName  String?
+  createdAt  DateTime        @default(now())
+
+  @@index([tenderId, createdAt])
+  @@index([kind, createdAt])
+}
+
+/** Locked conversion rates and the monthly activity table. Single row (id "default"), JSON is the FunnelTargets DTO. */
+model FunnelTargets {
+  id          String   @id @default("default")
+  data        Json
+  updatedBy   User?    @relation("FunnelTargetsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   updatedById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

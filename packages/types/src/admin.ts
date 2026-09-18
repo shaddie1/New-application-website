@@ -74,7 +74,8 @@ export type StaffRole =
   | 'MARKETING'
   | 'CLEANING_SUPERVISOR'
   | 'SHAREHOLDER'
-  | 'COO';
+  | 'COO'
+  | 'BUSINESS_DEVELOPMENT_LEAD';
 
 export interface AdminStaffDto {
   id: string;

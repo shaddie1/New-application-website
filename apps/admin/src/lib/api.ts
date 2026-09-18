@@ -53,6 +53,23 @@ import type {
   QuoteSurveyInput,
   ClientQuotationDto,
   QuoteBuilderOptions,
+  LeadDto,
+  LeadEventDto,
+  CreateLeadInput,
+  UpdateLeadInput,
+  ChangeLeadStageInput,
+  MarkCommissionPaidInput,
+  CommissionSummary,
+  TenderDto,
+  TenderEventDto,
+  CreateTenderInput,
+  UpdateTenderInput,
+  ChangeTenderStatusInput,
+  FunnelTargets,
+  FunnelTargetsDto,
+  FunnelActualsDto,
+  RequiredActivityInput,
+  RequiredActivityResult,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -234,6 +251,109 @@ export const api = {
       `/admin/quote-builder/${encodeURIComponent(quoteId)}/client-quotation`,
       { method: 'GET', auth: true },
     ),
+
+  // ── Pipeline ─────────────────────────────────────────────────────────────
+  leads: (filters: { stage?: string; segment?: string; channel?: string; broughtInById?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => !!v) as [string, string][]).toString();
+    return request<{ leads: LeadDto[]; commission: CommissionSummary }>(`/admin/pipeline/leads${qs ? `?${qs}` : ''}`, {
+      method: 'GET',
+      auth: true,
+    });
+  },
+
+  createLead: (input: CreateLeadInput) =>
+    request<{ lead: LeadDto }>('/admin/pipeline/leads', { method: 'POST', auth: true, body: JSON.stringify(input) }),
+
+  updateLead: (id: string, input: UpdateLeadInput) =>
+    request<{ lead: LeadDto }>(`/admin/pipeline/leads/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteLead: (id: string) =>
+    request<{ ok: true }>(`/admin/pipeline/leads/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  changeLeadStage: (id: string, input: ChangeLeadStageInput) =>
+    request<{ lead: LeadDto }>(`/admin/pipeline/leads/${encodeURIComponent(id)}/stage`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  addLeadNote: (id: string, note: string) =>
+    request<{ lead: LeadDto }>(`/admin/pipeline/leads/${encodeURIComponent(id)}/notes`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ note }),
+    }),
+
+  leadEvents: (id: string) =>
+    request<{ events: LeadEventDto[] }>(`/admin/pipeline/leads/${encodeURIComponent(id)}/events`, { method: 'GET', auth: true }),
+
+  createQuoteFromLead: (id: string) =>
+    request<{ lead: LeadDto; quoteRequestId: string }>(`/admin/pipeline/leads/${encodeURIComponent(id)}/create-quote`, {
+      method: 'POST',
+      auth: true,
+      body: '{}',
+    }),
+
+  markLeadCommissionPaid: (id: string, input: MarkCommissionPaidInput) =>
+    request<{ lead: LeadDto }>(`/admin/pipeline/leads/${encodeURIComponent(id)}/commission-paid`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  tenders: () => request<{ tenders: TenderDto[] }>('/admin/pipeline/tenders', { method: 'GET', auth: true }),
+
+  createTender: (input: CreateTenderInput) =>
+    request<{ tender: TenderDto }>('/admin/pipeline/tenders', { method: 'POST', auth: true, body: JSON.stringify(input) }),
+
+  updateTender: (id: string, input: UpdateTenderInput) =>
+    request<{ tender: TenderDto }>(`/admin/pipeline/tenders/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  deleteTender: (id: string) =>
+    request<{ ok: true }>(`/admin/pipeline/tenders/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  changeTenderStatus: (id: string, input: ChangeTenderStatusInput) =>
+    request<{ tender: TenderDto }>(`/admin/pipeline/tenders/${encodeURIComponent(id)}/status`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  addTenderNote: (id: string, note: string) =>
+    request<{ tender: TenderDto }>(`/admin/pipeline/tenders/${encodeURIComponent(id)}/notes`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ note }),
+    }),
+
+  tenderEvents: (id: string) =>
+    request<{ events: TenderEventDto[] }>(`/admin/pipeline/tenders/${encodeURIComponent(id)}/events`, { method: 'GET', auth: true }),
+
+  funnelTargets: () => request<FunnelTargetsDto>('/admin/pipeline/targets', { method: 'GET', auth: true }),
+
+  saveFunnelTargets: (targets: FunnelTargets) =>
+    request<FunnelTargetsDto>('/admin/pipeline/targets', { method: 'PUT', auth: true, body: JSON.stringify(targets) }),
+
+  funnelActuals: (month: string) =>
+    request<{ actuals: FunnelActualsDto }>(`/admin/pipeline/actuals?month=${encodeURIComponent(month)}`, { method: 'GET', auth: true }),
+
+  requiredActivity: (input: RequiredActivityInput) =>
+    request<{ result: RequiredActivityResult }>('/admin/pipeline/calculator', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  pipelinePeople: () =>
+    request<{ people: { id: string; fullName: string; role: string }[] }>('/admin/pipeline/people', { method: 'GET', auth: true }),
 
   // ── Team / staff (owner only) ────────────────────────────────────────────
   staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useAuth, useRequireAdmin } from '../../src/lib/auth';
+import { canViewTargets } from '../../src/lib/roles';
 
 /** Grouped so the rail reads as sections rather than one long list. */
 const OPERATIONS = [
@@ -39,13 +40,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   if (!session) return null; // redirecting to /login
 
+  // Pipeline sits with operations for whoever may see it — BD lead, COO,
+  // finance, and Marketing (household leads and the targets).
+  const pipeline = canViewTargets(session) ? [{ href: '/pipeline', label: 'Pipeline' }] : [];
   const sections = session.user.isOwner
     ? [
-        { title: 'Operations', items: OPERATIONS },
+        { title: 'Operations', items: [...OPERATIONS, ...pipeline] },
         { title: 'Finance', items: OWNER_FINANCE },
         { title: 'Governance', items: OWNER_GOVERNANCE },
       ]
-    : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }];
+    : [{ title: 'Operations', items: [...OPERATIONS, ...pipeline, { href: '/job-reports', label: 'Job Reports' }] }];
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 

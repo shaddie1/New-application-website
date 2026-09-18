@@ -14,6 +14,7 @@ const ROLE_LABELS: Record<string, string> = {
   CLEANING_SUPERVISOR: 'Cleaning Supervisor',
   SHAREHOLDER: 'Shareholder',
   COO: 'COO',
+  BUSINESS_DEVELOPMENT_LEAD: 'Business Development Lead',
 };
 
 const e164 = (input: string): string => {
@@ -133,6 +134,7 @@ export default function TeamPage() {
             <option value="CLEANING_SUPERVISOR">Cleaning Supervisor</option>
             <option value="SHAREHOLDER">Shareholder</option>
             <option value="COO">COO</option>
+            <option value="BUSINESS_DEVELOPMENT_LEAD">Business Development Lead</option>
           </select>
           <button
             type="submit"

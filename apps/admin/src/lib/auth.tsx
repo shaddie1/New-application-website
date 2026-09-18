@@ -84,7 +84,7 @@ export function useRequireAdmin(): Session | null | undefined {
       router.replace('/login');
       return;
     }
-    const staffRoles = ['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER', 'COO'];
+    const staffRoles = ['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER', 'COO', 'BUSINESS_DEVELOPMENT_LEAD'];
     if (!staffRoles.includes(session.user.role)) {
       router.replace('/login');
     }
