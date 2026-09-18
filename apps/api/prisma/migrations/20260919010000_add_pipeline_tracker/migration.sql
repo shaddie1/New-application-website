@@ -1,22 +1,16 @@
 -- Pipeline tracker: leads, tenders, their activity logs, and the locked funnel targets.
 
 -- CreateEnum
-CREATE TYPE "LeadSegment" AS ENUM ('HOUSEHOLD', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER', 'NGO', 'PUBLIC_SECTOR');
-
--- CreateEnum
-CREATE TYPE "LeadChannel" AS ENUM ('DIRECT_OUTREACH', 'WARM_INTRO', 'HOUSEHOLD_ENQUIRY', 'REFERRAL', 'OTHER');
-
--- CreateEnum
-CREATE TYPE "LeadStage" AS ENUM ('NEW', 'CONVERSATION', 'SITE_VISIT', 'PROPOSAL_SENT', 'WON', 'LOST');
+CREATE TYPE "LeadStage" AS ENUM ('CONTACTED', 'CONVERSATION', 'SITE_VISIT', 'PROPOSAL_SENT', 'WON', 'LOST');
 
 -- CreateEnum
 CREATE TYPE "LeadEventKind" AS ENUM ('CREATED', 'STAGE_CHANGED', 'DETAILS_CHANGED', 'NOTE_ADDED', 'QUOTE_LINKED', 'COMMISSION_PAID');
 
 -- CreateEnum
-CREATE TYPE "TenderKind" AS ENUM ('PUBLIC_TENDER', 'PRIVATE_RFQ');
+CREATE TYPE "TenderType" AS ENUM ('TENDER', 'EOI', 'RFQ', 'PREQUALIFICATION');
 
 -- CreateEnum
-CREATE TYPE "TenderStatus" AS ENUM ('IDENTIFIED', 'PREPARING', 'PACK_WITH_COO', 'SUBMITTED', 'AWARDED', 'NOT_AWARDED', 'WITHDRAWN');
+CREATE TYPE "BidDecision" AS ENUM ('BID', 'NO_BID');
 
 -- CreateEnum
 CREATE TYPE "TenderEventKind" AS ENUM ('CREATED', 'STATUS_CHANGED', 'DETAILS_CHANGED', 'NOTE_ADDED');
@@ -24,27 +18,25 @@ CREATE TYPE "TenderEventKind" AS ENUM ('CREATED', 'STATUS_CHANGED', 'DETAILS_CHA
 -- CreateTable
 CREATE TABLE "Lead" (
     "id" TEXT NOT NULL,
-    "organisation" TEXT,
+    "leadId" TEXT NOT NULL,
+    "dateLogged" DATE NOT NULL,
+    "clientOrg" TEXT NOT NULL,
+    "segment" TEXT NOT NULL,
+    "broughtInById" TEXT,
+    "channel" TEXT NOT NULL,
     "contactName" TEXT NOT NULL,
     "contactPhone" TEXT,
-    "contactEmail" TEXT,
-    "segment" "LeadSegment" NOT NULL,
-    "channel" "LeadChannel" NOT NULL,
-    "stage" "LeadStage" NOT NULL DEFAULT 'NEW',
-    "bdOwnerId" TEXT,
-    "siteLocation" TEXT,
-    "estimatedValueCents" INTEGER,
-    "isRecurring" BOOLEAN NOT NULL DEFAULT false,
-    "traineeSourced" BOOLEAN NOT NULL DEFAULT false,
+    "stage" "LeadStage" NOT NULL DEFAULT 'CONTACTED',
+    "quoteValueCents" INTEGER,
+    "contractType" TEXT,
+    "expectedClose" DATE,
+    "linkedQuoteId" TEXT,
     "notes" TEXT,
-    "nextActionAt" DATE,
-    "quoteRequestId" TEXT,
     "wonAt" TIMESTAMP(3),
     "lostAt" TIMESTAMP(3),
     "lostReason" TEXT,
     "revenueReceivedCents" INTEGER,
     "actualDirectCostsCents" INTEGER,
-    "netProfitCents" INTEGER,
     "commissionPct" DOUBLE PRECISION,
     "commissionCents" INTEGER,
     "commissionPaidAt" TIMESTAMP(3),
@@ -61,7 +53,8 @@ CREATE TABLE "LeadEvent" (
     "id" TEXT NOT NULL,
     "leadId" TEXT NOT NULL,
     "kind" "LeadEventKind" NOT NULL,
-    "stage" "LeadStage",
+    "fromStage" "LeadStage",
+    "toStage" "LeadStage",
     "summary" TEXT NOT NULL,
     "detail" TEXT,
     "actorId" TEXT,
@@ -74,17 +67,18 @@ CREATE TABLE "LeadEvent" (
 -- CreateTable
 CREATE TABLE "Tender" (
     "id" TEXT NOT NULL,
+    "tenderRef" TEXT NOT NULL,
     "title" TEXT NOT NULL,
-    "issuer" TEXT NOT NULL,
-    "reference" TEXT,
-    "kind" "TenderKind" NOT NULL,
-    "status" "TenderStatus" NOT NULL DEFAULT 'IDENTIFIED',
-    "estimatedValueCents" INTEGER,
+    "issuingOrg" TEXT NOT NULL,
+    "sourcePortal" TEXT,
+    "type" "TenderType" NOT NULL,
+    "agpoReserved" BOOLEAN NOT NULL DEFAULT false,
+    "dateFound" DATE NOT NULL,
     "submissionDeadline" DATE NOT NULL,
     "packToCooBy" DATE NOT NULL,
-    "ownerId" TEXT,
-    "submittedAt" TIMESTAMP(3),
-    "decidedAt" TIMESTAMP(3),
+    "bidDecision" "BidDecision",
+    "status" TEXT NOT NULL DEFAULT 'Identified',
+    "dateSentToCoo" DATE,
     "notes" TEXT,
     "createdById" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -98,7 +92,8 @@ CREATE TABLE "TenderEvent" (
     "id" TEXT NOT NULL,
     "tenderId" TEXT NOT NULL,
     "kind" "TenderEventKind" NOT NULL,
-    "status" "TenderStatus",
+    "fromStatus" TEXT,
+    "toStatus" TEXT,
     "summary" TEXT NOT NULL,
     "detail" TEXT,
     "actorId" TEXT,
@@ -120,28 +115,25 @@ CREATE TABLE "FunnelTargets" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Lead_quoteRequestId_key" ON "Lead"("quoteRequestId");
+CREATE UNIQUE INDEX "Lead_leadId_key" ON "Lead"("leadId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Lead_linkedQuoteId_key" ON "Lead"("linkedQuoteId");
 
 -- CreateIndex
 CREATE INDEX "Lead_stage_idx" ON "Lead"("stage");
 
 -- CreateIndex
-CREATE INDEX "Lead_segment_idx" ON "Lead"("segment");
+CREATE INDEX "Lead_broughtInById_idx" ON "Lead"("broughtInById");
 
 -- CreateIndex
-CREATE INDEX "Lead_channel_idx" ON "Lead"("channel");
-
--- CreateIndex
-CREATE INDEX "Lead_bdOwnerId_idx" ON "Lead"("bdOwnerId");
+CREATE INDEX "Lead_dateLogged_idx" ON "Lead"("dateLogged");
 
 -- CreateIndex
 CREATE INDEX "LeadEvent_leadId_createdAt_idx" ON "LeadEvent"("leadId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "LeadEvent_kind_createdAt_idx" ON "LeadEvent"("kind", "createdAt");
-
--- CreateIndex
-CREATE INDEX "Tender_status_idx" ON "Tender"("status");
 
 -- CreateIndex
 CREATE INDEX "Tender_submissionDeadline_idx" ON "Tender"("submissionDeadline");
@@ -153,10 +145,10 @@ CREATE INDEX "TenderEvent_tenderId_createdAt_idx" ON "TenderEvent"("tenderId", "
 CREATE INDEX "TenderEvent_kind_createdAt_idx" ON "TenderEvent"("kind", "createdAt");
 
 -- AddForeignKey
-ALTER TABLE "Lead" ADD CONSTRAINT "Lead_bdOwnerId_fkey" FOREIGN KEY ("bdOwnerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Lead" ADD CONSTRAINT "Lead_broughtInById_fkey" FOREIGN KEY ("broughtInById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Lead" ADD CONSTRAINT "Lead_quoteRequestId_fkey" FOREIGN KEY ("quoteRequestId") REFERENCES "QuoteRequest"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Lead" ADD CONSTRAINT "Lead_linkedQuoteId_fkey" FOREIGN KEY ("linkedQuoteId") REFERENCES "QuoteRequest"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Lead" ADD CONSTRAINT "Lead_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -166,9 +158,6 @@ ALTER TABLE "LeadEvent" ADD CONSTRAINT "LeadEvent_leadId_fkey" FOREIGN KEY ("lea
 
 -- AddForeignKey
 ALTER TABLE "LeadEvent" ADD CONSTRAINT "LeadEvent_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Tender" ADD CONSTRAINT "Tender_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Tender" ADD CONSTRAINT "Tender_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

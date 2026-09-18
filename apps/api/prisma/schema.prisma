@@ -101,10 +101,9 @@ model User {
   quoteEstimatesSubmitted QuoteEstimate[]   @relation("QuoteEstimateSubmittedBy")
   quoteEstimatesDecided   QuoteEstimate[]   @relation("QuoteEstimateDecidedBy")
   quoteRatesUpdated    QuoteRates[]         @relation("QuoteRatesUpdatedBy")
-  leadsOwned           Lead[]               @relation("LeadBdOwner")
+  leadsBroughtIn       Lead[]               @relation("LeadBroughtInBy")
   leadsCreated         Lead[]               @relation("LeadCreatedBy")
   leadEvents           LeadEvent[]          @relation("LeadEventActor")
-  tendersOwned         Tender[]             @relation("TenderOwner")
   tendersCreated       Tender[]             @relation("TenderCreatedBy")
   tenderEvents         TenderEvent[]        @relation("TenderEventActor")
   funnelTargetsUpdated FunnelTargets[]      @relation("FunnelTargetsUpdatedBy")
@@ -437,7 +436,7 @@ model QuoteRequest {
   photos          QuoteRequestPhoto[]
   survey          QuoteSurvey?
   estimates       QuoteEstimate[]
-  lead            Lead?
+  linkedLead      Lead?
 
   @@index([userId, status])
 }
@@ -530,28 +529,11 @@ model QuoteRates {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pipeline tracker — leads, tenders and the locked funnel targets
+// (field names follow the Pipeline_Tracker and Tender_Tracker sheets)
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum LeadSegment {
-  HOUSEHOLD
-  COMMERCIAL
-  MEDICAL
-  DEVELOPER
-  NGO
-  PUBLIC_SECTOR
-}
-
-enum LeadChannel {
-  DIRECT_OUTREACH
-  WARM_INTRO
-  HOUSEHOLD_ENQUIRY
-  REFERRAL
-  OTHER
-}
-
-/** NEW is "contacted" / "intro received" / "enquiry logged" depending on the channel. */
 enum LeadStage {
-  NEW
+  CONTACTED
   CONVERSATION
   SITE_VISIT
   PROPOSAL_SENT
@@ -569,54 +551,52 @@ enum LeadEventKind {
 }
 
 model Lead {
-  id                     String       @id @default(cuid())
-  organisation           String?
+  id                     String        @id @default(cuid())
+  leadId                 String        @unique // display ref, "L-001"
+  dateLogged             DateTime      @db.Date
+  clientOrg              String
+  segment                String        // free text on the sheet ("Clinic or laboratory", "Household", …)
+  broughtInBy            User?         @relation("LeadBroughtInBy", fields: [broughtInById], references: [id], onDelete: SetNull)
+  broughtInById          String?       // whoever logged it first — the commission-bearing field
+  channel                String        // free text, matches the Funnel_Targets channels
   contactName            String
   contactPhone           String?
-  contactEmail           String?
-  segment                LeadSegment
-  channel                LeadChannel
-  stage                  LeadStage    @default(NEW)
-  bdOwner                User?        @relation("LeadBdOwner", fields: [bdOwnerId], references: [id], onDelete: SetNull)
-  bdOwnerId              String?
-  siteLocation           String?
-  estimatedValueCents    Int?
-  isRecurring            Boolean      @default(false)
-  traineeSourced         Boolean      @default(false)
+  stage                  LeadStage     @default(CONTACTED)
+  quoteValueCents        Int?
+  contractType           String?       // matches the Quote Builder's frequency labels
+  expectedClose          DateTime?     @db.Date
+  linkedQuote            QuoteRequest? @relation(fields: [linkedQuoteId], references: [id], onDelete: SetNull)
+  linkedQuoteId          String?       @unique
   notes                  String?
-  nextActionAt           DateTime?    @db.Date
-  quoteRequest           QuoteRequest? @relation(fields: [quoteRequestId], references: [id], onDelete: SetNull)
-  quoteRequestId         String?      @unique
-  // Outcome — filled when the lead is won or lost.
+  // Outcome — filled when the lead is won or lost. Net profit is computed.
   wonAt                  DateTime?
   lostAt                 DateTime?
   lostReason             String?
   revenueReceivedCents   Int?
   actualDirectCostsCents Int?
-  netProfitCents         Int?
-  commissionPct          Float?
+  commissionPct          Float?        // snapshot at the win
   commissionCents        Int?
   commissionPaidAt       DateTime?
   commissionReference    String?
   events                 LeadEvent[]
-  createdBy              User?        @relation("LeadCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy              User?         @relation("LeadCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdById            String?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
   @@index([stage])
-  @@index([segment])
-  @@index([channel])
-  @@index([bdOwnerId])
+  @@index([broughtInById])
+  @@index([dateLogged])
 }
 
-/** Append-only history. STAGE_CHANGED rows are what the funnel actuals count. */
+/** Append-only history, the shape of Projects' log plus from/to stage. STAGE_CHANGED rows feed the funnel actuals. */
 model LeadEvent {
   id        String        @id @default(cuid())
   lead      Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
   leadId    String
   kind      LeadEventKind
-  stage     LeadStage?
+  fromStage LeadStage?
+  toStage   LeadStage?
   summary   String
   detail    String?
   actor     User?         @relation("LeadEventActor", fields: [actorId], references: [id], onDelete: SetNull)
@@ -628,19 +608,16 @@ model LeadEvent {
   @@index([kind, createdAt])
 }
 
-enum TenderKind {
-  PUBLIC_TENDER
-  PRIVATE_RFQ // RFQ, EOI and NGO submissions
+enum TenderType {
+  TENDER
+  EOI
+  RFQ
+  PREQUALIFICATION
 }
 
-enum TenderStatus {
-  IDENTIFIED
-  PREPARING
-  PACK_WITH_COO
-  SUBMITTED
-  AWARDED
-  NOT_AWARDED
-  WITHDRAWN
+enum BidDecision {
+  BID
+  NO_BID
 }
 
 enum TenderEventKind {
@@ -651,42 +628,42 @@ enum TenderEventKind {
 }
 
 model Tender {
-  id                  String       @id @default(cuid())
-  title               String
-  issuer              String
-  reference           String?
-  kind                TenderKind
-  status              TenderStatus @default(IDENTIFIED)
-  estimatedValueCents Int?
-  submissionDeadline  DateTime     @db.Date
-  packToCooBy         DateTime     @db.Date
-  owner               User?        @relation("TenderOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  ownerId             String?
-  submittedAt         DateTime?
-  decidedAt           DateTime?
-  notes               String?
-  events              TenderEvent[]
-  createdBy           User?        @relation("TenderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdById         String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                 String       @id @default(cuid())
+  tenderRef          String
+  title              String
+  issuingOrg         String
+  sourcePortal       String?
+  type               TenderType
+  agpoReserved       Boolean      @default(false)
+  dateFound          DateTime     @db.Date
+  submissionDeadline DateTime     @db.Date
+  packToCooBy        DateTime     @db.Date // default: two days before the deadline, 5 pm
+  bidDecision        BidDecision?
+  status             String       @default("Identified") // free text; varies by tender type and stage
+  dateSentToCoo      DateTime?    @db.Date
+  notes              String?
+  events             TenderEvent[]
+  createdBy          User?        @relation("TenderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById       String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  @@index([status])
   @@index([submissionDeadline])
 }
 
 model TenderEvent {
-  id        String          @id @default(cuid())
-  tender    Tender          @relation(fields: [tenderId], references: [id], onDelete: Cascade)
-  tenderId  String
-  kind      TenderEventKind
-  status    TenderStatus?
-  summary   String
-  detail    String?
-  actor     User?           @relation("TenderEventActor", fields: [actorId], references: [id], onDelete: SetNull)
-  actorId   String?
-  actorName String?
-  createdAt DateTime        @default(now())
+  id         String          @id @default(cuid())
+  tender     Tender          @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  tenderId   String
+  kind       TenderEventKind
+  fromStatus String?
+  toStatus   String?
+  summary    String
+  detail     String?
+  actor      User?           @relation("TenderEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  actorName  String?
+  createdAt  DateTime        @default(now())
 
   @@index([tenderId, createdAt])
   @@index([kind, createdAt])

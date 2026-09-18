@@ -253,7 +253,7 @@ export const api = {
     ),
 
   // ── Pipeline ─────────────────────────────────────────────────────────────
-  leads: (filters: { stage?: string; segment?: string; channel?: string; bdOwnerId?: string } = {}) => {
+  leads: (filters: { stage?: string; segment?: string; channel?: string; broughtInById?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => !!v) as [string, string][]).toString();
     return request<{ leads: LeadDto[]; commission: CommissionSummary }>(`/admin/pipeline/leads${qs ? `?${qs}` : ''}`, {
       method: 'GET',
@@ -352,8 +352,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  pipelineOwners: () =>
-    request<{ owners: { id: string; fullName: string; role: string }[] }>('/admin/pipeline/owners', { method: 'GET', auth: true }),
+  pipelinePeople: () =>
+    request<{ people: { id: string; fullName: string; role: string }[] }>('/admin/pipeline/people', { method: 'GET', auth: true }),
 
   // ── Team / staff (owner only) ────────────────────────────────────────────
   staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),

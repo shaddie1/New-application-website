@@ -5,20 +5,18 @@
  *
  * Every stage or status change is written to the activity log; the funnel
  * actuals are computed from those log rows, never from hand-entered counts.
+ * Field names follow the Pipeline_Tracker and Tender_Tracker sheets.
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import {
-  LeadChannel,
   LeadEventKind,
-  LeadSegment,
   LeadStage,
   Prisma,
   QuoteStatus,
   RecurrenceFrequency,
   TenderEventKind,
-  TenderKind,
-  TenderStatus,
+  TenderType,
   UserRole,
 } from '@prisma/client';
 import type {
@@ -49,35 +47,38 @@ import {
   requireTargetsEdit,
   requireTargetsView,
 } from '../pipeline/access.js';
-import { computeActuals, leadCommission, requiredActivity } from '../pipeline/funnel.js';
+import {
+  classifyChannel,
+  computeActuals,
+  isHouseholdSegment,
+  isRecurringContract,
+  leadCommission,
+  requiredActivity,
+} from '../pipeline/funnel.js';
 import { FunnelTargetsSchema, loadFunnelTargets, saveFunnelTargets } from '../pipeline/targets.js';
 
 // ── Validation ──────────────────────────────────────────────────────────────
 
-const SEGMENTS = ['HOUSEHOLD', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER', 'NGO', 'PUBLIC_SECTOR'] as const;
-const CHANNELS = ['DIRECT_OUTREACH', 'WARM_INTRO', 'HOUSEHOLD_ENQUIRY', 'REFERRAL', 'OTHER'] as const;
-const STAGES = ['NEW', 'CONVERSATION', 'SITE_VISIT', 'PROPOSAL_SENT', 'WON', 'LOST'] as const;
-const TENDER_KINDS = ['PUBLIC_TENDER', 'PRIVATE_RFQ'] as const;
-const TENDER_STATUSES = ['IDENTIFIED', 'PREPARING', 'PACK_WITH_COO', 'SUBMITTED', 'AWARDED', 'NOT_AWARDED', 'WITHDRAWN'] as const;
+const STAGES = ['CONTACTED', 'CONVERSATION', 'SITE_VISIT', 'PROPOSAL_SENT', 'WON', 'LOST'] as const;
+const TENDER_TYPES = ['TENDER', 'EOI', 'RFQ', 'PREQUALIFICATION'] as const;
+const BID_DECISIONS = ['BID', 'NO_BID'] as const;
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 const MonthStr = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be YYYY-MM');
 const cents = z.number().int().nonnegative();
 const text = (max: number) => z.string().trim().max(max);
 
 const LeadBase = {
-  organisation: text(160).nullish(),
+  dateLogged: DateStr.optional(),
+  clientOrg: text(160).min(1),
+  segment: text(80).min(1),
+  broughtInById: z.string().nullish(),
+  channel: text(80).min(1),
   contactName: text(120).min(1),
   contactPhone: text(40).nullish(),
-  contactEmail: text(160).nullish(),
-  segment: z.enum(SEGMENTS),
-  channel: z.enum(CHANNELS),
-  bdOwnerId: z.string().nullish(),
-  siteLocation: text(160).nullish(),
-  estimatedValueCents: cents.nullish(),
-  isRecurring: z.boolean().optional(),
-  traineeSourced: z.boolean().optional(),
+  quoteValueCents: cents.nullish(),
+  contractType: text(60).nullish(),
+  expectedClose: DateStr.nullish(),
   notes: text(4000).nullish(),
-  nextActionAt: DateStr.nullish(),
 };
 const CreateLeadSchema = z.object(LeadBase) satisfies z.ZodType<CreateLeadInput>;
 const UpdateLeadSchema = z.object(LeadBase).partial() satisfies z.ZodType<UpdateLeadInput>;
@@ -94,19 +95,27 @@ const NoteSchema = z.object({ note: text(2000).min(1) });
 const PaidSchema = z.object({ reference: text(120).optional() });
 
 const TenderBase = {
+  tenderRef: text(120).min(1),
   title: text(200).min(1),
-  issuer: text(160).min(1),
-  reference: text(120).nullish(),
-  kind: z.enum(TENDER_KINDS),
-  estimatedValueCents: cents.nullish(),
+  issuingOrg: text(160).min(1),
+  sourcePortal: text(160).nullish(),
+  type: z.enum(TENDER_TYPES),
+  agpoReserved: z.boolean().optional(),
+  dateFound: DateStr.optional(),
   submissionDeadline: DateStr,
-  packToCooBy: DateStr,
-  ownerId: z.string().nullish(),
+  packToCooBy: DateStr.nullish(),
+  bidDecision: z.enum(BID_DECISIONS).nullish(),
+  status: text(80).optional(),
+  dateSentToCoo: DateStr.nullish(),
   notes: text(4000).nullish(),
 };
 const CreateTenderSchema = z.object(TenderBase) satisfies z.ZodType<CreateTenderInput>;
 const UpdateTenderSchema = z.object(TenderBase).partial() satisfies z.ZodType<UpdateTenderInput>;
-const TenderStatusSchema = z.object({ status: z.enum(TENDER_STATUSES), note: text(1000).optional() }) satisfies z.ZodType<ChangeTenderStatusInput>;
+const TenderStatusSchema = z.object({
+  status: text(80).min(1),
+  note: text(1000).optional(),
+  dateSentToCoo: DateStr.nullish(),
+}) satisfies z.ZodType<ChangeTenderStatusInput>;
 
 const CalculatorSchema = z.object({
   winsWantedPerYear: z.number().min(0).max(10_000),
@@ -125,15 +134,14 @@ const CalculatorSchema = z.object({
 const person = { select: { fullName: true } } as const;
 
 const leadInclude = {
-  bdOwner: person,
+  broughtInBy: person,
   createdBy: person,
-  quoteRequest: { select: { status: true } },
+  linkedQuote: { select: { status: true } },
   _count: { select: { events: true } },
 } satisfies Prisma.LeadInclude;
 type LeadRow = Prisma.LeadGetPayload<{ include: typeof leadInclude }>;
 
 const tenderInclude = {
-  owner: person,
   createdBy: person,
   _count: { select: { events: true } },
 } satisfies Prisma.TenderInclude;
@@ -141,33 +149,35 @@ type TenderRow = Prisma.TenderGetPayload<{ include: typeof tenderInclude }>;
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
+const todayNairobi = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
 
 function toLeadDto(r: LeadRow): LeadDto {
+  const netProfitCents =
+    r.revenueReceivedCents != null && r.actualDirectCostsCents != null ? r.revenueReceivedCents - r.actualDirectCostsCents : null;
   return {
     id: r.id,
-    organisation: r.organisation,
+    leadId: r.leadId,
+    dateLogged: day(r.dateLogged)!,
+    clientOrg: r.clientOrg,
+    segment: r.segment,
+    broughtInById: r.broughtInById,
+    broughtInByName: r.broughtInBy?.fullName ?? null,
+    channel: r.channel,
     contactName: r.contactName,
     contactPhone: r.contactPhone,
-    contactEmail: r.contactEmail,
-    segment: r.segment,
-    channel: r.channel,
     stage: r.stage,
-    bdOwnerId: r.bdOwnerId,
-    bdOwnerName: r.bdOwner?.fullName ?? null,
-    siteLocation: r.siteLocation,
-    estimatedValueCents: r.estimatedValueCents,
-    isRecurring: r.isRecurring,
-    traineeSourced: r.traineeSourced,
+    quoteValueCents: r.quoteValueCents,
+    contractType: r.contractType,
+    expectedClose: day(r.expectedClose),
+    linkedQuoteId: r.linkedQuoteId,
+    linkedQuoteStatus: r.linkedQuote?.status ?? null,
     notes: r.notes,
-    nextActionAt: day(r.nextActionAt),
-    quoteRequestId: r.quoteRequestId,
-    quoteStatus: r.quoteRequest?.status ?? null,
     wonAt: iso(r.wonAt),
     lostAt: iso(r.lostAt),
     lostReason: r.lostReason,
     revenueReceivedCents: r.revenueReceivedCents,
     actualDirectCostsCents: r.actualDirectCostsCents,
-    netProfitCents: r.netProfitCents,
+    netProfitCents,
     commissionPct: r.commissionPct,
     commissionCents: r.commissionCents,
     commissionPaidAt: iso(r.commissionPaidAt),
@@ -181,27 +191,35 @@ function toLeadDto(r: LeadRow): LeadDto {
 
 /** Whole days from today (Nairobi) to a date; negative once past. */
 function daysUntil(d: Date): number {
-  const today = new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' }));
+  const today = new Date(todayNairobi());
   return Math.round((d.getTime() - today.getTime()) / 86_400_000);
+}
+
+/** The sheet's rule: the pack reaches the COO two days before the deadline (5 pm). */
+function defaultPackDate(deadline: string): string {
+  const d = new Date(`${deadline}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 2);
+  return d.toISOString().slice(0, 10);
 }
 
 function toTenderDto(r: TenderRow): TenderDto {
   return {
     id: r.id,
+    tenderRef: r.tenderRef,
     title: r.title,
-    issuer: r.issuer,
-    reference: r.reference,
-    kind: r.kind,
-    status: r.status,
-    estimatedValueCents: r.estimatedValueCents,
+    issuingOrg: r.issuingOrg,
+    sourcePortal: r.sourcePortal,
+    type: r.type,
+    agpoReserved: r.agpoReserved,
+    dateFound: day(r.dateFound)!,
     submissionDeadline: day(r.submissionDeadline)!,
     packToCooBy: day(r.packToCooBy)!,
+    bidDecision: r.bidDecision,
+    status: r.status,
+    dateSentToCoo: day(r.dateSentToCoo),
+    sentOnTime: r.dateSentToCoo ? r.dateSentToCoo.getTime() <= r.packToCooBy.getTime() : null,
     daysToDeadline: daysUntil(r.submissionDeadline),
     daysToPack: daysUntil(r.packToCooBy),
-    ownerId: r.ownerId,
-    ownerName: r.owner?.fullName ?? null,
-    submittedAt: iso(r.submittedAt),
-    decidedAt: iso(r.decidedAt),
     notes: r.notes,
     eventCount: r._count.events,
     createdByName: r.createdBy?.fullName ?? null,
@@ -211,11 +229,7 @@ function toTenderDto(r: TenderRow): TenderDto {
 }
 
 const STAGE_LABEL: Record<LeadStage, string> = {
-  NEW: 'New', CONVERSATION: 'Conversation', SITE_VISIT: 'Site visit', PROPOSAL_SENT: 'Proposal sent', WON: 'Won', LOST: 'Lost',
-};
-const STATUS_LABEL: Record<TenderStatus, string> = {
-  IDENTIFIED: 'Identified', PREPARING: 'Preparing', PACK_WITH_COO: 'Pack with COO', SUBMITTED: 'Submitted',
-  AWARDED: 'Awarded', NOT_AWARDED: 'Not awarded', WITHDRAWN: 'Withdrawn',
+  CONTACTED: 'Contacted', CONVERSATION: 'Conversation', SITE_VISIT: 'Site visit', PROPOSAL_SENT: 'Proposal sent', WON: 'Won', LOST: 'Lost',
 };
 
 function shown(value: unknown): string {
@@ -241,6 +255,15 @@ function e164(input: string): string | null {
   return /^\+[1-9]\d{7,14}$/.test(candidate) ? candidate : null;
 }
 
+/** Contract type wording (the Quote Builder's frequency labels) → quote request frequency. */
+function frequencyFor(contractType: string | null): RecurrenceFrequency {
+  const t = (contractType ?? '').toLowerCase();
+  if (/daily|weekly|twice/.test(t)) return RecurrenceFrequency.WEEKLY;
+  if (/fortnight|biweekly/.test(t)) return RecurrenceFrequency.BIWEEKLY;
+  if (/month/.test(t)) return RecurrenceFrequency.MONTHLY;
+  return RecurrenceFrequency.NONE;
+}
+
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 export const pipelineRoutes: FastifyPluginAsync = async (app) => {
@@ -250,36 +273,52 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
   // ── Leads ─────────────────────────────────────────────────────────────────
 
   app.get('/leads', { preHandler: requirePipeline }, async (req, reply) => {
-    const q = req.query as { stage?: string; segment?: string; channel?: string; bdOwnerId?: string };
+    const q = req.query as { stage?: string; segment?: string; channel?: string; broughtInById?: string };
     const where: Prisma.LeadWhereInput = {
       ...(q.stage && STAGES.includes(q.stage as never) ? { stage: q.stage as LeadStage } : {}),
-      ...(q.segment && SEGMENTS.includes(q.segment as never) ? { segment: q.segment as LeadSegment } : {}),
-      ...(q.channel && CHANNELS.includes(q.channel as never) ? { channel: q.channel as LeadChannel } : {}),
-      ...(q.bdOwnerId ? { bdOwnerId: q.bdOwnerId } : {}),
-      ...(householdOnly(req.actor!) ? { segment: LeadSegment.HOUSEHOLD } : {}),
+      ...(q.segment ? { segment: { contains: q.segment, mode: 'insensitive' } } : {}),
+      ...(q.channel ? { channel: { contains: q.channel, mode: 'insensitive' } } : {}),
+      ...(q.broughtInById ? { broughtInById: q.broughtInById } : {}),
     };
-    const rows = await prisma.lead.findMany({ where, include: leadInclude, orderBy: [{ updatedAt: 'desc' }], take: 500 });
+    let rows = await prisma.lead.findMany({ where, include: leadInclude, orderBy: [{ updatedAt: 'desc' }], take: 500 });
+    // Segment is free text, so Marketing's slice is decided by wording.
+    if (householdOnly(req.actor!)) rows = rows.filter((r) => isHouseholdSegment(r.segment));
     return reply.send({ leads: rows.map(toLeadDto), commission: await commissionSummary() });
   });
 
   app.post('/leads', { preHandler: requirePipeline }, async (req, reply) => {
     const parsed = CreateLeadSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    if (householdOnly(req.actor!) && parsed.data.segment !== 'HOUSEHOLD') {
+    if (householdOnly(req.actor!) && !isHouseholdSegment(parsed.data.segment)) {
       return reply.code(403).send({ error: 'marketing can log household leads only' });
     }
-    const { nextActionAt, isRecurring, traineeSourced, ...rest } = parsed.data;
-    const row = await prisma.lead.create({
-      data: {
-        ...rest,
-        isRecurring: isRecurring ?? false,
-        traineeSourced: traineeSourced ?? false,
-        nextActionAt: nextActionAt ? new Date(nextActionAt) : null,
-        createdById: req.actor!.id,
-      },
-    });
-    await logLead(row.id, LeadEventKind.CREATED, LeadStage.NEW, `Lead created — ${STAGE_LABEL.NEW}`, req.actor!.id,
-      `${rest.channel.toLowerCase().replace(/_/g, ' ')} · ${rest.segment.toLowerCase().replace(/_/g, ' ')}`);
+    const { dateLogged, expectedClose, broughtInById, ...rest } = parsed.data;
+
+    // "L-001" style reference; retried on the rare collision between two people logging at once.
+    let row: { id: string } | null = null;
+    for (let attempt = 0; attempt < 5 && !row; attempt++) {
+      const n = (await prisma.lead.count()) + 1 + attempt;
+      try {
+        row = await prisma.lead.create({
+          data: {
+            ...rest,
+            leadId: `L-${String(n).padStart(3, '0')}`,
+            dateLogged: new Date(dateLogged ?? todayNairobi()),
+            expectedClose: expectedClose ? new Date(expectedClose) : null,
+            // Whoever logs it first brings it in, unless they say otherwise.
+            broughtInById: broughtInById === undefined ? req.actor!.id : broughtInById,
+            createdById: req.actor!.id,
+          },
+          select: { id: true },
+        });
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+      }
+    }
+    if (!row) return reply.code(500).send({ error: 'could not allocate a lead reference' });
+
+    await logLead(row.id, LeadEventKind.CREATED, null, LeadStage.CONTACTED, `Lead logged — ${STAGE_LABEL.CONTACTED}`, req.actor!.id,
+      `${rest.channel} · ${rest.segment}`);
     return reply.code(201).send({ lead: await leadDto(row.id) });
   });
 
@@ -289,19 +328,24 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     const existing = await guardLead(req, reply, req.params.id);
     if (!existing) return;
 
-    const { nextActionAt, ...rest } = parsed.data;
+    const { dateLogged, expectedClose, ...rest } = parsed.data;
     const changes = Object.entries(rest)
       .filter(([k, v]) => v !== undefined && (existing as Record<string, unknown>)[k] !== v)
       .map(([k, v]) => `${k}: ${shown((existing as Record<string, unknown>)[k])} → ${shown(v)}`);
-    if (nextActionAt !== undefined && day(existing.nextActionAt) !== (nextActionAt ?? null)) {
-      changes.push(`next action: ${shown(day(existing.nextActionAt))} → ${shown(nextActionAt)}`);
+    if (dateLogged !== undefined && day(existing.dateLogged) !== dateLogged) changes.push(`date logged: ${day(existing.dateLogged)} → ${dateLogged}`);
+    if (expectedClose !== undefined && day(existing.expectedClose) !== (expectedClose ?? null)) {
+      changes.push(`expected close: ${shown(day(existing.expectedClose))} → ${shown(expectedClose)}`);
     }
 
     await prisma.lead.update({
       where: { id: existing.id },
-      data: { ...rest, ...(nextActionAt !== undefined ? { nextActionAt: nextActionAt ? new Date(nextActionAt) : null } : {}) },
+      data: {
+        ...rest,
+        ...(dateLogged !== undefined ? { dateLogged: new Date(dateLogged) } : {}),
+        ...(expectedClose !== undefined ? { expectedClose: expectedClose ? new Date(expectedClose) : null } : {}),
+      },
     });
-    if (changes.length) await logLead(existing.id, LeadEventKind.DETAILS_CHANGED, null, 'Details changed', req.actor!.id, changes.join('; '));
+    if (changes.length) await logLead(existing.id, LeadEventKind.DETAILS_CHANGED, null, null, 'Details changed', req.actor!.id, changes.join('; '));
     return reply.send({ lead: await leadDto(existing.id) });
   });
 
@@ -331,16 +375,17 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
       if (revenueReceivedCents === undefined || actualDirectCostsCents === undefined) {
         return reply.code(400).send({ error: 'revenueReceivedCents and actualDirectCostsCents are required to mark a lead won' });
       }
+      // Commission goes to whoever brought the lead in, at the rate on the rates card at the time of the win.
       const { rates } = await loadRates();
-      const { netProfitCents, commissionCents } = leadCommission(revenueReceivedCents, actualDirectCostsCents, existing.traineeSourced, rates.commissionPct);
+      const { netProfitCents, commissionCents } = leadCommission(revenueReceivedCents, actualDirectCostsCents, rates.commissionPct);
       Object.assign(data, {
         wonAt: new Date(), lostAt: null, lostReason: null,
-        revenueReceivedCents, actualDirectCostsCents, netProfitCents,
+        revenueReceivedCents, actualDirectCostsCents,
         commissionPct: rates.commissionPct, commissionCents,
       });
       detail = [
         `revenue ${money(revenueReceivedCents)} − costs ${money(actualDirectCostsCents)} = net ${money(netProfitCents)}`,
-        existing.traineeSourced ? `commission ${money(commissionCents)} (${Math.round(rates.commissionPct * 100)}%, trainee-sourced)` : null,
+        `commission ${money(commissionCents)} (${Math.round(rates.commissionPct * 100)}%) to ${(await prisma.user.findUnique({ where: { id: existing.broughtInById ?? '' }, select: { fullName: true } }))?.fullName ?? 'unassigned'}`,
         note,
       ].filter(Boolean).join(' · ');
     } else if (stage === LeadStage.LOST) {
@@ -351,12 +396,12 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
       // Reopening: the outcome no longer stands.
       Object.assign(data, {
         wonAt: null, lostAt: null, lostReason: null, revenueReceivedCents: null, actualDirectCostsCents: null,
-        netProfitCents: null, commissionPct: null, commissionCents: null,
+        commissionPct: null, commissionCents: null,
       });
     }
 
     await prisma.lead.update({ where: { id: existing.id }, data });
-    await logLead(existing.id, LeadEventKind.STAGE_CHANGED, stage, `${STAGE_LABEL[existing.stage]} → ${STAGE_LABEL[stage]}`, req.actor!.id, detail);
+    await logLead(existing.id, LeadEventKind.STAGE_CHANGED, existing.stage, stage, `${STAGE_LABEL[existing.stage]} → ${STAGE_LABEL[stage]}`, req.actor!.id, detail);
     return reply.send({ lead: await leadDto(existing.id) });
   });
 
@@ -365,7 +410,7 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const existing = await guardLead(req, reply, req.params.id);
     if (!existing) return;
-    await logLead(existing.id, LeadEventKind.NOTE_ADDED, null, 'Note', req.actor!.id, parsed.data.note);
+    await logLead(existing.id, LeadEventKind.NOTE_ADDED, null, null, 'Note', req.actor!.id, parsed.data.note);
     return reply.send({ lead: await leadDto(existing.id) });
   });
 
@@ -374,7 +419,7 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) return;
     const rows = await prisma.leadEvent.findMany({ where: { leadId: existing.id }, orderBy: { createdAt: 'desc' } });
     const events: LeadEventDto[] = rows.map((e) => ({
-      id: e.id, kind: e.kind, stage: e.stage, summary: e.summary, detail: e.detail, actorName: e.actorName, createdAt: e.createdAt.toISOString(),
+      id: e.id, kind: e.kind, fromStage: e.fromStage, toStage: e.toStage, summary: e.summary, detail: e.detail, actorName: e.actorName, createdAt: e.createdAt.toISOString(),
     }));
     return reply.send({ events });
   });
@@ -387,7 +432,7 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     if (existing.stage !== LeadStage.PROPOSAL_SENT) {
       return reply.code(409).send({ error: `move the lead to ${STAGE_LABEL.PROPOSAL_SENT} before creating a quote` });
     }
-    if (existing.quoteRequestId) return reply.code(409).send({ error: 'this lead already has a quote', quoteRequestId: existing.quoteRequestId });
+    if (existing.linkedQuoteId) return reply.code(409).send({ error: 'this lead already has a quote', quoteRequestId: existing.linkedQuoteId });
     const phone = existing.contactPhone ? e164(existing.contactPhone) : null;
     if (!phone) return reply.code(400).send({ error: 'add a valid contact phone to the lead first — the quote is filed under the customer' });
 
@@ -398,25 +443,24 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
         select: { id: true },
       }));
 
-    const lineCode = existing.segment === 'HOUSEHOLD' ? 'residential' : existing.segment === 'MEDICAL' ? 'hospital' : 'office';
+    const lineCode = isHouseholdSegment(existing.segment) ? 'residential' : /clinic|lab|medical|hospital|health/i.test(existing.segment) ? 'hospital' : 'office';
     const line =
       (await prisma.serviceLine.findFirst({ where: { code: lineCode, isActive: true }, select: { id: true } })) ??
       (await prisma.serviceLine.findFirst({ where: { isActive: true }, orderBy: { sortOrder: 'asc' }, select: { id: true } }));
     if (!line) return reply.code(500).send({ error: 'no active service line to file the quote under' });
 
-    const siteType = [existing.organisation, existing.siteLocation].filter(Boolean).join(' · ') || existing.contactName;
     const quote = await prisma.quoteRequest.create({
       data: {
         userId: customer.id,
         serviceLineId: line.id,
-        siteType,
-        frequency: existing.isRecurring ? RecurrenceFrequency.MONTHLY : RecurrenceFrequency.NONE,
+        siteType: existing.clientOrg,
+        frequency: frequencyFor(existing.contractType),
         notes: existing.notes,
         status: QuoteStatus.SITE_VISIT_SCHEDULED,
       },
     });
-    await prisma.lead.update({ where: { id: existing.id }, data: { quoteRequestId: quote.id } });
-    await logLead(existing.id, LeadEventKind.QUOTE_LINKED, null, 'Quote created', req.actor!.id, `Quote request for “${siteType}” opened in the Quote Builder`);
+    await prisma.lead.update({ where: { id: existing.id }, data: { linkedQuoteId: quote.id } });
+    await logLead(existing.id, LeadEventKind.QUOTE_LINKED, null, null, 'Quote created', req.actor!.id, `Quote request for “${existing.clientOrg}” opened in the Quote Builder`);
     return reply.code(201).send({ lead: await leadDto(existing.id), quoteRequestId: quote.id });
   });
 
@@ -433,7 +477,7 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
       where: { id: existing.id },
       data: { commissionPaidAt: new Date(), commissionReference: parsed.data.reference || null },
     });
-    await logLead(existing.id, LeadEventKind.COMMISSION_PAID, null, `Commission ${money(existing.commissionCents)} paid`, req.actor!.id,
+    await logLead(existing.id, LeadEventKind.COMMISSION_PAID, null, null, `Commission ${money(existing.commissionCents)} paid`, req.actor!.id,
       parsed.data.reference ? `Ref ${parsed.data.reference}` : null);
     return reply.send({ lead: await leadDto(existing.id) });
   });
@@ -448,13 +492,23 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
   app.post('/tenders', { preHandler: requireFullPipeline }, async (req, reply) => {
     const parsed = CreateTenderSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const { submissionDeadline, packToCooBy, ...rest } = parsed.data;
-    if (packToCooBy > submissionDeadline) return reply.code(400).send({ error: 'the pack must reach the COO before the submission deadline' });
+    const { dateFound, submissionDeadline, packToCooBy, dateSentToCoo, status, agpoReserved, ...rest } = parsed.data;
+    const pack = packToCooBy ?? defaultPackDate(submissionDeadline);
+    if (pack > submissionDeadline) return reply.code(400).send({ error: 'the pack must reach the COO before the submission deadline' });
     const row = await prisma.tender.create({
-      data: { ...rest, submissionDeadline: new Date(submissionDeadline), packToCooBy: new Date(packToCooBy), createdById: req.actor!.id },
+      data: {
+        ...rest,
+        agpoReserved: agpoReserved ?? false,
+        status: status || 'Identified',
+        dateFound: new Date(dateFound ?? todayNairobi()),
+        submissionDeadline: new Date(submissionDeadline),
+        packToCooBy: new Date(pack),
+        dateSentToCoo: dateSentToCoo ? new Date(dateSentToCoo) : null,
+        createdById: req.actor!.id,
+      },
     });
-    await logTender(row.id, TenderEventKind.CREATED, TenderStatus.IDENTIFIED, `Tender logged — ${STATUS_LABEL.IDENTIFIED}`, req.actor!.id,
-      `deadline ${submissionDeadline} · pack to COO by ${packToCooBy}`);
+    await logTender(row.id, TenderEventKind.CREATED, null, row.status, `Tender logged — ${row.status}`, req.actor!.id,
+      `deadline ${submissionDeadline} · pack to COO by ${pack}${packToCooBy ? '' : ' (default: two days before, 5 pm)'}`);
     return reply.code(201).send({ tender: await tenderDto(row.id) });
   });
 
@@ -464,7 +518,7 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.tender.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'tender not found' });
 
-    const { submissionDeadline, packToCooBy, ...rest } = parsed.data;
+    const { dateFound, submissionDeadline, packToCooBy, dateSentToCoo, ...rest } = parsed.data;
     const nextDeadline = submissionDeadline ?? day(existing.submissionDeadline)!;
     const nextPack = packToCooBy ?? day(existing.packToCooBy)!;
     if (nextPack > nextDeadline) return reply.code(400).send({ error: 'the pack must reach the COO before the submission deadline' });
@@ -472,18 +526,31 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     const changes = Object.entries(rest)
       .filter(([k, v]) => v !== undefined && (existing as Record<string, unknown>)[k] !== v)
       .map(([k, v]) => `${k}: ${shown((existing as Record<string, unknown>)[k])} → ${shown(v)}`);
-    if (submissionDeadline && submissionDeadline !== day(existing.submissionDeadline)) changes.push(`deadline: ${day(existing.submissionDeadline)} → ${submissionDeadline}`);
-    if (packToCooBy && packToCooBy !== day(existing.packToCooBy)) changes.push(`pack to COO: ${day(existing.packToCooBy)} → ${packToCooBy}`);
+    const dates: [string, string | null | undefined, Date | null][] = [
+      ['date found', dateFound, existing.dateFound],
+      ['deadline', submissionDeadline, existing.submissionDeadline],
+      ['pack to COO', packToCooBy, existing.packToCooBy],
+      ['sent to COO', dateSentToCoo, existing.dateSentToCoo],
+    ];
+    for (const [label, next, prev] of dates) {
+      if (next !== undefined && (next ?? null) !== day(prev)) changes.push(`${label}: ${shown(day(prev))} → ${shown(next)}`);
+    }
 
     await prisma.tender.update({
       where: { id: existing.id },
       data: {
         ...rest,
+        ...(dateFound ? { dateFound: new Date(dateFound) } : {}),
         ...(submissionDeadline ? { submissionDeadline: new Date(submissionDeadline) } : {}),
         ...(packToCooBy ? { packToCooBy: new Date(packToCooBy) } : {}),
+        ...(dateSentToCoo !== undefined ? { dateSentToCoo: dateSentToCoo ? new Date(dateSentToCoo) : null } : {}),
       },
     });
-    if (changes.length) await logTender(existing.id, TenderEventKind.DETAILS_CHANGED, null, 'Details changed', req.actor!.id, changes.join('; '));
+    if (rest.status !== undefined && rest.status !== existing.status) {
+      await logTender(existing.id, TenderEventKind.STATUS_CHANGED, existing.status, rest.status, `${existing.status} → ${rest.status}`, req.actor!.id, null);
+    }
+    const other = changes.filter((c) => !c.startsWith('status:'));
+    if (other.length) await logTender(existing.id, TenderEventKind.DETAILS_CHANGED, null, null, 'Details changed', req.actor!.id, other.join('; '));
     return reply.send({ tender: await tenderDto(existing.id) });
   });
 
@@ -494,23 +561,27 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ ok: true });
   });
 
+  // Status is free text; the log keeps every change and the funnel reads
+  // "submitted" / "awarded" from the wording.
   app.post<{ Params: { id: string } }>('/tenders/:id/status', { preHandler: requireFullPipeline }, async (req, reply) => {
     const parsed = TenderStatusSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const existing = await prisma.tender.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'tender not found' });
     const { status, note } = parsed.data;
-    if (status === existing.status) return reply.code(409).send({ error: `the tender is already ${STATUS_LABEL[status]}` });
+    if (status === existing.status) return reply.code(409).send({ error: `the tender is already “${status}”` });
+
+    // Sending the pack stamps dateSentToCoo (explicit date wins; otherwise today).
+    const sentToCoo = parsed.data.dateSentToCoo !== undefined
+      ? parsed.data.dateSentToCoo
+      : /sent to coo/i.test(status) && !existing.dateSentToCoo ? todayNairobi() : undefined;
 
     await prisma.tender.update({
       where: { id: existing.id },
-      data: {
-        status,
-        ...(status === TenderStatus.SUBMITTED ? { submittedAt: new Date() } : {}),
-        ...(status === TenderStatus.AWARDED || status === TenderStatus.NOT_AWARDED ? { decidedAt: new Date() } : {}),
-      },
+      data: { status, ...(sentToCoo !== undefined ? { dateSentToCoo: sentToCoo ? new Date(sentToCoo) : null } : {}) },
     });
-    await logTender(existing.id, TenderEventKind.STATUS_CHANGED, status, `${STATUS_LABEL[existing.status]} → ${STATUS_LABEL[status]}`, req.actor!.id, note ?? null);
+    await logTender(existing.id, TenderEventKind.STATUS_CHANGED, existing.status, status, `${existing.status} → ${status}`, req.actor!.id,
+      [sentToCoo ? `sent to COO ${sentToCoo}` : null, note].filter(Boolean).join(' · ') || null);
     return reply.send({ tender: await tenderDto(existing.id) });
   });
 
@@ -519,14 +590,14 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const existing = await prisma.tender.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!existing) return reply.code(404).send({ error: 'tender not found' });
-    await logTender(existing.id, TenderEventKind.NOTE_ADDED, null, 'Note', req.actor!.id, parsed.data.note);
+    await logTender(existing.id, TenderEventKind.NOTE_ADDED, null, null, 'Note', req.actor!.id, parsed.data.note);
     return reply.send({ tender: await tenderDto(existing.id) });
   });
 
   app.get<{ Params: { id: string } }>('/tenders/:id/events', { preHandler: requireFullPipeline }, async (req, reply) => {
     const rows = await prisma.tenderEvent.findMany({ where: { tenderId: req.params.id }, orderBy: { createdAt: 'desc' } });
     const events: TenderEventDto[] = rows.map((e) => ({
-      id: e.id, kind: e.kind, status: e.status, summary: e.summary, detail: e.detail, actorName: e.actorName, createdAt: e.createdAt.toISOString(),
+      id: e.id, kind: e.kind, fromStatus: e.fromStatus, toStatus: e.toStatus, summary: e.summary, detail: e.detail, actorName: e.actorName, createdAt: e.createdAt.toISOString(),
     }));
     return reply.send({ events });
   });
@@ -548,18 +619,23 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     const [{ targets }, leadEvents, tenderEvents] = await Promise.all([
       loadFunnelTargets(),
       prisma.leadEvent.findMany({
-        where: { createdAt: { gte: from, lt: to }, stage: { not: null }, kind: { in: [LeadEventKind.CREATED, LeadEventKind.STAGE_CHANGED] } },
-        select: { stage: true, lead: { select: { channel: true, segment: true, isRecurring: true } } },
+        where: { createdAt: { gte: from, lt: to }, toStage: { not: null }, kind: { in: [LeadEventKind.CREATED, LeadEventKind.STAGE_CHANGED] } },
+        select: { toStage: true, lead: { select: { channel: true, segment: true, contractType: true } } },
       }),
       prisma.tenderEvent.findMany({
-        where: { createdAt: { gte: from, lt: to }, status: { not: null }, kind: { in: [TenderEventKind.CREATED, TenderEventKind.STATUS_CHANGED] } },
-        select: { status: true, tender: { select: { kind: true } } },
+        where: { createdAt: { gte: from, lt: to }, toStatus: { not: null }, kind: { in: [TenderEventKind.CREATED, TenderEventKind.STATUS_CHANGED] } },
+        select: { toStatus: true, tender: { select: { type: true } } },
       }),
     ]);
     const actuals = computeActuals(
       parsed.data,
-      leadEvents.map((e) => ({ stage: e.stage!, channel: e.lead.channel, segment: e.lead.segment, isRecurring: e.lead.isRecurring })),
-      tenderEvents.map((e) => ({ status: e.status!, kind: e.tender.kind })),
+      leadEvents.map((e) => ({
+        stage: e.toStage!,
+        channel: classifyChannel(e.lead.channel),
+        household: isHouseholdSegment(e.lead.segment),
+        recurring: isRecurringContract(e.lead.contractType),
+      })),
+      tenderEvents.map((e) => ({ status: e.toStatus!, type: e.tender.type })),
       targets,
     );
     return reply.send({ actuals });
@@ -574,14 +650,14 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ result: requiredActivity(parsed.data, targets) });
   });
 
-  // People a lead or tender can be assigned to.
-  app.get('/owners', { preHandler: requirePipeline }, async (_req, reply) => {
+  // People a lead can be brought in by.
+  app.get('/people', { preHandler: requirePipeline }, async (_req, reply) => {
     const rows = await prisma.user.findMany({
-      where: { deletedAt: null, OR: [{ isOwner: true }, { role: { in: [UserRole.BUSINESS_DEVELOPMENT_LEAD, UserRole.COO, UserRole.ADMIN, UserRole.MARKETING] } }] },
+      where: { deletedAt: null, OR: [{ isOwner: true }, { role: { in: [UserRole.BUSINESS_DEVELOPMENT_LEAD, UserRole.COO, UserRole.ADMIN, UserRole.MARKETING, UserRole.SUPPORT, UserRole.CLEANING_SUPERVISOR] } }] },
       select: { id: true, fullName: true, role: true },
       orderBy: { fullName: 'asc' },
     });
-    return reply.send({ owners: rows });
+    return reply.send({ people: rows });
   });
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -590,7 +666,7 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
   async function guardLead(req: { actor?: { role: UserRole; isOwner: boolean } }, reply: { code: (n: number) => { send: (b: unknown) => unknown } }, id: string) {
     const existing = await prisma.lead.findUnique({ where: { id } });
     if (!existing) { reply.code(404).send({ error: 'lead not found' }); return null; }
-    if (householdOnly(req.actor!) && existing.segment !== LeadSegment.HOUSEHOLD) { reply.code(403).send({ error: 'marketing can work household leads only' }); return null; }
+    if (householdOnly(req.actor!) && !isHouseholdSegment(existing.segment)) { reply.code(403).send({ error: 'marketing can work household leads only' }); return null; }
     return existing;
   }
 
@@ -609,16 +685,17 @@ export const pipelineRoutes: FastifyPluginAsync = async (app) => {
     return { dueCents: due._sum.commissionCents ?? 0, dueCount: due._count, paidCents: paid._sum.commissionCents ?? 0 };
   }
 
-  async function logLead(leadId: string, kind: LeadEventKind, stage: LeadStage | null, summary: string, actorId: string, detail?: string | null) {
+  async function logLead(leadId: string, kind: LeadEventKind, fromStage: LeadStage | null, toStage: LeadStage | null, summary: string, actorId: string, detail?: string | null) {
     const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { fullName: true } });
-    await prisma.leadEvent.create({ data: { leadId, kind, stage, summary, detail: detail ?? null, actorId, actorName: actor?.fullName ?? null } });
+    await prisma.leadEvent.create({ data: { leadId, kind, fromStage, toStage, summary, detail: detail ?? null, actorId, actorName: actor?.fullName ?? null } });
   }
-  async function logTender(tenderId: string, kind: TenderEventKind, status: TenderStatus | null, summary: string, actorId: string, detail?: string | null) {
+  async function logTender(tenderId: string, kind: TenderEventKind, fromStatus: string | null, toStatus: string | null, summary: string, actorId: string, detail?: string | null) {
     const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { fullName: true } });
-    await prisma.tenderEvent.create({ data: { tenderId, kind, status, summary, detail: detail ?? null, actorId, actorName: actor?.fullName ?? null } });
+    await prisma.tenderEvent.create({ data: { tenderId, kind, fromStatus, toStatus, summary, detail: detail ?? null, actorId, actorName: actor?.fullName ?? null } });
   }
 };
 
 function money(cents: number) {
   return `KSh ${(cents / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
 }
+

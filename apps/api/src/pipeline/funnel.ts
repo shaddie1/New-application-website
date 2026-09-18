@@ -11,37 +11,71 @@
  *   activityNeededPerYear = winsPerChannel ÷ Π(channel's locked rates)
  *   activityNeededPerMonth = activityNeededPerYear ÷ 12
  *
- *   Commission mirrors the Quote Builder: (revenue − direct costs) × rate,
- *   trainee-sourced leads only.
+ *   Commission: (revenue − direct costs) × rate to whoever brought the lead
+ *   in, on every win.
  */
 import type {
   ActivityActual,
   CalculatorChannel,
   FunnelActualsDto,
+  FunnelChannel,
   FunnelTargets,
-  LeadChannel,
-  LeadSegment,
   LeadStage,
   LockedRate,
   RequiredActivityInput,
   RequiredActivityResult,
   StageActual,
-  TenderKind,
-  TenderStatus,
+  TenderType,
 } from '@onyxhawk/types';
 
-/** A stage being reached by a lead (CREATED counts as reaching NEW). */
+// ── Classifying the sheet's free text ───────────────────────────────────────
+
+/** "Warm introduction", "warm intro from X" → WARM_INTRO, and so on. */
+export function classifyChannel(text: string): FunnelChannel {
+  const t = text.toLowerCase();
+  if (/warm|intro/.test(t)) return 'WARM_INTRO';
+  if (/household|enquir|inquir|walk-?in|website|social/.test(t)) return 'HOUSEHOLD_ENQUIRY';
+  if (/referr/.test(t)) return 'REFERRAL';
+  if (/direct|outreach|cold|call|email|visit/.test(t)) return 'DIRECT_OUTREACH';
+  return 'OTHER';
+}
+
+/** Marketing's funnel: households, however the segment is worded. */
+export function isHouseholdSegment(text: string): boolean {
+  return /household|home|residen|domestic|apartment|flat|villa/i.test(text);
+}
+
+/** Anything that is not a one-off is a recurring contract. */
+export function isRecurringContract(contractType: string | null | undefined): boolean {
+  if (!contractType) return false;
+  return !/one[\s-]?off|once|single/i.test(contractType);
+}
+
+/** Public tenders vs the private RFQ / EOI / NGO route on the rates card. */
+export function tenderIsPublic(type: TenderType): boolean {
+  return type === 'TENDER';
+}
+
+/** Free-text status → did the pack go in, or was it awarded? */
+export function statusIsSubmission(status: string): boolean {
+  return /submitted/i.test(status);
+}
+export function statusIsAward(status: string): boolean {
+  return /\bawarded\b/i.test(status) && !/not awarded|unsuccessful|lost/i.test(status);
+}
+
+/** A stage being reached by a lead (CREATED counts as reaching CONTACTED). */
 export interface LeadStageEvent {
   stage: LeadStage;
-  channel: LeadChannel;
-  segment: LeadSegment;
-  isRecurring: boolean;
+  channel: FunnelChannel;
+  household: boolean;
+  recurring: boolean;
 }
 
 /** A tender changing status. */
 export interface TenderStatusEvent {
-  status: TenderStatus;
-  kind: TenderKind;
+  status: string;
+  type: TenderType;
 }
 
 const BELOW_LOCKED_FACTOR = 0.8;
@@ -69,7 +103,7 @@ export function monthLabel(month: string): string {
 
 // ── Actuals vs locked ───────────────────────────────────────────────────────
 
-const ORG_CHANNELS: LeadChannel[] = ['DIRECT_OUTREACH', 'WARM_INTRO', 'REFERRAL', 'OTHER'];
+const ORG_CHANNELS: FunnelChannel[] = ['DIRECT_OUTREACH', 'WARM_INTRO', 'REFERRAL', 'OTHER'];
 
 export function computeActuals(
   month: string,
@@ -80,27 +114,29 @@ export function computeActuals(
   const year = planYear(month, targets.year1Start);
   const idx = monthIndex(month, targets.year1Start);
 
-  const org = (stage: LeadStage, channels: LeadChannel[] = ORG_CHANNELS) =>
-    leadEvents.filter((e) => e.stage === stage && e.segment !== 'HOUSEHOLD' && channels.includes(e.channel)).length;
-  const household = (stage: LeadStage) => leadEvents.filter((e) => e.stage === stage && e.segment === 'HOUSEHOLD').length;
-  const tender = (status: TenderStatus, kind: TenderKind) =>
-    tenderEvents.filter((e) => e.status === status && e.kind === kind).length;
+  const org = (stage: LeadStage, channels: FunnelChannel[] = ORG_CHANNELS) =>
+    leadEvents.filter((e) => e.stage === stage && !e.household && channels.includes(e.channel)).length;
+  const household = (stage: LeadStage) => leadEvents.filter((e) => e.stage === stage && e.household).length;
+  const tender = (what: 'submitted' | 'awarded', isPublic: boolean) =>
+    tenderEvents.filter(
+      (e) => tenderIsPublic(e.type) === isPublic && (what === 'submitted' ? statusIsSubmission(e.status) : statusIsAward(e.status)),
+    ).length;
 
-  const wonOrg = leadEvents.filter((e) => e.stage === 'WON' && e.segment !== 'HOUSEHOLD');
+  const wonOrg = leadEvents.filter((e) => e.stage === 'WON' && !e.household);
 
   /** numerator / denominator per rate key; undefined = cannot be measured here. */
   const counts: Record<string, [number, number] | undefined> = {
-    direct_contact_to_conversation: [org('CONVERSATION', ['DIRECT_OUTREACH']), org('NEW', ['DIRECT_OUTREACH'])],
+    direct_contact_to_conversation: [org('CONVERSATION', ['DIRECT_OUTREACH']), org('CONTACTED', ['DIRECT_OUTREACH'])],
     conversation_to_site_visit: [org('SITE_VISIT', ['DIRECT_OUTREACH']), org('CONVERSATION', ['DIRECT_OUTREACH'])],
     site_visit_to_proposal: [org('PROPOSAL_SENT'), org('SITE_VISIT')],
     proposal_to_signed: [org('WON'), org('PROPOSAL_SENT')],
-    warm_intro_to_site_visit: [org('SITE_VISIT', ['WARM_INTRO']), org('NEW', ['WARM_INTRO'])],
-    warm_intro_to_signed: [org('WON', ['WARM_INTRO']), org('NEW', ['WARM_INTRO'])],
-    public_tender_to_award: [tender('AWARDED', 'PUBLIC_TENDER'), tender('SUBMITTED', 'PUBLIC_TENDER')],
-    private_rfq_to_award: [tender('AWARDED', 'PRIVATE_RFQ'), tender('SUBMITTED', 'PRIVATE_RFQ')],
-    share_wins_recurring: [wonOrg.filter((e) => e.isRecurring).length, wonOrg.length],
-    household_enquiry_to_paid_first_two_months: idx < 2 ? [household('WON'), household('NEW')] : undefined,
-    household_enquiry_to_paid: idx >= 2 ? [household('WON'), household('NEW')] : undefined,
+    warm_intro_to_site_visit: [org('SITE_VISIT', ['WARM_INTRO']), org('CONTACTED', ['WARM_INTRO'])],
+    warm_intro_to_signed: [org('WON', ['WARM_INTRO']), org('CONTACTED', ['WARM_INTRO'])],
+    public_tender_to_award: [tender('awarded', true), tender('submitted', true)],
+    private_rfq_to_award: [tender('awarded', false), tender('submitted', false)],
+    share_wins_recurring: [wonOrg.filter((e) => e.recurring).length, wonOrg.length],
+    household_enquiry_to_paid_first_two_months: idx < 2 ? [household('WON'), household('CONTACTED')] : undefined,
+    household_enquiry_to_paid: idx >= 2 ? [household('WON'), household('CONTACTED')] : undefined,
     repeat_household_booking_rate: undefined, // needs booking history, not lead activity
   };
 
@@ -125,16 +161,16 @@ export function computeActuals(
   });
 
   const activityCounts: Record<string, number | undefined> = {
-    contacted: org('NEW', ['DIRECT_OUTREACH']),
-    warm_intros: org('NEW', ['WARM_INTRO']),
+    contacted: org('CONTACTED', ['DIRECT_OUTREACH']),
+    warm_intros: org('CONTACTED', ['WARM_INTRO']),
     conversations: org('CONVERSATION'),
     site_visits: org('SITE_VISIT'),
     proposals: org('PROPOSAL_SENT'),
-    public_tenders: tender('SUBMITTED', 'PUBLIC_TENDER'),
-    private_submissions: tender('SUBMITTED', 'PRIVATE_RFQ'),
+    public_tenders: tender('submitted', true),
+    private_submissions: tender('submitted', false),
     signed_work: wonOrg.length,
-    recurring_contracts: wonOrg.filter((e) => e.isRecurring).length,
-    household_enquiries: household('NEW'),
+    recurring_contracts: wonOrg.filter((e) => e.recurring).length,
+    household_enquiries: household('CONTACTED'),
     new_household_customers: household('WON'),
   };
 
@@ -222,18 +258,18 @@ export function requiredActivity(input: RequiredActivityInput, targets: FunnelTa
 
 // ── Commission ──────────────────────────────────────────────────────────────
 
+/**
+ * Commission goes to whoever brought the lead in (JD rule) on every win:
+ * net profit × rate, never negative — a loss earns nothing rather than a
+ * negative "due" figure.
+ */
 export function leadCommission(
   revenueReceivedCents: number,
   actualDirectCostsCents: number,
-  traineeSourced: boolean,
   commissionPct: number,
 ): { netProfitCents: number; commissionCents: number } {
   const netProfitCents = revenueReceivedCents - actualDirectCostsCents;
-  return {
-    netProfitCents,
-    // A loss earns nothing rather than a negative "due" figure.
-    commissionCents: traineeSourced ? Math.max(0, Math.round(netProfitCents * commissionPct)) : 0,
-  };
+  return { netProfitCents, commissionCents: Math.max(0, Math.round(netProfitCents * commissionPct)) };
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;

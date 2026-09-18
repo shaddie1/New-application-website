@@ -2,22 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type {
-  CalculatorChannel,
-  CreateLeadInput,
-  CreateTenderInput,
-  FunnelActualsDto,
-  FunnelTargets,
-  LeadChannel,
-  LeadDto,
-  LeadEventDto,
-  LeadSegment,
-  LeadStage,
-  RequiredActivityResult,
-  TenderDto,
-  TenderEventDto,
-  TenderKind,
-  TenderStatus,
+import {
+  CONTRACT_TYPE_LABELS,
+  LEAD_CHANNEL_LABELS,
+  LEAD_SEGMENT_LABELS,
+  TENDER_STATUS_LABELS,
+  type BidDecision,
+  type CalculatorChannel,
+  type CreateLeadInput,
+  type CreateTenderInput,
+  type FunnelActualsDto,
+  type FunnelTargets,
+  type LeadDto,
+  type LeadEventDto,
+  type LeadStage,
+  type RequiredActivityResult,
+  type TenderDto,
+  type TenderEventDto,
+  type TenderType,
 } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
@@ -27,27 +29,17 @@ import { canEditTargets, canMarkCommission, canViewPipeline, householdOnly } fro
 
 // ── Labels ───────────────────────────────────────────────────────────────────
 
-const SEGMENT_LABEL: Record<LeadSegment, string> = {
-  HOUSEHOLD: 'Household', COMMERCIAL: 'Commercial', MEDICAL: 'Medical', DEVELOPER: 'Developer', NGO: 'NGO', PUBLIC_SECTOR: 'Public sector',
-};
-const CHANNEL_LABEL: Record<LeadChannel, string> = {
-  DIRECT_OUTREACH: 'Direct outreach', WARM_INTRO: 'Warm intro', HOUSEHOLD_ENQUIRY: 'Household enquiry', REFERRAL: 'Referral', OTHER: 'Other',
-};
 const STAGE_LABEL: Record<LeadStage, string> = {
-  NEW: 'New', CONVERSATION: 'Conversation', SITE_VISIT: 'Site visit', PROPOSAL_SENT: 'Proposal sent', WON: 'Won', LOST: 'Lost',
+  CONTACTED: 'Contacted', CONVERSATION: 'Conversation', SITE_VISIT: 'Site visit', PROPOSAL_SENT: 'Proposal sent', WON: 'Won', LOST: 'Lost',
 };
 const STAGES = Object.keys(STAGE_LABEL) as LeadStage[];
 /** The live funnel, in order. Won and Lost sit outside it. */
-const PIPELINE: LeadStage[] = ['NEW', 'CONVERSATION', 'SITE_VISIT', 'PROPOSAL_SENT'];
+const PIPELINE: LeadStage[] = ['CONTACTED', 'CONVERSATION', 'SITE_VISIT', 'PROPOSAL_SENT'];
 
-const TENDER_KIND_LABEL: Record<TenderKind, string> = { PUBLIC_TENDER: 'Public tender', PRIVATE_RFQ: 'Private RFQ / EOI / NGO' };
-const TENDER_STATUS_LABEL: Record<TenderStatus, string> = {
-  IDENTIFIED: 'Identified', PREPARING: 'Preparing', PACK_WITH_COO: 'Pack with COO', SUBMITTED: 'Submitted',
-  AWARDED: 'Awarded', NOT_AWARDED: 'Not awarded', WITHDRAWN: 'Withdrawn',
-};
-const TENDER_STATUSES = Object.keys(TENDER_STATUS_LABEL) as TenderStatus[];
-/** Statuses where the dates still matter. */
-const TENDER_OPEN: TenderStatus[] = ['IDENTIFIED', 'PREPARING', 'PACK_WITH_COO'];
+const TENDER_TYPE_LABEL: Record<TenderType, string> = { TENDER: 'Tender', EOI: 'EOI', RFQ: 'RFQ', PREQUALIFICATION: 'Prequalification' };
+const BID_LABEL: Record<BidDecision, string> = { BID: 'Bid', NO_BID: 'No bid' };
+/** Once the pack is in (or the tender is closed), the dates stop mattering. */
+const tenderClosed = (status: string) => /submitted|awarded|no bid|withdrawn|lost|unsuccessful/i.test(status);
 
 const CALC_CHANNELS: { key: CalculatorChannel; label: string }[] = [
   { key: 'DIRECT_OUTREACH', label: 'Direct outreach' },
@@ -82,6 +74,13 @@ function todayIso() {
 }
 function thisMonth() {
   return todayIso().slice(0, 7);
+}
+/** The sheet's rule: the pack reaches the COO two days before the deadline. */
+function packDefault(deadline: string) {
+  if (!deadline) return '';
+  const d = new Date(`${deadline}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 2);
+  return d.toISOString().slice(0, 10);
 }
 function messageFrom(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
@@ -156,43 +155,46 @@ export default function PipelinePage() {
 
 // ── Leads ────────────────────────────────────────────────────────────────────
 
-type Owner = { id: string; fullName: string; role: string };
+type Person = { id: string; fullName: string; role: string };
 
 function LeadsTab({ household, canPay, onError }: { household: boolean; canPay: boolean; onError: (m: string | null) => void }) {
   const [leads, setLeads] = useState<LeadDto[] | null>(null);
   const [commission, setCommission] = useState({ dueCents: 0, dueCount: 0, paidCents: 0 });
-  const [owners, setOwners] = useState<Owner[]>([]);
-  const [filters, setFilters] = useState<{ stage: '' | LeadStage; segment: '' | LeadSegment; channel: '' | LeadChannel; bdOwnerId: string }>({
-    stage: '', segment: '', channel: '', bdOwnerId: '',
+  const [people, setPeople] = useState<Person[]>([]);
+  const [filters, setFilters] = useState<{ stage: '' | LeadStage; segment: string; channel: string; broughtInById: string }>({
+    stage: '', segment: '', channel: '', broughtInById: '',
   });
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.leads({ segment: filters.segment, channel: filters.channel, bdOwnerId: filters.bdOwnerId });
+      const res = await api.leads({ segment: filters.segment, channel: filters.channel, broughtInById: filters.broughtInById });
       setLeads(res.leads);
       setCommission(res.commission);
     } catch (err) {
       onError(messageFrom(err, 'Could not load leads'));
     }
-  }, [filters.segment, filters.channel, filters.bdOwnerId, onError]);
+  }, [filters.segment, filters.channel, filters.broughtInById, onError]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { api.pipelineOwners().then((r) => setOwners(r.owners)).catch(() => setOwners([])); }, []);
+  useEffect(() => { api.pipelinePeople().then((r) => setPeople(r.people)).catch(() => setPeople([])); }, []);
 
   const patch = (updated: LeadDto) => setLeads((prev) => prev?.map((l) => (l.id === updated.id ? updated : l)) ?? null);
 
   const shown = (leads ?? []).filter((l) => !filters.stage || l.stage === filters.stage);
   const counts = STAGES.reduce((acc, s) => ({ ...acc, [s]: (leads ?? []).filter((l) => l.stage === s).length }), {} as Record<LeadStage, number>);
   const won = (leads ?? []).filter((l) => l.stage === 'WON' && (l.commissionCents ?? 0) > 0);
+  const segments = [...new Set<string>([...LEAD_SEGMENT_LABELS, ...(leads ?? []).map((l) => l.segment)])];
+  const channels = [...new Set<string>([...LEAD_CHANNEL_LABELS, ...(leads ?? []).map((l) => l.channel)])];
 
   const exportCommission = () =>
     downloadCsv('lead-commission', [
-      { header: 'Won on', value: (l: LeadDto) => (l.wonAt ? l.wonAt.slice(0, 10) : '') },
-      { header: 'Organisation', value: (l) => l.organisation ?? '' },
+      { header: 'Lead', value: (l: LeadDto) => l.leadId },
+      { header: 'Won on', value: (l) => (l.wonAt ? l.wonAt.slice(0, 10) : '') },
+      { header: 'Client / organisation', value: (l) => l.clientOrg },
       { header: 'Contact', value: (l) => l.contactName },
-      { header: 'BD owner', value: (l) => l.bdOwnerName ?? '' },
+      { header: 'Brought in by', value: (l) => l.broughtInByName ?? '' },
       { header: 'Revenue received (KSh)', value: (l) => csvMoney(l.revenueReceivedCents ?? 0) },
       { header: 'Direct costs (KSh)', value: (l) => csvMoney(l.actualDirectCostsCents ?? 0) },
       { header: 'Net profit (KSh)', value: (l) => csvMoney(l.netProfitCents ?? 0) },
@@ -208,12 +210,12 @@ function LeadsTab({ household, canPay, onError }: { household: boolean; canPay: 
       {/* Commission due — the payout queue, same shape as Profit sharing. */}
       {!household && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white px-5 py-4">
-          <div className="flex flex-wrap items-center gap-6">
-            <div>
-              <p className="text-xs uppercase tracking-widest text-charcoal-muted">Total commission due</p>
-              <p className="mt-1 text-2xl" style={{ fontFamily: 'Georgia, serif' }}>{money(commission.dueCents)}</p>
-              <p className="text-xs text-charcoal-muted">{commission.dueCount} won lead{commission.dueCount === 1 ? '' : 's'} unpaid · {money(commission.paidCents)} paid to date</p>
-            </div>
+          <div>
+            <p className="text-xs uppercase tracking-widest text-charcoal-muted">Total commission due</p>
+            <p className="mt-1 text-2xl" style={{ fontFamily: 'Georgia, serif' }}>{money(commission.dueCents)}</p>
+            <p className="text-xs text-charcoal-muted">
+              {commission.dueCount} won lead{commission.dueCount === 1 ? '' : 's'} unpaid · {money(commission.paidCents)} paid to date · paid to whoever brought the lead in
+            </p>
           </div>
           <button className={btnGhost} onClick={exportCommission} disabled={won.length === 0}>Export commission CSV</button>
         </div>
@@ -232,23 +234,23 @@ function LeadsTab({ household, canPay, onError }: { household: boolean; canPay: 
       </div>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-3">
-        <select className={input} value={filters.segment} onChange={(e) => setFilters((f) => ({ ...f, segment: e.target.value as '' | LeadSegment }))} disabled={household}>
+        <select className={input} value={filters.segment} onChange={(e) => setFilters((f) => ({ ...f, segment: e.target.value }))} disabled={household}>
           <option value="">All segments</option>
-          {(Object.keys(SEGMENT_LABEL) as LeadSegment[]).map((s) => <option key={s} value={s}>{SEGMENT_LABEL[s]}</option>)}
+          {segments.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className={input} value={filters.channel} onChange={(e) => setFilters((f) => ({ ...f, channel: e.target.value as '' | LeadChannel }))}>
+        <select className={input} value={filters.channel} onChange={(e) => setFilters((f) => ({ ...f, channel: e.target.value }))}>
           <option value="">All channels</option>
-          {(Object.keys(CHANNEL_LABEL) as LeadChannel[]).map((c) => <option key={c} value={c}>{CHANNEL_LABEL[c]}</option>)}
+          {channels.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select className={input} value={filters.bdOwnerId} onChange={(e) => setFilters((f) => ({ ...f, bdOwnerId: e.target.value }))}>
-          <option value="">All BD owners</option>
-          {owners.map((o) => <option key={o.id} value={o.id}>{o.fullName}</option>)}
+        <select className={input} value={filters.broughtInById} onChange={(e) => setFilters((f) => ({ ...f, broughtInById: e.target.value }))}>
+          <option value="">Brought in by anyone</option>
+          {people.map((o) => <option key={o.id} value={o.id}>{o.fullName}</option>)}
         </select>
       </div>
 
       {showForm && (
         <LeadForm
-          owners={owners}
+          people={people}
           household={household}
           onCancel={() => setShowForm(false)}
           onSaved={(lead) => { setShowForm(false); setLeads((prev) => [lead, ...(prev ?? [])]); setExpanded(lead.id); }}
@@ -266,7 +268,7 @@ function LeadsTab({ household, canPay, onError }: { household: boolean; canPay: 
             <LeadCard
               key={l.id}
               lead={l}
-              owners={owners}
+              people={people}
               household={household}
               canPay={canPay}
               expanded={expanded === l.id}
@@ -285,8 +287,8 @@ function LeadsTab({ household, canPay, onError }: { household: boolean; canPay: 
 const chip = (on: boolean) =>
   `rounded-full border px-3 py-1.5 text-sm ${on ? 'border-charcoal bg-charcoal text-white' : 'border-line bg-white text-charcoal-muted'}`;
 
-function LeadForm({ owners, household, initial, onCancel, onSaved, onError }: {
-  owners: Owner[];
+function LeadForm({ people, household, initial, onCancel, onSaved, onError }: {
+  people: Person[];
   household: boolean;
   initial?: LeadDto;
   onCancel: () => void;
@@ -294,40 +296,37 @@ function LeadForm({ owners, household, initial, onCancel, onSaved, onError }: {
   onError: (m: string | null) => void;
 }) {
   const [form, setForm] = useState({
-    organisation: initial?.organisation ?? '',
+    dateLogged: initial?.dateLogged ?? todayIso(),
+    clientOrg: initial?.clientOrg ?? '',
+    segment: initial?.segment ?? (household ? 'Household' : 'Office'),
+    broughtInById: initial?.broughtInById ?? '',
+    channel: initial?.channel ?? (household ? 'Household enquiry' : 'Direct outreach'),
     contactName: initial?.contactName ?? '',
     contactPhone: initial?.contactPhone ?? '',
-    contactEmail: initial?.contactEmail ?? '',
-    segment: (initial?.segment ?? (household ? 'HOUSEHOLD' : 'COMMERCIAL')) as LeadSegment,
-    channel: (initial?.channel ?? (household ? 'HOUSEHOLD_ENQUIRY' : 'DIRECT_OUTREACH')) as LeadChannel,
-    bdOwnerId: initial?.bdOwnerId ?? '',
-    siteLocation: initial?.siteLocation ?? '',
-    valueKes: initial?.estimatedValueCents != null ? String(initial.estimatedValueCents / 100) : '',
-    isRecurring: initial?.isRecurring ?? false,
-    traineeSourced: initial?.traineeSourced ?? false,
-    nextActionAt: initial?.nextActionAt ?? '',
+    valueKes: initial?.quoteValueCents != null ? String(initial.quoteValueCents / 100) : '',
+    contractType: initial?.contractType ?? '',
+    expectedClose: initial?.expectedClose ?? '',
     notes: initial?.notes ?? '',
   });
   const [saving, setSaving] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.contactName.trim()) return;
+    if (!form.clientOrg.trim() || !form.contactName.trim()) return;
     setSaving(true);
     onError(null);
     const body: CreateLeadInput = {
-      organisation: form.organisation.trim() || null,
+      dateLogged: form.dateLogged || undefined,
+      clientOrg: form.clientOrg.trim(),
+      segment: form.segment.trim(),
+      // Blank on a new lead means "me"; the API fills in whoever logs it.
+      broughtInById: form.broughtInById ? form.broughtInById : initial ? null : undefined,
+      channel: form.channel.trim(),
       contactName: form.contactName.trim(),
       contactPhone: form.contactPhone.trim() || null,
-      contactEmail: form.contactEmail.trim() || null,
-      segment: form.segment,
-      channel: form.channel,
-      bdOwnerId: form.bdOwnerId || null,
-      siteLocation: form.siteLocation.trim() || null,
-      estimatedValueCents: form.valueKes ? Math.round(parseFloat(form.valueKes) * 100) : null,
-      isRecurring: form.isRecurring,
-      traineeSourced: form.traineeSourced,
-      nextActionAt: form.nextActionAt || null,
+      quoteValueCents: form.valueKes ? Math.round(parseFloat(form.valueKes) * 100) : null,
+      contractType: form.contractType.trim() || null,
+      expectedClose: form.expectedClose || null,
       notes: form.notes.trim() || null,
     };
     try {
@@ -342,31 +341,30 @@ function LeadForm({ owners, household, initial, onCancel, onSaved, onError }: {
 
   return (
     <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-gold-bright/40 bg-gold-bright/[0.06] p-5 sm:grid-cols-3">
-      <Labelled label="Organisation"><input className={input} value={form.organisation} placeholder="Leave blank for a household" onChange={(e) => setForm((f) => ({ ...f, organisation: e.target.value }))} /></Labelled>
+      <div className="sm:col-span-2"><Labelled label="Client / organisation"><input required className={input} value={form.clientOrg} placeholder="Riverside Towers Ltd, or the household name" onChange={(e) => setForm((f) => ({ ...f, clientOrg: e.target.value }))} /></Labelled></div>
+      <Labelled label="Date logged"><input type="date" className={input} value={form.dateLogged} onChange={(e) => setForm((f) => ({ ...f, dateLogged: e.target.value }))} /></Labelled>
       <Labelled label="Contact name"><input required className={input} value={form.contactName} onChange={(e) => setForm((f) => ({ ...f, contactName: e.target.value }))} /></Labelled>
       <Labelled label="Contact phone"><input className={input} value={form.contactPhone} placeholder="0712 345 678" onChange={(e) => setForm((f) => ({ ...f, contactPhone: e.target.value }))} /></Labelled>
-      <Labelled label="Contact email"><input className={input} value={form.contactEmail} onChange={(e) => setForm((f) => ({ ...f, contactEmail: e.target.value }))} /></Labelled>
-      <Labelled label="Segment">
-        <select className={input} value={form.segment} disabled={household} onChange={(e) => setForm((f) => ({ ...f, segment: e.target.value as LeadSegment }))}>
-          {(Object.keys(SEGMENT_LABEL) as LeadSegment[]).map((s) => <option key={s} value={s}>{SEGMENT_LABEL[s]}</option>)}
+      <Labelled label="Brought in by">
+        <select className={input} value={form.broughtInById} onChange={(e) => setForm((f) => ({ ...f, broughtInById: e.target.value }))}>
+          <option value="">{initial ? 'Unassigned' : 'Me (whoever logs it first)'}</option>
+          {people.map((o) => <option key={o.id} value={o.id}>{o.fullName}</option>)}
         </select>
+      </Labelled>
+      <Labelled label="Segment">
+        <input required list="lead-segments" className={input} value={form.segment} disabled={household} onChange={(e) => setForm((f) => ({ ...f, segment: e.target.value }))} />
+        <datalist id="lead-segments">{LEAD_SEGMENT_LABELS.map((s) => <option key={s} value={s} />)}</datalist>
       </Labelled>
       <Labelled label="Channel">
-        <select className={input} value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value as LeadChannel }))}>
-          {(Object.keys(CHANNEL_LABEL) as LeadChannel[]).map((c) => <option key={c} value={c}>{CHANNEL_LABEL[c]}</option>)}
-        </select>
+        <input required list="lead-channels" className={input} value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} />
+        <datalist id="lead-channels">{LEAD_CHANNEL_LABELS.map((c) => <option key={c} value={c} />)}</datalist>
       </Labelled>
-      <Labelled label="BD owner">
-        <select className={input} value={form.bdOwnerId} onChange={(e) => setForm((f) => ({ ...f, bdOwnerId: e.target.value }))}>
-          <option value="">Unassigned</option>
-          {owners.map((o) => <option key={o.id} value={o.id}>{o.fullName}</option>)}
-        </select>
+      <Labelled label="Contract type">
+        <input list="contract-types" className={input} value={form.contractType} placeholder="One-off, Monthly (1 visit), …" onChange={(e) => setForm((f) => ({ ...f, contractType: e.target.value }))} />
+        <datalist id="contract-types">{CONTRACT_TYPE_LABELS.map((c) => <option key={c} value={c} />)}</datalist>
       </Labelled>
-      <Labelled label="Site location"><input className={input} value={form.siteLocation} onChange={(e) => setForm((f) => ({ ...f, siteLocation: e.target.value }))} /></Labelled>
-      <Labelled label="Estimated value (KSh)"><input type="number" min={0} className={input} value={form.valueKes} onChange={(e) => setForm((f) => ({ ...f, valueKes: e.target.value }))} /></Labelled>
-      <Labelled label="Next action"><input type="date" className={input} value={form.nextActionAt} onChange={(e) => setForm((f) => ({ ...f, nextActionAt: e.target.value }))} /></Labelled>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isRecurring} onChange={(e) => setForm((f) => ({ ...f, isRecurring: e.target.checked }))} />Recurring contract (not one-off)</label>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.traineeSourced} onChange={(e) => setForm((f) => ({ ...f, traineeSourced: e.target.checked }))} />Trainee-sourced (commission applies)</label>
+      <Labelled label="Quote value (KSh)"><input type="number" min={0} className={input} value={form.valueKes} onChange={(e) => setForm((f) => ({ ...f, valueKes: e.target.value }))} /></Labelled>
+      <Labelled label="Expected close"><input type="date" className={input} value={form.expectedClose} onChange={(e) => setForm((f) => ({ ...f, expectedClose: e.target.value }))} /></Labelled>
       <div className="sm:col-span-3"><Labelled label="Notes"><input className={input} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></Labelled></div>
       <div className="flex justify-end gap-2 sm:col-span-3">
         <button type="button" className={btnGhost} onClick={onCancel}>Cancel</button>
@@ -383,9 +381,9 @@ function stageTone(stage: LeadStage) {
   return 'bg-cream-deep text-charcoal-muted';
 }
 
-function LeadCard({ lead: l, owners, household, canPay, expanded, onToggle, onChange, onDeleted, onError }: {
+function LeadCard({ lead: l, people, household, canPay, expanded, onToggle, onChange, onDeleted, onError }: {
   lead: LeadDto;
-  owners: Owner[];
+  people: Person[];
   household: boolean;
   canPay: boolean;
   expanded: boolean;
@@ -436,7 +434,7 @@ function LeadCard({ lead: l, owners, household, canPay, expanded, onToggle, onCh
   };
 
   const createQuote = async () => {
-    if (!confirm(`Create a quote request for ${l.organisation ?? l.contactName} and open it in the Quote Builder?`)) return;
+    if (!confirm(`Create a quote request for ${l.clientOrg} and open it in the Quote Builder?`)) return;
     setBusy('quote');
     onError(null);
     try {
@@ -451,14 +449,14 @@ function LeadCard({ lead: l, owners, household, canPay, expanded, onToggle, onCh
   };
 
   const markPaid = () => {
-    const reference = prompt(`Payment reference for ${money(l.commissionCents ?? 0)} commission (M-Pesa or bank):`);
+    const reference = prompt(`Payment reference for ${money(l.commissionCents ?? 0)} commission to ${l.broughtInByName ?? 'unassigned'} (M-Pesa or bank):`);
     if (reference === null) return;
     void run('paid', { commissionPaidAt: new Date().toISOString(), commissionReference: reference.trim() || null },
       () => api.markLeadCommissionPaid(l.id, { reference: reference.trim() || undefined }), 'Could not mark the commission paid');
   };
 
   const remove = async () => {
-    if (!confirm(`Delete the lead for ${l.organisation ?? l.contactName} and its activity log?`)) return;
+    if (!confirm(`Delete ${l.leadId} (${l.clientOrg}) and its activity log?`)) return;
     try { await api.deleteLead(l.id); onDeleted(); }
     catch (err) { onError(messageFrom(err, 'Could not delete the lead')); }
   };
@@ -471,39 +469,39 @@ function LeadCard({ lead: l, owners, household, canPay, expanded, onToggle, onCh
   };
 
   const idx = PIPELINE.indexOf(l.stage);
-  const dueSoon = l.nextActionAt && l.nextActionAt <= todayIso() && l.stage !== 'WON' && l.stage !== 'LOST';
+  const closeSoon = l.expectedClose && l.expectedClose <= todayIso() && l.stage !== 'WON' && l.stage !== 'LOST';
 
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-white">
       <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-charcoal">{l.organisation ?? l.contactName}</span>
+            <span className="font-mono text-xs text-charcoal-muted">{l.leadId}</span>
+            <span className="font-medium text-charcoal">{l.clientOrg}</span>
             <span className={`rounded-full px-2 py-0.5 text-xs ${stageTone(l.stage)}`}>{STAGE_LABEL[l.stage]}</span>
-            <span className="rounded-full bg-cream-deep px-2 py-0.5 text-xs text-charcoal-muted">{SEGMENT_LABEL[l.segment]}</span>
-            <span className="rounded-full bg-cream-deep px-2 py-0.5 text-xs text-charcoal-muted">{CHANNEL_LABEL[l.channel]}</span>
-            {l.traineeSourced && <span className="rounded-full bg-gold-bright/20 px-2 py-0.5 text-xs text-bronze">Trainee-sourced</span>}
-            {l.isRecurring && <span className="rounded-full bg-gold-bright/20 px-2 py-0.5 text-xs text-bronze">Recurring</span>}
-            {l.quoteRequestId && (
-              <a href={`/quotes?open=${encodeURIComponent(l.quoteRequestId)}`} className="rounded-full bg-success/10 px-2 py-0.5 text-xs text-success hover:underline">
-                Quote · {(l.quoteStatus ?? '').toLowerCase().replace(/_/g, ' ')}
+            <span className="rounded-full bg-cream-deep px-2 py-0.5 text-xs text-charcoal-muted">{l.segment}</span>
+            <span className="rounded-full bg-cream-deep px-2 py-0.5 text-xs text-charcoal-muted">{l.channel}</span>
+            {l.contractType && <span className="rounded-full bg-gold-bright/20 px-2 py-0.5 text-xs text-bronze">{l.contractType}</span>}
+            {l.linkedQuoteId && (
+              <a href={`/quotes?open=${encodeURIComponent(l.linkedQuoteId)}`} className="rounded-full bg-success/10 px-2 py-0.5 text-xs text-success hover:underline">
+                Quote · {(l.linkedQuoteStatus ?? '').toLowerCase().replace(/_/g, ' ')}
               </a>
             )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-charcoal-muted">
-            {l.organisation && <span>{l.contactName}</span>}
+            <span>{l.contactName}</span>
             {l.contactPhone && <span>· {l.contactPhone}</span>}
-            {l.siteLocation && <span>· {l.siteLocation}</span>}
-            {l.bdOwnerName && <span>· {l.bdOwnerName}</span>}
-            {l.estimatedValueCents != null && <span className="font-medium text-charcoal">· est. {money(l.estimatedValueCents)}</span>}
-            {l.nextActionAt && <span className={dueSoon ? 'font-medium text-warning' : ''}>· next action {dateOnly(l.nextActionAt)}</span>}
+            <span>· logged {dateOnly(l.dateLogged)}</span>
+            <span>· brought in by {l.broughtInByName ?? 'unassigned'}</span>
+            {l.quoteValueCents != null && <span className="font-medium text-charcoal">· {money(l.quoteValueCents)}</span>}
+            {l.expectedClose && <span className={closeSoon ? 'font-medium text-warning' : ''}>· expected close {dateOnly(l.expectedClose)}</span>}
           </div>
           {l.stage === 'WON' && l.netProfitCents != null && (
             <p className="mt-1 text-xs text-charcoal-muted">
               Won {l.wonAt ? when(l.wonAt) : ''} · revenue {money(l.revenueReceivedCents ?? 0)} − costs {money(l.actualDirectCostsCents ?? 0)} = net{' '}
               <span className={`font-medium ${l.netProfitCents >= 0 ? 'text-success' : 'text-danger'}`}>{money(l.netProfitCents)}</span>
               {(l.commissionCents ?? 0) > 0 && (
-                <> · commission <span className="font-medium text-charcoal">{money(l.commissionCents!)}</span>{' '}
+                <> · commission <span className="font-medium text-charcoal">{money(l.commissionCents!)}</span> to {l.broughtInByName ?? 'unassigned'}{' '}
                   {l.commissionPaidAt ? <span className="text-success">paid {when(l.commissionPaidAt)}{l.commissionReference ? ` · Ref ${l.commissionReference}` : ''}</span> : <span className="text-warning">due</span>}
                 </>
               )}
@@ -516,7 +514,7 @@ function LeadCard({ lead: l, owners, household, canPay, expanded, onToggle, onCh
           <span className={`text-xs ${saveState === 'failed' ? 'font-medium text-danger' : saveState === 'saved' ? 'font-medium text-success' : 'text-charcoal-muted'}`}>
             {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : saveState === 'failed' ? '⚠ Not saved' : ''}
           </span>
-          {l.stage === 'PROPOSAL_SENT' && !l.quoteRequestId && (
+          {l.stage === 'PROPOSAL_SENT' && !l.linkedQuoteId && (
             <button className={btn} disabled={!!busy} onClick={() => void createQuote()}>{busy === 'quote' ? 'Creating…' : 'Create quote'}</button>
           )}
           {l.stage === 'WON' && (l.commissionCents ?? 0) > 0 && !l.commissionPaidAt && canPay && (
@@ -558,15 +556,16 @@ function LeadCard({ lead: l, owners, household, canPay, expanded, onToggle, onCh
           </div>
 
           {panel === 'details' && (editing ? (
-            <LeadForm owners={owners} household={household} initial={l} onCancel={() => setEditing(false)}
+            <LeadForm people={people} household={household} initial={l} onCancel={() => setEditing(false)}
               onSaved={(updated) => { setEditing(false); onChange(updated); setReloadKey((k) => k + 1); }} onError={onError} />
           ) : (
             <div className="space-y-3">
               <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                <Row k="Contact" v={[l.contactName, l.contactPhone, l.contactEmail].filter(Boolean).join(' · ')} />
-                <Row k="BD owner" v={l.bdOwnerName ?? '—'} />
-                <Row k="Site" v={l.siteLocation ?? '—'} />
-                <Row k="Estimated value" v={l.estimatedValueCents != null ? money(l.estimatedValueCents) : '—'} />
+                <Row k="Contact" v={[l.contactName, l.contactPhone].filter(Boolean).join(' · ')} />
+                <Row k="Brought in by" v={l.broughtInByName ?? 'unassigned'} />
+                <Row k="Quote value" v={l.quoteValueCents != null ? money(l.quoteValueCents) : '—'} />
+                <Row k="Contract type" v={l.contractType ?? '—'} />
+                <Row k="Expected close" v={l.expectedClose ? dateOnly(l.expectedClose) : '—'} />
                 <Row k="Notes" v={l.notes ?? '—'} />
                 <Row k="Logged by" v={`${l.createdByName ?? 'unknown'} · ${when(l.createdAt)}`} />
               </dl>
@@ -597,7 +596,7 @@ function OutcomeForm({ lead, outcome, busy, onCancel, onSubmit }: {
   onCancel: () => void;
   onSubmit: (body: Parameters<typeof api.changeLeadStage>[1]) => void;
 }) {
-  const [revenue, setRevenue] = useState('');
+  const [revenue, setRevenue] = useState(lead.quoteValueCents != null ? String(lead.quoteValueCents / 100) : '');
   const [costs, setCosts] = useState('');
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
@@ -609,11 +608,11 @@ function OutcomeForm({ lead, outcome, busy, onCancel, onSubmit }: {
     e.preventDefault();
     if (outcome === 'WON') {
       if (!revenue || !costs) return;
-      if (!confirm(`Mark ${lead.organisation ?? lead.contactName} as won with net profit ${money(net)}?`)) return;
+      if (!confirm(`Mark ${lead.clientOrg} as won with net profit ${money(net)}? Commission goes to ${lead.broughtInByName ?? 'unassigned'}.`)) return;
       onSubmit({ stage: 'WON', revenueReceivedCents: rev, actualDirectCostsCents: cost, note: note.trim() || undefined });
     } else {
       if (!reason.trim()) return;
-      if (!confirm(`Mark ${lead.organisation ?? lead.contactName} as lost?`)) return;
+      if (!confirm(`Mark ${lead.clientOrg} as lost?`)) return;
       onSubmit({ stage: 'LOST', lostReason: reason.trim(), note: note.trim() || undefined });
     }
   };
@@ -627,7 +626,7 @@ function OutcomeForm({ lead, outcome, busy, onCancel, onSubmit }: {
           <div className="text-sm">
             <p className="text-xs text-charcoal-muted">Net profit</p>
             <p className={`mt-2 font-medium ${net >= 0 ? 'text-success' : 'text-danger'}`}>{money(net)}</p>
-            <p className="text-xs text-charcoal-muted">{lead.traineeSourced ? 'Commission at the Quote Builder rate' : 'No commission — not trainee-sourced'}</p>
+            <p className="text-xs text-charcoal-muted">Commission at the rates-card rate to {lead.broughtInByName ?? 'unassigned'}</p>
           </div>
         </>
       ) : (
@@ -693,7 +692,6 @@ function Countdown({ days, date, open, label }: { days: number; date: string; op
 
 function TendersTab({ onError }: { onError: (m: string | null) => void }) {
   const [tenders, setTenders] = useState<TenderDto[] | null>(null);
-  const [owners, setOwners] = useState<Owner[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -702,33 +700,33 @@ function TendersTab({ onError }: { onError: (m: string | null) => void }) {
     catch (err) { onError(messageFrom(err, 'Could not load tenders')); }
   }, [onError]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { api.pipelineOwners().then((r) => setOwners(r.owners)).catch(() => setOwners([])); }, []);
 
   const patch = (t: TenderDto) => setTenders((prev) => prev?.map((x) => (x.id === t.id ? t : x)) ?? null);
-  const dueSoon = (tenders ?? []).filter((t) => TENDER_OPEN.includes(t.status) && (t.daysToPack <= 5 || t.daysToDeadline <= 5));
+  const open = (t: TenderDto) => !tenderClosed(t.status) && t.bidDecision !== 'NO_BID';
+  const dueSoon = (tenders ?? []).filter((t) => open(t) && ((!t.dateSentToCoo && t.daysToPack <= 5) || t.daysToDeadline <= 5));
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm text-charcoal-muted">{tenders?.length ?? 0} tender{tenders?.length === 1 ? '' : 's'} · {(tenders ?? []).filter((t) => TENDER_OPEN.includes(t.status)).length} in preparation</span>
+        <span className="text-sm text-charcoal-muted">{tenders?.length ?? 0} tender{tenders?.length === 1 ? '' : 's'} · {(tenders ?? []).filter(open).length} in preparation</span>
         <button className={btn} onClick={() => setShowForm((v) => !v)}>{showForm ? 'Cancel' : '+ New tender'}</button>
       </div>
 
       {dueSoon.length > 0 && (
         <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
           <span className="font-medium text-warning">{dueSoon.length} tender{dueSoon.length === 1 ? '' : 's'} due within 5 days</span>
-          <span className="text-charcoal-muted"> — {dueSoon.map((t) => `${t.title} (${t.daysToPack < 0 ? 'pack overdue' : `pack in ${t.daysToPack}d`}, deadline in ${t.daysToDeadline}d)`).join(', ')}</span>
+          <span className="text-charcoal-muted"> — {dueSoon.map((t) => `${t.title} (${t.dateSentToCoo ? 'pack sent' : t.daysToPack < 0 ? 'pack overdue' : `pack in ${t.daysToPack}d`}, deadline in ${t.daysToDeadline}d)`).join(', ')}</span>
         </div>
       )}
 
       {showForm && (
-        <TenderForm owners={owners} onCancel={() => setShowForm(false)}
+        <TenderForm onCancel={() => setShowForm(false)}
           onSaved={(t) => { setShowForm(false); setTenders((prev) => [t, ...(prev ?? [])].sort((a, b) => a.submissionDeadline.localeCompare(b.submissionDeadline))); setExpanded(t.id); }}
           onError={onError} />
       )}
 
       {!tenders ? <Empty>Loading…</Empty> : tenders.length === 0 ? (
-        <Empty>No tenders logged. Click <strong>+ New tender</strong> when one is identified.</Empty>
+        <Empty>No tenders logged. Click <strong>+ New tender</strong> when one is found.</Empty>
       ) : (
         <div className="overflow-hidden rounded-xl border border-line bg-white">
           <table className="w-full text-sm">
@@ -738,14 +736,13 @@ function TendersTab({ onError }: { onError: (m: string | null) => void }) {
                 <th className="px-4 py-3 font-normal">Status</th>
                 <th className="px-4 py-3 font-normal">Pack to COO</th>
                 <th className="px-4 py-3 font-normal">Submission</th>
-                <th className="px-4 py-3 text-right font-normal">Value</th>
-                <th className="px-4 py-3 font-normal">Owner</th>
+                <th className="px-4 py-3 font-normal">Bid?</th>
                 <th />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {tenders.map((t) => (
-                <TenderRow key={t.id} tender={t} owners={owners} expanded={expanded === t.id}
+                <TenderRow key={t.id} tender={t} open={open(t)} expanded={expanded === t.id}
                   onToggle={() => setExpanded(expanded === t.id ? null : t.id)}
                   onChange={patch} onDeleted={() => setTenders((prev) => prev?.filter((x) => x.id !== t.id) ?? null)} onError={onError} />
               ))}
@@ -757,32 +754,36 @@ function TendersTab({ onError }: { onError: (m: string | null) => void }) {
   );
 }
 
-function TenderForm({ owners, initial, onCancel, onSaved, onError }: {
-  owners: Owner[];
+function TenderForm({ initial, onCancel, onSaved, onError }: {
   initial?: TenderDto;
   onCancel: () => void;
   onSaved: (t: TenderDto) => void;
   onError: (m: string | null) => void;
 }) {
   const [form, setForm] = useState({
-    title: initial?.title ?? '', issuer: initial?.issuer ?? '', reference: initial?.reference ?? '',
-    kind: (initial?.kind ?? 'PUBLIC_TENDER') as TenderKind,
-    valueKes: initial?.estimatedValueCents != null ? String(initial.estimatedValueCents / 100) : '',
-    submissionDeadline: initial?.submissionDeadline ?? '', packToCooBy: initial?.packToCooBy ?? '',
-    ownerId: initial?.ownerId ?? '', notes: initial?.notes ?? '',
+    tenderRef: initial?.tenderRef ?? '', title: initial?.title ?? '', issuingOrg: initial?.issuingOrg ?? '', sourcePortal: initial?.sourcePortal ?? '',
+    type: (initial?.type ?? 'TENDER') as TenderType, agpoReserved: initial?.agpoReserved ?? false,
+    dateFound: initial?.dateFound ?? todayIso(), submissionDeadline: initial?.submissionDeadline ?? '', packToCooBy: initial?.packToCooBy ?? '',
+    packOverridden: !!initial, bidDecision: (initial?.bidDecision ?? '') as '' | BidDecision, status: initial?.status ?? 'Identified',
+    dateSentToCoo: initial?.dateSentToCoo ?? '', notes: initial?.notes ?? '',
   });
   const [saving, setSaving] = useState(false);
 
+  // The pack date follows the deadline (two days before, 5 pm) until someone overrides it.
+  const setDeadline = (submissionDeadline: string) =>
+    setForm((f) => ({ ...f, submissionDeadline, packToCooBy: f.packOverridden ? f.packToCooBy : packDefault(submissionDeadline) }));
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.packToCooBy > form.submissionDeadline) { onError('The pack must reach the COO before the submission deadline.'); return; }
+    if (form.packToCooBy && form.packToCooBy > form.submissionDeadline) { onError('The pack must reach the COO before the submission deadline.'); return; }
     setSaving(true);
     onError(null);
     const body: CreateTenderInput = {
-      title: form.title.trim(), issuer: form.issuer.trim(), reference: form.reference.trim() || null, kind: form.kind,
-      estimatedValueCents: form.valueKes ? Math.round(parseFloat(form.valueKes) * 100) : null,
-      submissionDeadline: form.submissionDeadline, packToCooBy: form.packToCooBy,
-      ownerId: form.ownerId || null, notes: form.notes.trim() || null,
+      tenderRef: form.tenderRef.trim(), title: form.title.trim(), issuingOrg: form.issuingOrg.trim(), sourcePortal: form.sourcePortal.trim() || null,
+      type: form.type, agpoReserved: form.agpoReserved, dateFound: form.dateFound || undefined,
+      submissionDeadline: form.submissionDeadline, packToCooBy: form.packToCooBy || null,
+      bidDecision: form.bidDecision || null, status: form.status.trim() || undefined,
+      dateSentToCoo: form.dateSentToCoo || null, notes: form.notes.trim() || null,
     };
     try {
       const res = initial ? await api.updateTender(initial.id, body) : await api.createTender(body);
@@ -795,26 +796,33 @@ function TenderForm({ owners, initial, onCancel, onSaved, onError }: {
   };
 
   return (
-    <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-gold-bright/40 bg-gold-bright/[0.06] p-5 sm:grid-cols-3">
-      <div className="sm:col-span-2"><Labelled label="Title"><input required className={input} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} /></Labelled></div>
-      <Labelled label="Kind">
-        <select className={input} value={form.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as TenderKind }))}>
-          {(Object.keys(TENDER_KIND_LABEL) as TenderKind[]).map((k) => <option key={k} value={k}>{TENDER_KIND_LABEL[k]}</option>)}
+    <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-gold-bright/40 bg-gold-bright/[0.06] p-5 sm:grid-cols-4">
+      <Labelled label="Tender ref"><input required className={input} value={form.tenderRef} onChange={(e) => setForm((f) => ({ ...f, tenderRef: e.target.value }))} /></Labelled>
+      <div className="sm:col-span-3"><Labelled label="Title"><input required className={input} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} /></Labelled></div>
+      <div className="sm:col-span-2"><Labelled label="Issuing organisation"><input required className={input} value={form.issuingOrg} onChange={(e) => setForm((f) => ({ ...f, issuingOrg: e.target.value }))} /></Labelled></div>
+      <Labelled label="Source portal"><input className={input} value={form.sourcePortal} placeholder="PPIP, UNGM, …" onChange={(e) => setForm((f) => ({ ...f, sourcePortal: e.target.value }))} /></Labelled>
+      <Labelled label="Type">
+        <select className={input} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as TenderType }))}>
+          {(Object.keys(TENDER_TYPE_LABEL) as TenderType[]).map((k) => <option key={k} value={k}>{TENDER_TYPE_LABEL[k]}</option>)}
         </select>
       </Labelled>
-      <Labelled label="Issuer"><input required className={input} value={form.issuer} onChange={(e) => setForm((f) => ({ ...f, issuer: e.target.value }))} /></Labelled>
-      <Labelled label="Tender reference"><input className={input} value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} /></Labelled>
-      <Labelled label="Estimated value (KSh)"><input type="number" min={0} className={input} value={form.valueKes} onChange={(e) => setForm((f) => ({ ...f, valueKes: e.target.value }))} /></Labelled>
-      <Labelled label="Pack to COO by"><input required type="date" className={input} value={form.packToCooBy} onChange={(e) => setForm((f) => ({ ...f, packToCooBy: e.target.value }))} /></Labelled>
-      <Labelled label="Submission deadline"><input required type="date" className={input} value={form.submissionDeadline} onChange={(e) => setForm((f) => ({ ...f, submissionDeadline: e.target.value }))} /></Labelled>
-      <Labelled label="Owner">
-        <select className={input} value={form.ownerId} onChange={(e) => setForm((f) => ({ ...f, ownerId: e.target.value }))}>
-          <option value="">Unassigned</option>
-          {owners.map((o) => <option key={o.id} value={o.id}>{o.fullName}</option>)}
+      <Labelled label="Date found"><input type="date" className={input} value={form.dateFound} onChange={(e) => setForm((f) => ({ ...f, dateFound: e.target.value }))} /></Labelled>
+      <Labelled label="Submission deadline"><input required type="date" className={input} value={form.submissionDeadline} onChange={(e) => setDeadline(e.target.value)} /></Labelled>
+      <Labelled label="Pack to COO by (5 pm)"><input type="date" className={input} value={form.packToCooBy} onChange={(e) => setForm((f) => ({ ...f, packToCooBy: e.target.value, packOverridden: true }))} /></Labelled>
+      <Labelled label="Bid decision">
+        <select className={input} value={form.bidDecision} onChange={(e) => setForm((f) => ({ ...f, bidDecision: e.target.value as '' | BidDecision }))}>
+          <option value="">Undecided</option>
+          {(Object.keys(BID_LABEL) as BidDecision[]).map((k) => <option key={k} value={k}>{BID_LABEL[k]}</option>)}
         </select>
       </Labelled>
-      <div className="sm:col-span-3"><Labelled label="Notes"><input className={input} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></Labelled></div>
-      <div className="flex justify-end gap-2 sm:col-span-3">
+      <Labelled label="Status">
+        <input list="tender-statuses" className={input} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} />
+        <datalist id="tender-statuses">{TENDER_STATUS_LABELS.map((s) => <option key={s} value={s} />)}</datalist>
+      </Labelled>
+      <Labelled label="Date sent to COO"><input type="date" className={input} value={form.dateSentToCoo} onChange={(e) => setForm((f) => ({ ...f, dateSentToCoo: e.target.value }))} /></Labelled>
+      <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={form.agpoReserved} onChange={(e) => setForm((f) => ({ ...f, agpoReserved: e.target.checked }))} />AGPO reserved</label>
+      <div className="sm:col-span-4"><Labelled label="Notes"><input className={input} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></Labelled></div>
+      <div className="flex justify-end gap-2 sm:col-span-4">
         <button type="button" className={btnGhost} onClick={onCancel}>Cancel</button>
         <button type="submit" disabled={saving} className={btn}>{saving ? 'Saving…' : initial ? 'Save changes' : 'Log tender'}</button>
       </div>
@@ -822,9 +830,9 @@ function TenderForm({ owners, initial, onCancel, onSaved, onError }: {
   );
 }
 
-function TenderRow({ tender: t, owners, expanded, onToggle, onChange, onDeleted, onError }: {
+function TenderRow({ tender: t, open, expanded, onToggle, onChange, onDeleted, onError }: {
   tender: TenderDto;
-  owners: Owner[];
+  open: boolean;
   expanded: boolean;
   onToggle: () => void;
   onChange: (t: TenderDto) => void;
@@ -835,9 +843,10 @@ function TenderRow({ tender: t, owners, expanded, onToggle, onChange, onDeleted,
   const [editing, setEditing] = useState(false);
   const [events, setEvents] = useState<TenderEventDto[] | null>(null);
   const [note, setNote] = useState('');
+  const [status, setStatus] = useState(t.status);
   const [reloadKey, setReloadKey] = useState(0);
-  const open = TENDER_OPEN.includes(t.status);
 
+  useEffect(() => { setStatus(t.status); }, [t.status]);
   useEffect(() => {
     if (!expanded) return;
     let live = true;
@@ -855,11 +864,11 @@ function TenderRow({ tender: t, owners, expanded, onToggle, onChange, onDeleted,
     finally { setBusy(false); }
   };
 
-  const setStatus = (status: TenderStatus) => {
-    if (status === t.status) return;
-    const final = status === 'AWARDED' || status === 'NOT_AWARDED' || status === 'WITHDRAWN';
-    if (final && !confirm(`Mark “${t.title}” as ${TENDER_STATUS_LABEL[status].toLowerCase()}?`)) return;
-    void run({ status }, () => api.changeTenderStatus(t.id, { status }), 'Could not change the status');
+  const commitStatus = () => {
+    const next = status.trim();
+    if (!next || next === t.status) { setStatus(t.status); return; }
+    if (tenderClosed(next) && !confirm(`Set “${t.title}” to “${next}”?`)) { setStatus(t.status); return; }
+    void run({ status: next }, () => api.changeTenderStatus(t.id, { status: next }), 'Could not change the status');
   };
 
   return (
@@ -867,32 +876,43 @@ function TenderRow({ tender: t, owners, expanded, onToggle, onChange, onDeleted,
       <tr className="align-top hover:bg-cream/40">
         <td className="px-4 py-3">
           <div className="font-medium">{t.title}</div>
-          <div className="text-xs text-charcoal-muted">{t.issuer} · {TENDER_KIND_LABEL[t.kind]}{t.reference ? ` · Ref ${t.reference}` : ''}</div>
+          <div className="text-xs text-charcoal-muted">
+            {t.tenderRef} · {t.issuingOrg} · {TENDER_TYPE_LABEL[t.type]}{t.agpoReserved ? ' · AGPO' : ''}{t.sourcePortal ? ` · ${t.sourcePortal}` : ''}
+          </div>
         </td>
         <td className="px-4 py-3">
-          <select value={t.status} disabled={busy} onChange={(e) => setStatus(e.target.value as TenderStatus)} className="rounded-lg border border-line bg-white px-2 py-1.5 text-xs">
-            {TENDER_STATUSES.map((s) => <option key={s} value={s}>{TENDER_STATUS_LABEL[s]}</option>)}
-          </select>
+          <input list={`statuses-${t.id}`} value={status} disabled={busy} onChange={(e) => setStatus(e.target.value)} onBlur={commitStatus}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+            className="w-40 rounded-lg border border-line bg-white px-2 py-1.5 text-xs" aria-label="Status" />
+          <datalist id={`statuses-${t.id}`}>{TENDER_STATUS_LABELS.map((s) => <option key={s} value={s} />)}</datalist>
         </td>
-        <td className="px-4 py-3"><Countdown days={t.daysToPack} date={t.packToCooBy} open={open} label="Pack" /></td>
-        <td className="px-4 py-3"><Countdown days={t.daysToDeadline} date={t.submissionDeadline} open={open || t.status === 'PACK_WITH_COO'} label="Due" /></td>
-        <td className="px-4 py-3 text-right tabular-nums">{t.estimatedValueCents != null ? money(t.estimatedValueCents) : '—'}</td>
-        <td className="px-4 py-3 text-xs text-charcoal-muted">{t.ownerName ?? '—'}</td>
+        <td className="px-4 py-3">
+          {t.dateSentToCoo ? (
+            <span className={`rounded-full px-2 py-0.5 text-xs ${t.sentOnTime ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`} title={`Pack was due ${t.packToCooBy}`}>
+              Sent {dateOnly(t.dateSentToCoo)} · {t.sentOnTime ? 'on time' : 'late'}
+            </span>
+          ) : (
+            <Countdown days={t.daysToPack} date={t.packToCooBy} open={open} label="Pack" />
+          )}
+        </td>
+        <td className="px-4 py-3"><Countdown days={t.daysToDeadline} date={t.submissionDeadline} open={open} label="Due" /></td>
+        <td className="px-4 py-3 text-xs">{t.bidDecision ? BID_LABEL[t.bidDecision] : <span className="text-charcoal-muted">—</span>}</td>
         <td className="px-4 py-3 text-right"><button className={btnGhost} onClick={onToggle}>{expanded ? '▲ Hide' : '▼ Details'}</button></td>
       </tr>
       {expanded && (
         <tr className="bg-cream/40">
-          <td colSpan={7} className="px-4 py-4">
+          <td colSpan={6} className="px-4 py-4">
             {editing ? (
-              <TenderForm owners={owners} initial={t} onCancel={() => setEditing(false)} onSaved={(u) => { setEditing(false); onChange(u); setReloadKey((k) => k + 1); }} onError={onError} />
+              <TenderForm initial={t} onCancel={() => setEditing(false)} onSaved={(u) => { setEditing(false); onChange(u); setReloadKey((k) => k + 1); }} onError={onError} />
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="space-y-3">
                   <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                    <Row k="Pack to COO by" v={dateOnly(t.packToCooBy)} />
+                    <Row k="Date found" v={dateOnly(t.dateFound)} />
+                    <Row k="Pack to COO by" v={`${dateOnly(t.packToCooBy)} · 5 pm`} />
                     <Row k="Submission deadline" v={dateOnly(t.submissionDeadline)} />
-                    <Row k="Submitted" v={t.submittedAt ? when(t.submittedAt) : '—'} />
-                    <Row k="Decided" v={t.decidedAt ? when(t.decidedAt) : '—'} />
+                    <Row k="Sent to COO" v={t.dateSentToCoo ? `${dateOnly(t.dateSentToCoo)} (${t.sentOnTime ? 'on time' : 'late'})` : '—'} />
+                    <Row k="Bid decision" v={t.bidDecision ? BID_LABEL[t.bidDecision] : 'Undecided'} />
                     <Row k="Notes" v={t.notes ?? '—'} />
                     <Row k="Logged by" v={`${t.createdByName ?? 'unknown'} · ${when(t.createdAt)}`} />
                   </dl>

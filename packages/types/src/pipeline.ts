@@ -1,6 +1,7 @@
 /**
  * Pipeline tracker — leads, tenders, the locked funnel targets and the
- * calculations on top of them. Money in cents; rates are fractions.
+ * calculations on top of them. Field names follow the Pipeline_Tracker and
+ * Tender_Tracker sheets. Money in cents; rates are fractions.
  *
  * Funnel (from OnyxHawk_Sales_Targets_and_Trackers.xlsx):
  *   Direct outreach   contacted → conversation → site visit → proposal → signed
@@ -11,12 +12,20 @@
 
 // ── Leads ───────────────────────────────────────────────────────────────────
 
-export type LeadSegment = 'HOUSEHOLD' | 'COMMERCIAL' | 'MEDICAL' | 'DEVELOPER' | 'NGO' | 'PUBLIC_SECTOR';
+export type LeadStage = 'CONTACTED' | 'CONVERSATION' | 'SITE_VISIT' | 'PROPOSAL_SENT' | 'WON' | 'LOST';
 
-export type LeadChannel = 'DIRECT_OUTREACH' | 'WARM_INTRO' | 'HOUSEHOLD_ENQUIRY' | 'REFERRAL' | 'OTHER';
+/**
+ * Channel and segment are free text on the sheet. These are the labels the
+ * funnel understands (offered as suggestions; anything else is kept as typed
+ * and classified by keyword — see classifyChannel / isHouseholdSegment).
+ */
+export const LEAD_CHANNEL_LABELS = ['Direct outreach', 'Warm introduction', 'Household enquiry', 'Referral', 'Other'] as const;
+export const LEAD_SEGMENT_LABELS = ['Household', 'Office', 'Clinic or laboratory', 'Developer', 'NGO', 'Public sector', 'Retail', 'Other'] as const;
+/** Matches the Quote Builder's frequency labels. */
+export const CONTRACT_TYPE_LABELS = ['One-off', 'Monthly (1 visit)', 'Fortnightly (2 visits)', 'Weekly (4 visits)', 'Twice weekly (8 visits)', 'Daily (22 visits)'] as const;
 
-/** NEW is "contacted" for outreach, "intro received" for warm intros, "enquiry logged" for households. */
-export type LeadStage = 'NEW' | 'CONVERSATION' | 'SITE_VISIT' | 'PROPOSAL_SENT' | 'WON' | 'LOST';
+/** The funnel's view of a free-text channel. */
+export type FunnelChannel = 'DIRECT_OUTREACH' | 'WARM_INTRO' | 'HOUSEHOLD_ENQUIRY' | 'REFERRAL' | 'OTHER';
 
 export type LeadEventKind =
   | 'CREATED'
@@ -26,11 +35,12 @@ export type LeadEventKind =
   | 'QUOTE_LINKED'
   | 'COMMISSION_PAID';
 
+/** Same shape as Projects' activity log, plus the from/to stage the funnel counts. */
 export interface LeadEventDto {
   id: string;
   kind: LeadEventKind;
-  /** Stage reached, for STAGE_CHANGED and CREATED — what the funnel actuals count. */
-  stage: LeadStage | null;
+  fromStage: LeadStage | null;
+  toStage: LeadStage | null;
   summary: string;
   detail: string | null;
   actorName: string | null;
@@ -39,33 +49,34 @@ export interface LeadEventDto {
 
 export interface LeadDto {
   id: string;
-  organisation: string | null;
+  /** Display reference, e.g. "L-001". */
+  leadId: string;
+  dateLogged: string; // YYYY-MM-DD
+  clientOrg: string;
+  segment: string;
+  /** Whoever logged it first — the commission-bearing field. */
+  broughtInById: string | null;
+  broughtInByName: string | null;
+  channel: string;
   contactName: string;
   contactPhone: string | null;
-  contactEmail: string | null;
-  segment: LeadSegment;
-  channel: LeadChannel;
   stage: LeadStage;
-  bdOwnerId: string | null;
-  bdOwnerName: string | null;
-  siteLocation: string | null;
-  estimatedValueCents: number | null;
-  /** Recurring contract rather than a one-off job — feeds the "share of wins recurring" rate. */
-  isRecurring: boolean;
-  /** Lead came through a trainee — commission applies on the win. */
-  traineeSourced: boolean;
-  notes: string | null;
-  nextActionAt: string | null; // YYYY-MM-DD
+  quoteValueCents: number | null;
+  contractType: string | null;
+  expectedClose: string | null; // YYYY-MM-DD
   /** Set by "Create quote" from Proposal sent. */
-  quoteRequestId: string | null;
-  quoteStatus: string | null;
+  linkedQuoteId: string | null;
+  linkedQuoteStatus: string | null;
+  notes: string | null;
   // Outcome (WON / LOST)
   wonAt: string | null;
   lostAt: string | null;
   lostReason: string | null;
   revenueReceivedCents: number | null;
   actualDirectCostsCents: number | null;
+  /** revenue − direct costs; computed, not stored. */
   netProfitCents: number | null;
+  /** Snapshotted at the win so a later rate change never rewrites a payout. */
   commissionPct: number | null;
   commissionCents: number | null;
   commissionPaidAt: string | null;
@@ -77,19 +88,18 @@ export interface LeadDto {
 }
 
 export interface CreateLeadInput {
-  organisation?: string | null;
+  dateLogged?: string;
+  clientOrg: string;
+  segment: string;
+  /** Defaults to the person creating the lead. */
+  broughtInById?: string | null;
+  channel: string;
   contactName: string;
   contactPhone?: string | null;
-  contactEmail?: string | null;
-  segment: LeadSegment;
-  channel: LeadChannel;
-  bdOwnerId?: string | null;
-  siteLocation?: string | null;
-  estimatedValueCents?: number | null;
-  isRecurring?: boolean;
-  traineeSourced?: boolean;
+  quoteValueCents?: number | null;
+  contractType?: string | null;
+  expectedClose?: string | null;
   notes?: string | null;
-  nextActionAt?: string | null;
 }
 
 export type UpdateLeadInput = Partial<CreateLeadInput>;
@@ -114,23 +124,21 @@ export interface CreateQuoteFromLeadResult {
 
 // ── Tenders ─────────────────────────────────────────────────────────────────
 
-export type TenderKind = 'PUBLIC_TENDER' | 'PRIVATE_RFQ';
+export type TenderType = 'TENDER' | 'EOI' | 'RFQ' | 'PREQUALIFICATION';
+export type BidDecision = 'BID' | 'NO_BID';
 
-export type TenderStatus =
-  | 'IDENTIFIED'
-  | 'PREPARING'
-  | 'PACK_WITH_COO'
-  | 'SUBMITTED'
-  | 'AWARDED'
-  | 'NOT_AWARDED'
-  | 'WITHDRAWN';
+/** Status is free text on the sheet; these are the suggestions the funnel understands. */
+export const TENDER_STATUS_LABELS = [
+  'Identified', 'Preparing pack', 'Sent to COO', 'Submitted by COO', 'Awarded', 'Not awarded', 'No bid', 'Withdrawn',
+] as const;
 
 export type TenderEventKind = 'CREATED' | 'STATUS_CHANGED' | 'DETAILS_CHANGED' | 'NOTE_ADDED';
 
 export interface TenderEventDto {
   id: string;
   kind: TenderEventKind;
-  status: TenderStatus | null;
+  fromStatus: string | null;
+  toStatus: string | null;
   summary: string;
   detail: string | null;
   actorName: string | null;
@@ -139,21 +147,24 @@ export interface TenderEventDto {
 
 export interface TenderDto {
   id: string;
+  tenderRef: string;
   title: string;
-  issuer: string;
-  reference: string | null;
-  kind: TenderKind;
-  status: TenderStatus;
-  estimatedValueCents: number | null;
+  issuingOrg: string;
+  sourcePortal: string | null;
+  type: TenderType;
+  agpoReserved: boolean;
+  dateFound: string; // YYYY-MM-DD
   submissionDeadline: string; // YYYY-MM-DD
+  /** Two days before the deadline (5 pm) by default; can be overridden. */
   packToCooBy: string; // YYYY-MM-DD
+  bidDecision: BidDecision | null;
+  status: string;
+  dateSentToCoo: string | null; // YYYY-MM-DD
+  /** dateSentToCoo ≤ packToCooBy; null until sent. Computed. */
+  sentOnTime: boolean | null;
   /** Days until each date; negative once past. */
   daysToDeadline: number;
   daysToPack: number;
-  ownerId: string | null;
-  ownerName: string | null;
-  submittedAt: string | null;
-  decidedAt: string | null;
   notes: string | null;
   eventCount: number;
   createdByName: string | null;
@@ -162,22 +173,29 @@ export interface TenderDto {
 }
 
 export interface CreateTenderInput {
+  tenderRef: string;
   title: string;
-  issuer: string;
-  reference?: string | null;
-  kind: TenderKind;
-  estimatedValueCents?: number | null;
+  issuingOrg: string;
+  sourcePortal?: string | null;
+  type: TenderType;
+  agpoReserved?: boolean;
+  dateFound?: string;
   submissionDeadline: string;
-  packToCooBy: string;
-  ownerId?: string | null;
+  /** Omit to default to two days before the deadline. */
+  packToCooBy?: string | null;
+  bidDecision?: BidDecision | null;
+  status?: string;
+  dateSentToCoo?: string | null;
   notes?: string | null;
 }
 
 export type UpdateTenderInput = Partial<CreateTenderInput>;
 
 export interface ChangeTenderStatusInput {
-  status: TenderStatus;
+  status: string;
   note?: string;
+  /** Set when the status is the pack going to the COO. */
+  dateSentToCoo?: string | null;
 }
 
 // ── Funnel targets (single locked record) ───────────────────────────────────

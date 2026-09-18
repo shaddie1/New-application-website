@@ -14,9 +14,8 @@ import { prisma } from '../db.js';
 export const TARGETS_ID = 'default';
 export const YEAR1_START = '2026-10';
 
-// Sep 2027 is seeded on the year-1 plateau (80 contacted, 3 intros, …): the
-// workbook's month list shows the step-up there, but its own year-1 totals
-// (880, 35, 52.8, 43.9, 35.12) only reconcile with the step-up from Oct 2027.
+// Sep 2027 sits on the year-1 plateau (80 contacted, 3 intros, …); the
+// step-up starts with year 2 in Oct 2027. Confirmed against the workbook.
 
 /** The 24 months of the plan, YYYY-MM, in order. */
 export const PLAN_MONTHS: string[] = Array.from({ length: 24 }, (_, i) => {

@@ -1,13 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeActuals, leadCommission, monthIndex, planYear, requiredActivity, type LeadStageEvent, type TenderStatusEvent } from './funnel.js';
+import {
+  classifyChannel,
+  computeActuals,
+  isHouseholdSegment,
+  isRecurringContract,
+  leadCommission,
+  monthIndex,
+  planYear,
+  requiredActivity,
+  statusIsAward,
+  statusIsSubmission,
+  type LeadStageEvent,
+  type TenderStatusEvent,
+} from './funnel.js';
 import { DEFAULT_FUNNEL_TARGETS, PLAN_MONTHS } from './targets.js';
 
 const T = DEFAULT_FUNNEL_TARGETS;
 
-const lead = (stage: LeadStageEvent['stage'], channel: LeadStageEvent['channel'] = 'DIRECT_OUTREACH', segment: LeadStageEvent['segment'] = 'COMMERCIAL', isRecurring = false): LeadStageEvent =>
-  ({ stage, channel, segment, isRecurring });
-const tender = (status: TenderStatusEvent['status'], kind: TenderStatusEvent['kind'] = 'PUBLIC_TENDER'): TenderStatusEvent => ({ status, kind });
+const lead = (stage: LeadStageEvent['stage'], channel: LeadStageEvent['channel'] = 'DIRECT_OUTREACH', household = false, recurring = false): LeadStageEvent =>
+  ({ stage, channel, household, recurring });
+const tender = (status: string, type: TenderStatusEvent['type'] = 'TENDER'): TenderStatusEvent => ({ status, type });
 const many = <T,>(n: number, make: () => T): T[] => Array.from({ length: n }, make);
 
 describe('plan calendar', () => {
@@ -51,22 +64,48 @@ describe('seeded targets', () => {
     expect(total('new_household_customers', 12, 24)).toBe(129);
     expect(total('repeat_household_jobs', 12, 24)).toBe(78.233);
   });
+
+  it('keep Sep 2027 on the year-1 plateau', () => {
+    const at = (key: string) => T.series.find((s) => s.key === key)!.byMonth['2027-09'];
+    expect([at('contacted'), at('warm_intros'), at('conversations'), at('site_visits'), at('proposals')]).toEqual([80, 3, 4.8, 3.9, 3.12]);
+  });
+});
+
+describe('free-text classification', () => {
+  it('reads the sheet wording into the funnel', () => {
+    expect(classifyChannel('Direct outreach')).toBe('DIRECT_OUTREACH');
+    expect(classifyChannel('Warm introduction')).toBe('WARM_INTRO');
+    expect(classifyChannel('warm intro via Jane')).toBe('WARM_INTRO');
+    expect(classifyChannel('Household enquiry')).toBe('HOUSEHOLD_ENQUIRY');
+    expect(classifyChannel('Referral')).toBe('REFERRAL');
+    expect(classifyChannel('Trade fair')).toBe('OTHER');
+    expect(isHouseholdSegment('Household')).toBe(true);
+    expect(isHouseholdSegment('Residential apartment')).toBe(true);
+    expect(isHouseholdSegment('Clinic or laboratory')).toBe(false);
+    expect(isRecurringContract('Monthly (1 visit)')).toBe(true);
+    expect(isRecurringContract('One-off')).toBe(false);
+    expect(isRecurringContract(null)).toBe(false);
+    expect(statusIsSubmission('Submitted by COO')).toBe(true);
+    expect(statusIsSubmission('Sent to COO')).toBe(false);
+    expect(statusIsAward('Awarded')).toBe(true);
+    expect(statusIsAward('Not awarded')).toBe(false);
+  });
 });
 
 describe('computeActuals', () => {
   it('measures each stage against the prior stage in the month, by channel', () => {
     const events = [
-      ...many(50, () => lead('NEW')), // 50 organisations contacted
+      ...many(50, () => lead('CONTACTED')), // 50 organisations contacted
       ...many(3, () => lead('CONVERSATION')), // 6% — on locked
       ...many(1, () => lead('SITE_VISIT')), // 33% vs 50% locked → below 40
       ...many(1, () => lead('PROPOSAL_SENT')), // 100% vs 80%
-      ...many(4, () => lead('NEW', 'WARM_INTRO')),
+      ...many(4, () => lead('CONTACTED', 'WARM_INTRO')),
       ...many(2, () => lead('SITE_VISIT', 'WARM_INTRO')), // 50%
-      ...many(1, () => lead('WON', 'WARM_INTRO', 'COMMERCIAL', true)), // 25% vs 35% → 0.714 < 0.8 → below
-      ...many(20, () => lead('NEW', 'HOUSEHOLD_ENQUIRY', 'HOUSEHOLD')),
-      ...many(3, () => lead('WON', 'HOUSEHOLD_ENQUIRY', 'HOUSEHOLD')), // 15%
+      ...many(1, () => lead('WON', 'WARM_INTRO', false, true)), // 25% vs 35% → 0.714 < 0.8 → below
+      ...many(20, () => lead('CONTACTED', 'HOUSEHOLD_ENQUIRY', true)),
+      ...many(3, () => lead('WON', 'HOUSEHOLD_ENQUIRY', true)), // 15%
     ];
-    const out = computeActuals('2027-01', events, [tender('SUBMITTED'), tender('SUBMITTED'), tender('AWARDED')], T);
+    const out = computeActuals('2027-01', events, [tender('Submitted by COO'), tender('Submitted by COO'), tender('Awarded')], T);
     const by = Object.fromEntries(out.stages.map((s) => [s.key, s]));
 
     expect(out.year).toBe(1);
@@ -83,7 +122,7 @@ describe('computeActuals', () => {
   });
 
   it('uses the first-two-months household rate in Oct and Nov 2026', () => {
-    const out = computeActuals('2026-11', [lead('NEW', 'HOUSEHOLD_ENQUIRY', 'HOUSEHOLD'), lead('WON', 'HOUSEHOLD_ENQUIRY', 'HOUSEHOLD')], [], T);
+    const out = computeActuals('2026-11', [lead('CONTACTED', 'HOUSEHOLD_ENQUIRY', true), lead('WON', 'HOUSEHOLD_ENQUIRY', true)], [], T);
     const by = Object.fromEntries(out.stages.map((s) => [s.key, s]));
     expect(by.household_enquiry_to_paid_first_two_months!).toMatchObject({ tracked: true, lockedRate: 0.1, actualRate: 1 });
     expect(by.household_enquiry_to_paid!.tracked).toBe(false);
@@ -99,8 +138,13 @@ describe('computeActuals', () => {
   });
 
   it('reports activity counts beside the monthly targets', () => {
-    const events = [...many(45, () => lead('NEW')), ...many(2, () => lead('NEW', 'WARM_INTRO')), lead('WON', 'DIRECT_OUTREACH', 'COMMERCIAL', true), ...many(12, () => lead('NEW', 'HOUSEHOLD_ENQUIRY', 'HOUSEHOLD'))];
-    const out = computeActuals('2026-10', events, [tender('SUBMITTED'), tender('SUBMITTED', 'PRIVATE_RFQ')], T);
+    const events = [
+      ...many(45, () => lead('CONTACTED')),
+      ...many(2, () => lead('CONTACTED', 'WARM_INTRO')),
+      lead('WON', 'DIRECT_OUTREACH', false, true),
+      ...many(12, () => lead('CONTACTED', 'HOUSEHOLD_ENQUIRY', true)),
+    ];
+    const out = computeActuals('2026-10', events, [tender('Submitted by COO'), tender('Submitted by COO', 'RFQ'), tender('Not awarded', 'RFQ')], T);
     const by = Object.fromEntries(out.activity.map((a) => [a.key, a]));
     expect(by.contacted!).toMatchObject({ target: 40, actual: 45, kind: 'TARGET', owner: 'BD_LEAD' });
     expect(by.warm_intros!).toMatchObject({ target: 2, actual: 2 });
@@ -142,9 +186,8 @@ describe('requiredActivity', () => {
 });
 
 describe('leadCommission', () => {
-  it('pays 5% of net profit on trainee-sourced wins only', () => {
-    expect(leadCommission(450_000, 207_000, true, 0.05)).toEqual({ netProfitCents: 243_000, commissionCents: 12_150 });
-    expect(leadCommission(450_000, 207_000, false, 0.05)).toEqual({ netProfitCents: 243_000, commissionCents: 0 });
-    expect(leadCommission(100_000, 150_000, true, 0.05)).toEqual({ netProfitCents: -50_000, commissionCents: 0 }); // no commission on a loss
+  it('pays 5% of net profit on every win, nothing on a loss', () => {
+    expect(leadCommission(450_000, 207_000, 0.05)).toEqual({ netProfitCents: 243_000, commissionCents: 12_150 });
+    expect(leadCommission(100_000, 150_000, 0.05)).toEqual({ netProfitCents: -50_000, commissionCents: 0 });
   });
 });
