@@ -48,6 +48,15 @@ import type {
   CreateCompanyDocumentInput,
   DocumentsResult,
   DocumentUploadUrlResult,
+  ProbationDto,
+  WorkplanEventDto,
+  ChangeWorkplanStatusInput,
+  MarkReportingEventInput,
+  SetKpiActualInput,
+  SetKpiTargetInput,
+  SetCriticalBreachInput,
+  SetFinalDecisionInput,
+  ProbationRole,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -172,6 +181,33 @@ export const api = {
       auth: true,
       body: JSON.stringify(input),
     }),
+
+  // ── Probation tracker ────────────────────────────────────────────────────
+  probation: () => request<ProbationDto>('/admin/probation', { method: 'GET', auth: true }),
+
+  setWorkplanStatus: (taskId: string, input: ChangeWorkplanStatusInput) =>
+    request<ProbationDto>(`/admin/probation/tasks/${encodeURIComponent(taskId)}/status`, { method: 'PATCH', auth: true, body: JSON.stringify(input) }),
+
+  workplanEvents: (taskId: string) =>
+    request<{ events: WorkplanEventDto[] }>(`/admin/probation/tasks/${encodeURIComponent(taskId)}/events`, { method: 'GET', auth: true }),
+
+  markReportingEvent: (id: string, input: MarkReportingEventInput) =>
+    request<ProbationDto>(`/admin/probation/calendar/${encodeURIComponent(id)}`, { method: 'PATCH', auth: true, body: JSON.stringify(input) }),
+
+  setKpiActual: (kpiId: string, input: SetKpiActualInput) =>
+    request<ProbationDto>(`/admin/probation/kpis/${encodeURIComponent(kpiId)}/actual`, { method: 'PUT', auth: true, body: JSON.stringify(input) }),
+
+  setKpiTarget: (kpiId: string, input: SetKpiTargetInput) =>
+    request<ProbationDto>(`/admin/probation/kpis/${encodeURIComponent(kpiId)}/target`, { method: 'PUT', auth: true, body: JSON.stringify(input) }),
+
+  addKpiMonth: (role: ProbationRole, month: string) =>
+    request<ProbationDto>('/admin/probation/months', { method: 'POST', auth: true, body: JSON.stringify({ role, month }) }),
+
+  setCriticalBreach: (role: ProbationRole, input: SetCriticalBreachInput) =>
+    request<ProbationDto>(`/admin/probation/outcome/${role}/breach`, { method: 'PUT', auth: true, body: JSON.stringify(input) }),
+
+  setFinalDecision: (role: ProbationRole, input: SetFinalDecisionInput) =>
+    request<ProbationDto>(`/admin/probation/outcome/${role}/decision`, { method: 'PUT', auth: true, body: JSON.stringify(input) }),
 
   // ── Team / staff (owner only) ────────────────────────────────────────────
   staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),

@@ -33,6 +33,8 @@ enum UserRole {
   MARKETING
   CLEANING_SUPERVISOR
   SHAREHOLDER
+  COO
+  BUSINESS_DEVELOPMENT_LEAD
 }
 
 enum LoyaltyTier {
@@ -94,6 +96,11 @@ model User {
   projectsCreated      Project[]            @relation("ProjectCreatedBy")
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
+  workplanEvents       WorkplanEvent[]      @relation("WorkplanEventActor")
+  reportsSubmitted     ReportingEvent[]     @relation("ReportingSubmittedBy")
+  reportsReviewed      ReportingEvent[]     @relation("ReportingReviewedBy")
+  kpiActualsEntered    KpiMonthlyActual[]   @relation("KpiActualEnteredBy")
+  probationDecisions   ProbationOutcome[]   @relation("ProbationDecidedBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -1110,4 +1117,156 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, readAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Probation tracker — workplans, reporting calendar, KPI scorecard
+// (5 Oct 2026 – 8 Jan 2027, both trainees)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ProbationRole {
+  COMMS // Communications and Marketing Manager
+  BD    // Business Development Lead and Site Supervisor
+}
+
+/** The sheet's key: S = stage, T = task, ST = ongoing (standing) task, D = deliverable. */
+enum WorkplanTaskType {
+  STAGE
+  TASK
+  ONGOING
+  DELIVERABLE
+}
+
+/** The sheet's five-value dropdown. */
+enum WorkplanStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  DONE
+  BLOCKED
+  HELD
+}
+
+enum WorkplanEventKind {
+  SEEDED
+  STATUS_CHANGED
+  NOTE_ADDED
+}
+
+/** Activity and output text are the literal evidence checklist at each review — seeded verbatim. */
+model WorkplanTask {
+  id             String           @id @default(cuid())
+  role           ProbationRole
+  taskNo         String           // "A", "A.1", …
+  type           WorkplanTaskType
+  activity       String
+  category       String?
+  startDate      DateTime?        @db.Date
+  endDate        DateTime?        @db.Date
+  outputRequired String?
+  status         WorkplanStatus   @default(NOT_STARTED)
+  sortOrder      Int
+  events         WorkplanEvent[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([role, taskNo])
+  @@index([role, sortOrder])
+}
+
+model WorkplanEvent {
+  id         String            @id @default(cuid())
+  task       WorkplanTask      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId     String
+  kind       WorkplanEventKind
+  fromStatus WorkplanStatus?
+  toStatus   WorkplanStatus?
+  summary    String
+  detail     String?
+  actor      User?             @relation("WorkplanEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  actorName  String?
+  createdAt  DateTime          @default(now())
+
+  @@index([taskId, createdAt])
+}
+
+/** Weekly reports and review gates. Submitted / reviewed each stamp who and when. */
+model ReportingEvent {
+  id            String    @id @default(cuid())
+  date          DateTime  @db.Date
+  day           String
+  event         String
+  who           String
+  due           String    // "5:00 pm" or "Meeting"
+  reviewer      String
+  submitted     Boolean   @default(false)
+  submittedAt   DateTime?
+  submittedBy   User?     @relation("ReportingSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedById String?
+  reviewed      Boolean   @default(false)
+  reviewedAt    DateTime?
+  reviewedBy    User?     @relation("ReportingReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedById  String?
+  sortOrder     Int
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([date])
+}
+
+model KpiDefinition {
+  id        String             @id @default(cuid())
+  role      ProbationRole
+  kpiName   String
+  weight    Int                // the role's weights sum to 100
+  sortOrder Int
+  targets   KpiMonthlyTarget[]
+  actuals   KpiMonthlyActual[]
+
+  @@unique([role, kpiName])
+}
+
+/** Keyed by month so an "Extend 1 month" outcome adds a row, not a column. */
+model KpiMonthlyTarget {
+  id     String        @id @default(cuid())
+  kpi    KpiDefinition @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  kpiId  String
+  month  String        // YYYY-MM
+  target Float
+
+  @@unique([kpiId, month])
+}
+
+/** Entered by the COO at each monthly review. */
+model KpiMonthlyActual {
+  id          String        @id @default(cuid())
+  kpi         KpiDefinition @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  kpiId       String
+  month       String        // YYYY-MM
+  actual      Float
+  enteredBy   User?         @relation("KpiActualEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
+  enteredById String?
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([kpiId, month])
+}
+
+enum ProbationDecision {
+  CONFIRM
+  EXTEND_ONE_MONTH
+  NOT_CONFIRMED
+}
+
+/** One row per role. Score and computed outcome are derived; the CEO's final decision is recorded here. */
+model ProbationOutcome {
+  id                String             @id @default(cuid())
+  role              ProbationRole      @unique
+  criticalBreach    Boolean            @default(false) // COO-set
+  breachNote        String?
+  finalDecision     ProbationDecision? // CEO-set
+  finalDecisionNote String?
+  decidedBy         User?              @relation("ProbationDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedById       String?
+  decidedAt         DateTime?
+  updatedAt         DateTime           @updatedAt
 }
