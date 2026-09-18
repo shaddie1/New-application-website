@@ -212,7 +212,7 @@ export default function RatesPage() {
 
           <Section title="F. Area production rates, consumables and market prices">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[840px] text-sm">
+              <table className="w-full min-w-[960px] text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-widest text-charcoal-muted">
                     <th className="py-2 pr-3 font-normal">Area type</th>
@@ -238,7 +238,7 @@ export default function RatesPage() {
 
           <Section title="G. Items counted on site">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[900px] text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-widest text-charcoal-muted">
                     <th className="py-2 pr-3 font-normal">Item type</th>
@@ -265,11 +265,10 @@ export default function RatesPage() {
           <Section title="H. Work descriptions printed on the client quotation">
             <div className="grid gap-3 sm:grid-cols-2">
               {(['ROUTINE', 'DEEP', 'VACUUM_ONLY', 'ITEM'] as const).map((k) => (
-                <div key={k}>
-                  <label className="mb-1 block text-xs text-charcoal-muted">{k === 'ITEM' ? 'Items' : CLEAN_LEVEL_LABELS[k]}</label>
+                <Labelled key={k} label={k === 'ITEM' ? 'Items' : CLEAN_LEVEL_LABELS[k]}>
                   <textarea rows={3} className={input} value={draft.workDescriptions[k]}
                     onChange={(e) => set('workDescriptions', { ...draft.workDescriptions, [k]: e.target.value })} />
-                </div>
+                </Labelled>
               ))}
             </div>
           </Section>
@@ -291,8 +290,8 @@ export default function RatesPage() {
 function AreaRow({ rate, onChange, onRemove }: { rate: AreaRate; onChange: (r: AreaRate) => void; onRemove: () => void }) {
   return (
     <tr className="border-t border-line">
-      <td className="py-2 pr-3"><input className={input} value={rate.areaType} onChange={(e) => onChange({ ...rate, areaType: e.target.value })} /></td>
-      <td className="py-2 pr-3">
+      <td className="w-[28%] py-2 pr-3"><input className={input} value={rate.areaType} onChange={(e) => onChange({ ...rate, areaType: e.target.value })} /></td>
+      <td className="min-w-[140px] py-2 pr-3">
         <select className={input} value={rate.cleanLevel} onChange={(e) => onChange({ ...rate, cleanLevel: e.target.value as CleanLevel })}>
           {CLEAN_LEVELS.map((l) => <option key={l} value={l}>{CLEAN_LEVEL_LABELS[l]}</option>)}
         </select>
@@ -309,7 +308,7 @@ function AreaRow({ rate, onChange, onRemove }: { rate: AreaRate; onChange: (r: A
 function ItemRow({ rate, onChange, onRemove }: { rate: ItemRate; onChange: (r: ItemRate) => void; onRemove: () => void }) {
   return (
     <tr className="border-t border-line">
-      <td className="py-2 pr-3"><input className={input} value={rate.itemType} onChange={(e) => onChange({ ...rate, itemType: e.target.value })} /></td>
+      <td className="w-[40%] py-2 pr-3"><input className={input} value={rate.itemType} onChange={(e) => onChange({ ...rate, itemType: e.target.value })} /></td>
       <td className="py-2 pr-3"><input type="number" min={0.1} step={0.5} className={input} value={rate.minutesPerUnit} onChange={(e) => onChange({ ...rate, minutesPerUnit: num(e.target.value) })} /></td>
       <td className="py-2 pr-3"><input type="number" min={0} step={1} className={input} value={toKes(rate.consumablesPerUnitCents)} onChange={(e) => onChange({ ...rate, consumablesPerUnitCents: fromKes(e.target.value) })} /></td>
       <td className="py-2 pr-3"><input type="number" min={0} step={1} className={input} value={toKes(rate.marketLowPerUnitCents)} onChange={(e) => onChange({ ...rate, marketLowPerUnitCents: fromKes(e.target.value) })} /></td>
@@ -330,13 +329,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** The control sits inside the label so the two are associated without ids. */
 function Labelled({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div>
-      <label className="mb-1 block text-xs text-charcoal-muted">{label}</label>
+    <label className="block">
+      <span className="mb-1 block text-xs text-charcoal-muted">{label}</span>
       {children}
-      {hint && <p className="mt-1 text-xs text-charcoal-muted">{hint}</p>}
-    </div>
+      {hint && <span className="mt-1 block text-xs text-charcoal-muted">{hint}</span>}
+    </label>
   );
 }
 

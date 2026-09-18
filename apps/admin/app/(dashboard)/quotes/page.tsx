@@ -896,12 +896,13 @@ function StatusBadge({ status }: { status: QuoteStatus }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs ${map[status]}`}>{STATUS_LABEL[status]}</span>;
 }
 
+/** The control sits inside the label so the two are associated without ids. */
 function Labelled({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <label className="mb-1 block text-xs text-charcoal-muted">{label}</label>
+    <label className="block">
+      <span className="mb-1 block text-xs text-charcoal-muted">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }
 
