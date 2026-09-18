@@ -33,6 +33,7 @@ enum UserRole {
   MARKETING
   CLEANING_SUPERVISOR
   SHAREHOLDER
+  COO
 }
 
 enum LoyaltyTier {
@@ -94,6 +95,11 @@ model User {
   projectsCreated      Project[]            @relation("ProjectCreatedBy")
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
+  quoteSurveysUpdated  QuoteSurvey[]        @relation("QuoteSurveyUpdatedBy")
+  quoteEstimatesComputed  QuoteEstimate[]   @relation("QuoteEstimateComputedBy")
+  quoteEstimatesSubmitted QuoteEstimate[]   @relation("QuoteEstimateSubmittedBy")
+  quoteEstimatesDecided   QuoteEstimate[]   @relation("QuoteEstimateDecidedBy")
+  quoteRatesUpdated    QuoteRates[]         @relation("QuoteRatesUpdatedBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -394,6 +400,8 @@ model BookingPhoto {
 enum QuoteStatus {
   PENDING
   SITE_VISIT_SCHEDULED
+  AWAITING_APPROVAL // estimate sent to the COO/owner
+  APPROVED          // estimate approved; client quotation can be issued
   QUOTED
   WON              // converted to a Booking
   LOST
@@ -419,8 +427,96 @@ model QuoteRequest {
   updatedAt       DateTime     @updatedAt
 
   photos          QuoteRequestPhoto[]
+  survey          QuoteSurvey?
+  estimates       QuoteEstimate[]
 
   @@index([userId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quote Builder — survey, estimate and the rates card behind them
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DistanceZone {
+  ZONE1 // up to 10 km
+  ZONE2 // 10–25 km
+  ZONE3 // over 25 km
+}
+
+enum SoilLevel {
+  LIGHT
+  NORMAL
+  HEAVY
+}
+
+enum EstimateStatus {
+  DRAFT      // computed, not yet sent for approval
+  SUBMITTED  // awaiting the COO/owner
+  APPROVED
+  REJECTED
+  SUPERSEDED // replaced by a newer estimate (survey or rates changed)
+}
+
+/**
+ * What the surveyor found on site. One per quote request; replaced whole on
+ * every save. Areas and items are JSON lists validated by the API — they are
+ * only ever read back as a unit to compute the estimate.
+ */
+model QuoteSurvey {
+  id                 String       @id @default(cuid())
+  quoteRequest       QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  quoteRequestId     String       @unique
+  distanceZone       DistanceZone @default(ZONE1)
+  soilLevel          SoilLevel    @default(NORMAL)
+  frequencyLabel     String       // must match a label in QuoteRates.frequencyTable
+  workingWindowHours Float        @default(7)
+  supervisorOnSite   Boolean      @default(false)
+  traineeSourced     Boolean      @default(false)
+  notes              String?
+  areas              Json         // QuoteSurveyAreaInput[]
+  items              Json         // QuoteSurveyItemInput[]
+  updatedBy          User?        @relation("QuoteSurveyUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById        String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+/**
+ * A priced estimate, frozen with the survey and rates it was computed from so
+ * a later rates edit never silently changes an approved figure. The newest
+ * non-superseded row is the quote's current estimate.
+ */
+model QuoteEstimate {
+  id              String         @id @default(cuid())
+  quoteRequest    QuoteRequest   @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  quoteRequestId  String
+  status          EstimateStatus @default(DRAFT)
+  surveySnapshot  Json
+  ratesSnapshot   Json
+  ratesUpdatedAt  DateTime?
+  output          Json           // QuoteEstimateOutput
+  computedBy      User?          @relation("QuoteEstimateComputedBy", fields: [computedById], references: [id], onDelete: SetNull)
+  computedById    String?
+  computedAt      DateTime       @default(now())
+  submittedBy     User?          @relation("QuoteEstimateSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedById   String?
+  submittedAt     DateTime?
+  decidedBy       User?          @relation("QuoteEstimateDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedById     String?
+  decidedAt       DateTime?
+  decisionNote    String?
+
+  @@index([quoteRequestId, computedAt])
+}
+
+/** The rates card. A single row (id "default"); the JSON is the QuoteRates DTO. */
+model QuoteRates {
+  id          String   @id @default("default")
+  data        Json
+  updatedBy   User?    @relation("QuoteRatesUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model QuoteRequestPhoto {

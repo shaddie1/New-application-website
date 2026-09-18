@@ -18,6 +18,7 @@ const OWNER_FINANCE = [
   { href: '/insights', label: 'Insights' },
   { href: '/financials', label: 'Financials' },
   { href: '/finance', label: 'Finance' },
+  { href: '/rates', label: 'Quote rates' },
 ];
 
 const OWNER_GOVERNANCE = [

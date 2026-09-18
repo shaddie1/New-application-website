@@ -48,6 +48,11 @@ import type {
   CreateCompanyDocumentInput,
   DocumentsResult,
   DocumentUploadUrlResult,
+  QuoteRates,
+  QuoteRatesDto,
+  QuoteSurveyInput,
+  ClientQuotationDto,
+  QuoteBuilderOptions,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -172,6 +177,63 @@ export const api = {
       auth: true,
       body: JSON.stringify(input),
     }),
+
+  // ── Quote builder ────────────────────────────────────────────────────────
+  quoteBuilderOptions: () =>
+    request<{ options: QuoteBuilderOptions }>('/admin/quote-builder/options', { method: 'GET', auth: true }),
+
+  quoteRates: () => request<QuoteRatesDto>('/admin/quote-builder/rates', { method: 'GET', auth: true }),
+
+  saveQuoteRates: (rates: QuoteRates) =>
+    request<QuoteRatesDto>('/admin/quote-builder/rates', { method: 'PUT', auth: true, body: JSON.stringify(rates) }),
+
+  saveQuoteSurvey: (quoteId: string, input: QuoteSurveyInput) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/survey`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  recomputeEstimate: (quoteId: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/estimate`, {
+      method: 'POST',
+      auth: true,
+      body: '{}', // Fastify refuses an empty body once Content-Type is JSON
+    }),
+
+  submitEstimate: (quoteId: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/submit`, {
+      method: 'POST',
+      auth: true,
+      body: '{}', // Fastify refuses an empty body once Content-Type is JSON
+    }),
+
+  withdrawEstimate: (quoteId: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/withdraw`, {
+      method: 'POST',
+      auth: true,
+      body: '{}', // Fastify refuses an empty body once Content-Type is JSON
+    }),
+
+  approveEstimate: (quoteId: string, note?: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/approve`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ note }),
+    }),
+
+  rejectEstimate: (quoteId: string, note: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/reject`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ note }),
+    }),
+
+  clientQuotation: (quoteId: string) =>
+    request<{ quotation: ClientQuotationDto }>(
+      `/admin/quote-builder/${encodeURIComponent(quoteId)}/client-quotation`,
+      { method: 'GET', auth: true },
+    ),
 
   // ── Team / staff (owner only) ────────────────────────────────────────────
   staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),
@@ -462,7 +524,7 @@ export const api = {
 
   approveReport: (id: string) =>
     request<{ job: JobDto }>(`/admin/financials/reports/${encodeURIComponent(id)}/approve`, {
-      method: 'PATCH', auth: true,
+      method: 'PATCH', auth: true, body: '{}', // Fastify refuses an empty body once Content-Type is JSON
     }),
 
   deleteReport: (id: string) =>
