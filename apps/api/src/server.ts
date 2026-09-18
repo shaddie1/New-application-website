@@ -16,6 +16,7 @@ import { loyaltyRoutes } from './routes/loyalty.js';
 import { profileRoutes } from './routes/profile.js';
 import { quoteRoutes } from './routes/quotes.js';
 import { adminRoutes } from './routes/admin.js';
+import { quoteBuilderRoutes } from './routes/quoteBuilder.js';
 import { financialsRoutes } from './routes/financials.js';
 import { financeRoutes } from './routes/finance.js';
 import { documentRoutes } from './routes/documents.js';
@@ -54,6 +55,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(profileRoutes, { prefix: '/profile' });
   await app.register(quoteRoutes, { prefix: '/quote-requests' });
   await app.register(adminRoutes, { prefix: '/admin' });
+  await app.register(quoteBuilderRoutes, { prefix: '/admin/quote-builder' });
   await app.register(financialsRoutes, { prefix: '/admin/financials' });
   await app.register(financeRoutes, { prefix: '/admin/finance' });
   await app.register(documentRoutes, { prefix: '/admin/documents' });

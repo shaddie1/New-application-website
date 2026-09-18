@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   BookingStatus,
   CrewRole,
+  EstimateStatus,
   Prisma,
   QuoteStatus,
   UserRole,
@@ -10,12 +11,10 @@ import {
 import type {
   AddressDto,
   AdminBookingDto,
-  AdminQuoteRequestDto,
   AdminStats,
   CleanTypeCode,
   CrewUserDto,
-  QuoteFrequency,
-  QuoteStatus as QuoteStatusDto,
+  QuoteEstimateOutput,
   ServiceLineCode,
   BookingStatus as BookingStatusDto,
   RespondQuoteInput,
@@ -28,6 +27,8 @@ import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
+import { canViewEstimate, loadActor } from '../quotes/access.js';
+import { adminQuoteInclude, toAdminQuoteDto } from '../quotes/dto.js';
 
 const BookingsQuerySchema = z.object({
   status: z
@@ -49,6 +50,8 @@ const AssignSchema = z.object({
   role: z.enum(['LEAD', 'MEMBER']),
 }) satisfies z.ZodType<AssignCrewInput>;
 
+// AWAITING_APPROVAL and APPROVED are reached only through the quote-builder
+// approval endpoints, never by hand.
 const RespondSchema = z.object({
   status: z.enum(['PENDING', 'SITE_VISIT_SCHEDULED', 'QUOTED', 'WON', 'LOST', 'CANCELLED']),
   quotedAmountCents: z.number().int().nonnegative().optional(),
@@ -57,7 +60,7 @@ const RespondSchema = z.object({
 const CreateStaffSchema = z.object({
   phone: z.string().trim().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +254712480392)'),
   fullName: z.string().trim().min(1).max(120),
-  role: z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER']),
+  role: z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER', 'COO']),
 }) satisfies z.ZodType<CreateStaffInput>;
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
@@ -156,17 +159,22 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const status = typeof (req.query as { status?: string }).status === 'string'
       ? (req.query as { status?: string }).status
       : undefined;
-    const rows = await prisma.quoteRequest.findMany({
-      where: status ? { status: status as QuoteStatus } : undefined,
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-      include: { serviceLine: true, user: { select: { fullName: true, phone: true } } },
-    });
-    const quoteRequests = rows.map(toAdminQuoteDto);
+    const [rows, actor] = await Promise.all([
+      prisma.quoteRequest.findMany({
+        where: status ? { status: status as QuoteStatus } : undefined,
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        include: adminQuoteInclude,
+      }),
+      loadActor(req),
+    ]);
+    const showEstimate = !!actor && canViewEstimate(actor);
+    const quoteRequests = rows.map((row) => toAdminQuoteDto(row, showEstimate));
     return reply.send({ quoteRequests });
   });
 
-  // Respond to a quote request — set status and (when QUOTED) a price.
+  // Respond to a quote request — set status. QUOTED takes its price from the
+  // approved estimate; a hand-typed amount is no longer accepted for it.
   app.post<{ Params: { id: string } }>('/quote-requests/:id/respond', async (req, reply) => {
     const parsed = RespondSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -174,23 +182,47 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.quoteRequest.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'quote request not found' });
 
-    if (parsed.data.status === 'QUOTED' && parsed.data.quotedAmountCents == null) {
-      return reply.code(400).send({ error: 'quotedAmountCents is required when status is QUOTED' });
+    const target = parsed.data.status as QuoteStatus;
+
+    // While the COO has it, the only ways out are the approval endpoints or a
+    // dead end (lost/cancelled) — not a quiet reset to an earlier ops state.
+    if (
+      existing.status === QuoteStatus.AWAITING_APPROVAL &&
+      (target === QuoteStatus.PENDING || target === QuoteStatus.SITE_VISIT_SCHEDULED || target === QuoteStatus.QUOTED)
+    ) {
+      return reply.code(409).send({ error: 'the estimate is awaiting approval — approve, reject or withdraw it first' });
+    }
+
+    let quotedAmountCents = existing.quotedAmountCents;
+    if (target === QuoteStatus.QUOTED) {
+      const approved = await prisma.quoteEstimate.findFirst({
+        where: { quoteRequestId: existing.id, status: EstimateStatus.APPROVED },
+        orderBy: { computedAt: 'desc' },
+      });
+      const canQuote =
+        approved && (existing.status === QuoteStatus.APPROVED || existing.status === QuoteStatus.QUOTED);
+      if (!canQuote) {
+        return reply.code(409).send({
+          error: 'an approved estimate is required before quoting — complete the survey and send it for COO approval',
+        });
+      }
+      quotedAmountCents = (approved.output as unknown as QuoteEstimateOutput).pricing.pricePerVisitCents;
     }
 
     const row = await prisma.quoteRequest.update({
       where: { id: existing.id },
       data: {
-        status: parsed.data.status as QuoteStatus,
-        quotedAmountCents: parsed.data.quotedAmountCents ?? (parsed.data.status === 'QUOTED' ? undefined : existing.quotedAmountCents),
-        quotedAt: parsed.data.status === 'QUOTED' ? new Date() : existing.quotedAt,
+        status: target,
+        quotedAmountCents,
+        quotedAt: target === QuoteStatus.QUOTED ? new Date() : existing.quotedAt,
       },
-      include: { serviceLine: true, user: { select: { fullName: true, phone: true } } },
+      include: adminQuoteInclude,
     });
 
     void notifyQuoteResponded(row.id, parsed.data.status, row.quotedAmountCents, req.log);
 
-    return reply.send({ quoteRequest: toAdminQuoteDto(row) });
+    const actor = await loadActor(req);
+    return reply.send({ quoteRequest: toAdminQuoteDto(row, !!actor && canViewEstimate(actor)) });
   });
 
   // ── Team / staff management (OWNER only) ──────────────────────────────────
@@ -268,6 +300,7 @@ const STAFF_ROLES = new Set<UserRole>([
   UserRole.MARKETING,
   UserRole.CLEANING_SUPERVISOR,
   UserRole.SHAREHOLDER,
+  UserRole.COO,
 ]);
 
 async function requireAdminRole(req: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -365,28 +398,5 @@ function toAddressDto(a: AdminBookingRow['address']): AddressDto {
     lng: a.lng ? Number(a.lng) : null,
     accessNotes: a.accessNotes,
     isDefault: a.isDefault,
-  };
-}
-
-type AdminQuoteRow = Prisma.QuoteRequestGetPayload<{
-  include: { serviceLine: true; user: { select: { fullName: true; phone: true } } };
-}>;
-
-function toAdminQuoteDto(row: AdminQuoteRow): AdminQuoteRequestDto {
-  return {
-    id: row.id,
-    serviceLineCode: row.serviceLine.code as ServiceLineCode,
-    serviceLineName: row.serviceLine.name,
-    siteType: row.siteType,
-    approxSqm: row.approxSqm,
-    floors: row.floors,
-    frequency: row.frequency as QuoteFrequency,
-    notes: row.notes,
-    status: row.status as QuoteStatusDto,
-    quotedAmountCents: row.quotedAmountCents,
-    quotedAt: row.quotedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    customerName: row.user.fullName,
-    customerPhone: row.user.phone,
   };
 }

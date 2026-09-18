@@ -1,6 +1,7 @@
 /** Admin/back-office DTOs (apps/admin). */
 import type { BookingDto } from './booking.js';
 import type { QuoteRequestDto, QuoteStatus } from './quote.js';
+import type { QuoteEstimateDto, QuoteSurveyDto } from './quoteBuilder.js';
 import type { UserRole } from './auth.js';
 
 export interface CrewMemberSummary {
@@ -31,10 +32,29 @@ export interface CrewUserDto {
 export interface AdminQuoteRequestDto extends QuoteRequestDto {
   customerName: string;
   customerPhone: string;
+  /** Site survey captured by staff; null until one is saved. */
+  survey: QuoteSurveyDto | null;
+  /**
+   * Internal estimate. Only serialised for roles allowed to see costs and
+   * margins (owner, admin, financial manager, COO) — null for everyone else.
+   */
+  estimate: QuoteEstimateDto | null;
+  /** Client-facing price once an estimate is approved. Safe for every staff role. */
+  approvedPricePerVisitCents: number | null;
+  /** Approval trail. */
+  submittedForApprovalAt: string | null;
+  submittedForApprovalByName: string | null;
+  approvedAt: string | null;
+  approvedByName: string | null;
+  approvalNote: string | null;
 }
 
 export interface RespondQuoteInput {
   status: QuoteStatus;
+  /**
+   * Ignored for QUOTED — the price comes from the approved estimate. Kept for
+   * older clients and for WON/LOST where no amount is needed.
+   */
   quotedAmountCents?: number;
 }
 
@@ -53,7 +73,8 @@ export type StaffRole =
   | 'FINANCIAL_MANAGER'
   | 'MARKETING'
   | 'CLEANING_SUPERVISOR'
-  | 'SHAREHOLDER';
+  | 'SHAREHOLDER'
+  | 'COO';
 
 export interface AdminStaffDto {
   id: string;

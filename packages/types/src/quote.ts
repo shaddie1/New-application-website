@@ -6,6 +6,10 @@ export type QuoteFrequency = 'NONE' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
 export type QuoteStatus =
   | 'PENDING'
   | 'SITE_VISIT_SCHEDULED'
+  /** Estimate sent to the COO/owner; nothing goes to the client until approved. */
+  | 'AWAITING_APPROVAL'
+  /** Estimate approved — the client quotation can now be generated and sent. */
+  | 'APPROVED'
   | 'QUOTED'
   | 'WON'
   | 'LOST'
