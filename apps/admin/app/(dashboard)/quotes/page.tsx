@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import type {
   AdminQuoteRequestDto,
   CleanLevel,
@@ -76,7 +77,16 @@ function pct(fraction: number) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+// useSearchParams needs a Suspense boundary for Next's static prerender.
 export default function QuotesPage() {
+  return (
+    <Suspense fallback={<div className="text-charcoal-muted">Loading…</div>}>
+      <QuotesPageInner />
+    </Suspense>
+  );
+}
+
+function QuotesPageInner() {
   const session = useRequireAdmin();
   const showEstimate = canViewEstimate(session);
   const approver = canApproveEstimate(session);
@@ -87,7 +97,9 @@ export default function QuotesPage() {
   const [ratesUpdatedAt, setRatesUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<AdminQuoteRequestDto | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  // Deep link from the pipeline's "Create quote": open that card straight away.
+  const openId = useSearchParams().get('open');
+  const [expanded, setExpanded] = useState<string | null>(openId);
 
   const load = useCallback(async () => {
     try {
