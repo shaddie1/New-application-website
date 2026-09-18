@@ -33,6 +33,8 @@ enum UserRole {
   MARKETING
   CLEANING_SUPERVISOR
   SHAREHOLDER
+  COO
+  BUSINESS_DEVELOPMENT_LEAD
 }
 
 enum LoyaltyTier {
@@ -94,6 +96,8 @@ model User {
   projectsCreated      Project[]            @relation("ProjectCreatedBy")
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
+  complianceEvents     ComplianceEvent[]    @relation("ComplianceEventActor")
+  readinessFlagsUpdated CompanyReadinessFlags[] @relation("ReadinessFlagsUpdatedBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -1110,4 +1114,93 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, readAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compliance checklist — the 56 items from the Compliance sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Exact dropdown values from the sheet. */
+enum CompliancePriority {
+  MUST_HAVE
+  MUST_HAVE_IF_ELIGIBLE // AGPO
+  MUST_HAVE_IF_GO       // laundry go decision
+  MUST_HAVE_BEFORE_HIRING
+  RECOMMENDED
+  OPTIONAL
+}
+
+enum ComplianceStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  DONE
+  BLOCKED
+  NOT_APPLICABLE
+}
+
+enum ComplianceEventKind {
+  SEEDED
+  STATUS_CHANGED
+  DETAILS_CHANGED
+  NOTE_ADDED
+}
+
+enum LaundryGoDecision {
+  PENDING
+  GO
+  NO_GO
+}
+
+/** Item text is used verbatim in tender packs and audits — seeded, never paraphrased. */
+model ComplianceItem {
+  id           String             @id @default(cuid())
+  itemNo       Int                @unique // 1–56
+  category     String
+  itemAction   String
+  priority     CompliancePriority
+  whyItMatters String?
+  owner        String             // free text as on the sheet
+  targetDate   DateTime           @db.Date
+  costCents    Int                @default(0)
+  costType     String             // "Free", "Annual", "Quote required", …
+  status       ComplianceStatus   @default(NOT_STARTED)
+  dateDone     DateTime?          @db.Date
+  sourceOrNote String?
+  statusNote   String?            // why it is blocked
+  events       ComplianceEvent[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([category])
+  @@index([status])
+}
+
+/** Append-only history, the shape of Projects' log plus from/to status. */
+model ComplianceEvent {
+  id         String              @id @default(cuid())
+  item       ComplianceItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId     String
+  kind       ComplianceEventKind
+  fromStatus ComplianceStatus?
+  toStatus   ComplianceStatus?
+  summary    String
+  detail     String?
+  actor      User?               @relation("ComplianceEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  actorName  String?
+  createdAt  DateTime            @default(now())
+
+  @@index([itemId, createdAt])
+}
+
+/** Which conditional must-haves apply. Single row (id "default"), owner/COO edited. */
+model CompanyReadinessFlags {
+  id                String            @id @default("default")
+  agpoEligible      Boolean           @default(false)
+  laundryGoDecision LaundryGoDecision @default(PENDING)
+  hiringStarted     Boolean           @default(false)
+  updatedBy         User?             @relation("ReadinessFlagsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 }

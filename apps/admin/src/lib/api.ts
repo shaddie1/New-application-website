@@ -48,6 +48,11 @@ import type {
   CreateCompanyDocumentInput,
   DocumentsResult,
   DocumentUploadUrlResult,
+  ComplianceChecklistDto,
+  ComplianceEventDto,
+  ChangeComplianceStatusInput,
+  UpdateComplianceItemInput,
+  CompanyReadinessFlags,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -172,6 +177,36 @@ export const api = {
       auth: true,
       body: JSON.stringify(input),
     }),
+
+  // ── Compliance checklist ─────────────────────────────────────────────────
+  compliance: () => request<ComplianceChecklistDto>('/admin/compliance', { method: 'GET', auth: true }),
+
+  complianceEvents: (itemId: string) =>
+    request<{ events: ComplianceEventDto[] }>(`/admin/compliance/items/${encodeURIComponent(itemId)}/events`, { method: 'GET', auth: true }),
+
+  setComplianceStatus: (itemId: string, input: ChangeComplianceStatusInput) =>
+    request<ComplianceChecklistDto>(`/admin/compliance/items/${encodeURIComponent(itemId)}/status`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  updateComplianceItem: (itemId: string, input: UpdateComplianceItemInput) =>
+    request<ComplianceChecklistDto>(`/admin/compliance/items/${encodeURIComponent(itemId)}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  addComplianceNote: (itemId: string, note: string) =>
+    request<ComplianceChecklistDto>(`/admin/compliance/items/${encodeURIComponent(itemId)}/notes`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ note }),
+    }),
+
+  setReadinessFlags: (flags: CompanyReadinessFlags) =>
+    request<ComplianceChecklistDto>('/admin/compliance/flags', { method: 'PUT', auth: true, body: JSON.stringify(flags) }),
 
   // ── Team / staff (owner only) ────────────────────────────────────────────
   staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),
