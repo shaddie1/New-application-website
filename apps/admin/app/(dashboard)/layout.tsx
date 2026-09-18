@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useAuth, useRequireAdmin } from '../../src/lib/auth';
+import { canViewProbation } from '../../src/lib/roles';
 
 /** Grouped so the rail reads as sections rather than one long list. */
 const OPERATIONS = [
@@ -44,7 +45,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { title: 'Finance', items: OWNER_FINANCE },
         { title: 'Governance', items: OWNER_GOVERNANCE },
       ]
-    : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }];
+    : [
+        {
+          title: 'Operations',
+          items: [
+            ...OPERATIONS,
+            { href: '/job-reports', label: 'Job Reports' },
+            // The COO and the two trainees reach the probation tracker through Team.
+            ...(canViewProbation(session) ? [{ href: '/team', label: 'Team' }] : []),
+          ],
+        },
+      ];
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
