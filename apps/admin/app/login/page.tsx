@@ -6,7 +6,7 @@ import { api, ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
 
 // Keep in step with the staffRoles allowlist in src/lib/auth.tsx.
-const STAFF_ROLES = ['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER'];
+const STAFF_ROLES = ['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER', 'COO', 'BUSINESS_DEVELOPMENT_LEAD'];
 
 export default function LoginPage() {
   const router = useRouter();
