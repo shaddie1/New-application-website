@@ -33,6 +33,7 @@ enum UserRole {
   MARKETING
   CLEANING_SUPERVISOR
   SHAREHOLDER
+  COO
 }
 
 enum LoyaltyTier {
@@ -94,6 +95,10 @@ model User {
   projectsCreated      Project[]            @relation("ProjectCreatedBy")
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
+  readinessFlagsUpdated CompanyReadinessFlags[] @relation("ReadinessFlagsUpdatedBy")
+  laundrySettingsUpdated LaundrySettings[]   @relation("LaundrySettingsUpdatedBy")
+  reserveEntriesCreated ReserveEntry[]       @relation("ReserveEntryCreatedBy")
+  readinessUpdated     CompliantPayReadiness[] @relation("CompliantPayReadinessUpdatedBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
@@ -634,6 +639,9 @@ model Job {
   serviceLineCode String?
   region          String?
   clientSegment   ClientSegment?
+  // Laundry-line jobs: weight washed. Income defaults to kg × price per kg but
+  // stays overridable like every other auto-calculated figure.
+  laundryKg       Float?
   createdBy      User      @relation("JobsCreatedBy", fields: [createdById], references: [id])
   createdById    String
   reportedBy     User?     @relation("JobsReportedBy", fields: [reportedById], references: [id])
@@ -1110,4 +1118,90 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, readAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Company readiness flags — shared with the Compliance checklist
+//
+// Identical to the definition on feat/compliance-checklist; the migration
+// guards its DDL with IF NOT EXISTS so either branch can land first.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum LaundryGoDecision {
+  PENDING
+  GO
+  NO_GO
+}
+
+model CompanyReadinessFlags {
+  id                String            @id @default("default")
+  agpoEligible      Boolean           @default(false)
+  laundryGoDecision LaundryGoDecision @default(PENDING)
+  hiringStarted     Boolean           @default(false)
+  updatedBy         User?             @relation("ReadinessFlagsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Laundry service line and compliant-pay readiness gates
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Single owner-edited record of the laundry unit economics (the Laundry sheet). */
+model LaundrySettings {
+  id                       String   @id @default("default")
+  pricePerKgCents          Int      @default(10000)
+  consumablesPct           Float    @default(0.10)
+  workingDaysPerMonth      Int      @default(26)
+  // Rent, attendant, electricity, water/sewer and loan repayment per month.
+  fixedCostsNowCents       Int      @default(3138542)
+  // Same, with the attendant at the legal minimum plus statutory costs.
+  fixedCostsCompliantCents Int      @default(4201685)
+  updatedBy                User?    @relation("LaundrySettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById              String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+enum ReserveEntryKind {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+/** Running ledger of the reserve account; the balance is the signed sum. */
+model ReserveEntry {
+  id          String           @id @default(cuid())
+  kind        ReserveEntryKind
+  amountCents Int
+  date        DateTime         @db.Date
+  note        String
+  reference   String?
+  createdBy   User             @relation("ReserveEntryCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime         @default(now())
+
+  @@index([date])
+}
+
+enum PayPhase {
+  NOW
+  COMPLIANT
+}
+
+/**
+ * Single record. Gate 1 is the COO's monthly call (a status and the month it
+ * was first met); gates 2 and 3 are computed from the reserve balance and are
+ * never stored.
+ */
+model CompliantPayReadiness {
+  id                 String    @id @default("default")
+  payPhase           PayPhase  @default(NOW)
+  gate1MarginMet     Boolean   @default(false)
+  gate1FirstMetMonth DateTime? @db.Date
+  laundryOperational Boolean   @default(false)
+  updatedBy          User?     @relation("CompliantPayReadinessUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }

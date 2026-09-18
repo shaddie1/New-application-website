@@ -10,7 +10,8 @@ export type UserRole =
   | 'FINANCIAL_MANAGER'
   | 'MARKETING'
   | 'CLEANING_SUPERVISOR'
-  | 'SHAREHOLDER';
+  | 'SHAREHOLDER'
+  | 'COO';
 
 export interface PublicUser {
   id: string;

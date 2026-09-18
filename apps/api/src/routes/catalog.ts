@@ -7,8 +7,10 @@ import type {
   CleanTypeDto,
   AddOnDto,
 } from '@onyxhawk/types';
+import { LAUNDRY_LINE_CODE } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
+import { laundryLineAvailable } from '../readiness/laundry.js';
 
 interface ServiceLineWithChildren extends ServiceLineDto {
   cleanTypes: CleanTypeDto[];
@@ -17,9 +19,11 @@ interface ServiceLineWithChildren extends ServiceLineDto {
 
 export const catalogRoutes: FastifyPluginAsync = async (app) => {
   // List active service lines (screen 04: service catalog).
+  // Laundry is listed only once the go decision on the Compliance checklist is GO.
   app.get('/service-lines', async (_req, reply) => {
+    const laundry = await laundryLineAvailable();
     const rows = await prisma.serviceLine.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...(laundry ? {} : { code: { not: LAUNDRY_LINE_CODE } }) },
       orderBy: { sortOrder: 'asc' },
     });
     return reply.send({ serviceLines: rows.map(toServiceLineDto) });
@@ -36,6 +40,9 @@ export const catalogRoutes: FastifyPluginAsync = async (app) => {
       },
     });
     if (!line || !line.isActive) return reply.code(404).send({ error: 'service line not found' });
+    if (line.code === LAUNDRY_LINE_CODE && !(await laundryLineAvailable())) {
+      return reply.code(404).send({ error: 'service line not found' });
+    }
 
     const dto: ServiceLineWithChildren = {
       ...toServiceLineDto(line),

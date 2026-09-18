@@ -41,6 +41,7 @@ const CreateJobSchema = z.object({
   serviceLineCode: z.string().trim().max(60).optional(),
   region: z.string().trim().max(120).optional(),
   clientSegment: z.enum(SEGMENTS).optional(),
+  laundryKg: z.number().nonnegative().max(100_000).optional(),
 }) satisfies z.ZodType<CreateJobInput>;
 
 const UpdateJobSchema = z.object({
@@ -54,6 +55,7 @@ const UpdateJobSchema = z.object({
   serviceLineCode: z.string().trim().max(60).nullable().optional(),
   region: z.string().trim().max(120).nullable().optional(),
   clientSegment: z.enum(SEGMENTS).nullable().optional(),
+  laundryKg: z.number().nonnegative().max(100_000).nullable().optional(),
 }) satisfies z.ZodType<UpdateJobInput>;
 
 const CreateExpenseSchema = z.object({
@@ -218,6 +220,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         serviceLineCode: parsed.data.serviceLineCode,
         region: parsed.data.region,
         clientSegment: parsed.data.clientSegment as ClientSegment | undefined,
+        laundryKg: parsed.data.laundryKg,
         createdById: req.auth!.sub,
       },
       include: { expenses: true, reportedBy: { select: { fullName: true } } },
@@ -247,6 +250,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.clientSegment !== undefined && {
           clientSegment: parsed.data.clientSegment as ClientSegment | null,
         }),
+        ...(parsed.data.laundryKg !== undefined && { laundryKg: parsed.data.laundryKg }),
       },
       include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
     });
@@ -588,6 +592,7 @@ type JobRow = {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  laundryKg: number | null;
   createdAt: Date;
   expenses: ExpenseRow[];
   reportedBy: { fullName: string } | null;
@@ -624,6 +629,7 @@ function toJobDto(row: JobRow): JobDto {
     serviceLineCode: row.serviceLineCode,
     region: row.region,
     clientSegment: row.clientSegment,
+    laundryKg: row.laundryKg,
     expenses,
     totalExpensesCents,
     netCents: actualIncomeCents - totalExpensesCents,

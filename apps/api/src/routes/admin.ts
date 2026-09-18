@@ -57,7 +57,7 @@ const RespondSchema = z.object({
 const CreateStaffSchema = z.object({
   phone: z.string().trim().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +254712480392)'),
   fullName: z.string().trim().min(1).max(120),
-  role: z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER']),
+  role: z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER', 'COO']),
 }) satisfies z.ZodType<CreateStaffInput>;
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
@@ -268,6 +268,7 @@ const STAFF_ROLES = new Set<UserRole>([
   UserRole.MARKETING,
   UserRole.CLEANING_SUPERVISOR,
   UserRole.SHAREHOLDER,
+  UserRole.COO,
 ]);
 
 async function requireAdminRole(req: FastifyRequest, reply: FastifyReply): Promise<void> {

@@ -10,6 +10,7 @@ import type {
   JobDto,
   MonthlyTrendItem,
 } from '@onyxhawk/types';
+import { LAUNDRY_LINE_CODE } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
@@ -82,10 +83,28 @@ export default function FinancialsPage() {
   const [jobForm, setJobForm] = useState({
     title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '',
     clientLocation: '', notes: '', serviceLineCode: '', region: '', clientSegment: '' as '' | ClientSegment,
+    laundryKg: '',
   });
+  // Once the owner types an income by hand it stops following kg × price.
+  const [incomeOverridden, setIncomeOverridden] = useState(false);
   // Service lines come from the catalog rather than a hardcoded list, so the
-  // options cannot drift from what the business actually sells.
-  const [serviceLines, setServiceLines] = useState<{ code: string; name: string }[]>([]);
+  // options cannot drift from what the business actually sells. Laundry only
+  // appears once its go decision is GO; its "from" price is the per-kg rate.
+  const [serviceLines, setServiceLines] = useState<{ code: string; name: string; fromPriceCents: number | null }[]>([]);
+  const laundryPriceCents = serviceLines.find((l) => l.code === LAUNDRY_LINE_CODE)?.fromPriceCents ?? null;
+  const isLaundryJob = jobForm.serviceLineCode === LAUNDRY_LINE_CODE;
+
+  /** kg × price per kg, unless the income has been overridden by hand. */
+  const setLaundryKg = (kg: string, overridden = incomeOverridden) => {
+    setJobForm((f) => {
+      const next = { ...f, laundryKg: kg };
+      const n = parseFloat(kg);
+      if (!overridden && laundryPriceCents !== null && Number.isFinite(n)) {
+        next.incomeKes = String(Math.round(n * laundryPriceCents) / 100);
+      }
+      return next;
+    });
+  };
   const [savingJob, setSavingJob] = useState(false);
 
   // Per-job expansion + expense form
@@ -164,6 +183,7 @@ export default function FinancialsPage() {
         region: jobForm.region.trim() || undefined,
         clientSegment: jobForm.clientSegment || undefined,
         notes: jobForm.notes.trim() || undefined,
+        laundryKg: isLaundryJob && jobForm.laundryKg !== '' ? parseFloat(jobForm.laundryKg) : undefined,
       });
       setJobs((prev) => [res.job, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
       setSummary((prev) => prev ? {
@@ -172,8 +192,9 @@ export default function FinancialsPage() {
         netCents: prev.netCents + res.job.actualIncomeCents,
       } : prev);
       setJobForm((f) => ({
-        ...f, title: '', incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '',
+        ...f, title: '', incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '', laundryKg: '',
       }));
+      setIncomeOverridden(false);
       setShowJobForm(false);
       setExpandedJobId(res.job.id);
       setExpenseForm(blankExpenseForm());
@@ -441,8 +462,15 @@ export default function FinancialsPage() {
                   placeholder="e.g. 5000"
                   className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
                   value={jobForm.incomeKes}
-                  onChange={(e) => setJobForm((f) => ({ ...f, incomeKes: e.target.value }))}
+                  onChange={(e) => { setIncomeOverridden(true); setJobForm((f) => ({ ...f, incomeKes: e.target.value })); }}
                 />
+                {isLaundryJob && laundryPriceCents !== null && (
+                  <p className="mt-1 text-xs text-text-muted">
+                    {incomeOverridden
+                      ? <>Overridden · <button type="button" className="underline" onClick={() => { setIncomeOverridden(false); setLaundryKg(jobForm.laundryKg, false); }}>use kg × KSh {laundryPriceCents / 100}</button></>
+                      : `kg × KSh ${laundryPriceCents / 100}/kg — edit to override`}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs text-text-muted mb-1">Discount given (KSh)</label>
@@ -500,6 +528,21 @@ export default function FinancialsPage() {
                   ))}
                 </select>
               </div>
+              {isLaundryJob && (
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">Weight (kg)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    placeholder="e.g. 12.5"
+                    aria-label="Laundry kg"
+                    className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                    value={jobForm.laundryKg}
+                    onChange={(e) => setLaundryKg(e.target.value)}
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-text-muted mb-1">Client segment</label>
                 <select
@@ -865,7 +908,7 @@ function JobList({
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     {job.serviceLineCode && (
                       <span className="rounded-full bg-bg-muted px-2 py-0.5 text-xs text-text-muted">
-                        {job.serviceLineCode.replace(/_/g, ' ')}
+                        {job.serviceLineCode.replace(/_/g, ' ')}{job.laundryKg !== null ? ` · ${job.laundryKg} kg` : ''}
                       </span>
                     )}
                     {job.clientSegment && (

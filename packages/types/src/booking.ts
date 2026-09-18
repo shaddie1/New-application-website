@@ -11,7 +11,8 @@ export type ServiceLineCode =
   | 'mattress'
   | 'curtain'
   | 'ac_duct'
-  | 'mould';
+  | 'mould'
+  | 'laundry';
 
 export type CleanTypeCode = 'standard' | 'deep' | 'move_out' | 'recurring';
 

@@ -48,6 +48,12 @@ import type {
   CreateCompanyDocumentInput,
   DocumentsResult,
   DocumentUploadUrlResult,
+  LaundryBreakEvenDto,
+  UpdateLaundrySettingsInput,
+  ReadinessDto,
+  UpdateReadinessInput,
+  ReserveLedgerDto,
+  CreateReserveEntryInput,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -132,7 +138,7 @@ export const api = {
 
   /** Public service catalog — used to classify a job by its real service line. */
   serviceLines: () =>
-    request<{ serviceLines: { id: string; code: string; name: string }[] }>('/catalog/service-lines', {
+    request<{ serviceLines: { id: string; code: string; name: string; fromPriceCents: number | null }[] }>('/catalog/service-lines', {
       method: 'GET',
     }),
 
@@ -495,6 +501,33 @@ export const api = {
       `/admin/job-reports/${encodeURIComponent(reportId)}/expenses/${encodeURIComponent(expenseId)}`,
       { method: 'DELETE', auth: true },
     ),
+
+  // ── Laundry line and compliant-pay readiness ─────────────────────────────
+  laundry: () => request<{ laundry: LaundryBreakEvenDto }>('/admin/laundry', { method: 'GET', auth: true }),
+
+  updateLaundrySettings: (input: UpdateLaundrySettingsInput) =>
+    request<{ laundry: LaundryBreakEvenDto }>('/admin/laundry/settings', {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  readiness: () => request<{ readiness: ReadinessDto }>('/admin/readiness', { method: 'GET', auth: true }),
+
+  updateReadiness: (input: UpdateReadinessInput) =>
+    request<{ readiness: ReadinessDto }>('/admin/readiness', {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  reserveLedger: () => request<{ ledger: ReserveLedgerDto }>('/admin/readiness/reserve', { method: 'GET', auth: true }),
+
+  addReserveEntry: (input: CreateReserveEntryInput) =>
+    request<{ ledger: ReserveLedgerDto }>('/admin/readiness/reserve', {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  deleteReserveEntry: (id: string) =>
+    request<{ ledger: ReserveLedgerDto }>(`/admin/readiness/reserve/${encodeURIComponent(id)}`, {
+      method: 'DELETE', auth: true,
+    }),
 
   // ── Dev OTP viewer (owner only, returns [] in production) ────────────────
   recentOtps: () =>

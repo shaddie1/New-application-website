@@ -13,6 +13,7 @@ import type {
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { DonutChart, StatTile, TargetMeter, TrendChart, money, moneyShort } from '../../../src/components/charts';
+import { LaundryBreakEvenCard, ReadinessCard } from '../../../src/components/readiness';
 
 const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -62,6 +63,8 @@ export default function InsightsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [showTargets, setShowTargets] = useState(false);
+  // Bumped when the pay phase changes so the break-even card re-reads its figure.
+  const [readinessVersion, setReadinessVersion] = useState(0);
   const [saving, setSaving] = useState(false);
   const [targetForm, setTargetForm] = useState({ revenueKes: '', profitKes: '', jobs: '' });
 
@@ -79,14 +82,14 @@ export default function InsightsPage() {
     try {
       const [ov, tr, br, eq, sm] = await Promise.all([
         api.overview(year, month),
-        api.financialTrends(12),
+        api.financialTrends(12).catch(() => null), // owner-only; the COO still gets the readiness cards
         api.revenueBreakdown(from, to),
         api.equity(from, to).catch(() => null), // equity is cap-table-holders only
         api.financialSummary(from, to).catch(() => null), // expense split by category
       ]);
       setOverview(ov.overview);
       setSummary(sm?.summary ?? null);
-      setTrends(tr.trends);
+      setTrends(tr?.trends ?? []);
       setBreakdown(br.breakdown);
       setEquity(eq?.overview ?? null);
       setTargetForm({
@@ -212,6 +215,12 @@ export default function InsightsPage() {
             <StatTile label="Jobs vs last month" value={String(overview?.jobs.actual ?? 0)}
               delta={pctChange(overview?.jobs.actual ?? 0, overview?.previousJobCount ?? 0)}
               deltaLabel={`vs ${overview?.previousJobCount ?? 0} last month`} />
+          </div>
+
+          {/* Compliant-pay readiness and the laundry line — the two Summary-sheet decisions. */}
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            <ReadinessCard onChanged={() => setReadinessVersion((v) => v + 1)} />
+            <LaundryBreakEvenCard refreshKey={readinessVersion} />
           </div>
 
           {/* Trend */}

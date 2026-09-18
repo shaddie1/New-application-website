@@ -20,6 +20,8 @@ const CreateReportSchema = z.object({
   clientPhone: z.string().trim().max(30).optional(),
   clientLocation: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(1000).optional(),
+  serviceLineCode: z.string().trim().max(60).optional(),
+  laundryKg: z.number().nonnegative().max(100_000).optional(),
 }) satisfies z.ZodType<CreateJobReportInput>;
 
 const CreateExpenseSchema = z.object({
@@ -61,6 +63,8 @@ export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
         clientPhone: parsed.data.clientPhone,
         clientLocation: parsed.data.clientLocation,
         notes: parsed.data.notes,
+        serviceLineCode: parsed.data.serviceLineCode,
+        laundryKg: parsed.data.laundryKg,
         createdById: req.auth!.sub,
         reportedById: req.auth!.sub,
       },
@@ -134,6 +138,7 @@ type JobRow = {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  laundryKg: number | null;
   createdAt: Date;
   expenses: ExpenseRow[];
   reportedBy: { fullName: string } | null;
@@ -169,6 +174,7 @@ function toJobDto(row: JobRow): JobDto {
     serviceLineCode: row.serviceLineCode,
     region: row.region,
     clientSegment: row.clientSegment,
+    laundryKg: row.laundryKg,
     notes: row.notes,
     expenses,
     totalExpensesCents,
