@@ -34,6 +34,7 @@ enum UserRole {
   CLEANING_SUPERVISOR
   SHAREHOLDER
   COO
+  BUSINESS_DEVELOPMENT_LEAD
 }
 
 enum LoyaltyTier {
