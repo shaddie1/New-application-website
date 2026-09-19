@@ -31,7 +31,12 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
+  // Inline email fix for members provisioned before codes went by email.
+  const [fixingId, setFixingId] = useState<string | null>(null);
+  const [fixEmail, setFixEmail] = useState('');
+  const [fixBusy, setFixBusy] = useState(false);
   const [role, setRole] = useState<StaffRole>('ADMIN');
   const [busy, setBusy] = useState(false);
 
@@ -59,15 +64,20 @@ export default function TeamPage() {
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    if (!phone || !fullName.trim()) {
-      setError('Enter a name and phone number.');
+    if (!phone || !fullName.trim() || !email.trim()) {
+      setError('Enter a name, phone number and email address.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Enter a valid email address — sign-in codes are sent there.');
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      await api.addStaff({ phone: e164(phone), fullName: fullName.trim(), role });
+      await api.addStaff({ phone: e164(phone), fullName: fullName.trim(), email: email.trim().toLowerCase(), role });
       setPhone('');
+      setEmail('');
       setFullName('');
       setRole('ADMIN');
       await load();
@@ -75,6 +85,25 @@ export default function TeamPage() {
       setError(msg(err, 'Could not add the team member.'));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveEmail(member: AdminStaffDto) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fixEmail.trim())) {
+      setError('Enter a valid email address.');
+      return;
+    }
+    setFixBusy(true);
+    setError(null);
+    try {
+      const r = await api.updateStaff(member.id, { email: fixEmail.trim().toLowerCase() });
+      setStaff((prev) => prev?.map((m) => (m.id === member.id ? r.staff : m)) ?? null);
+      setFixingId(null);
+      setFixEmail('');
+    } catch (err) {
+      setError(msg(err, 'Could not save the email.'));
+    } finally {
+      setFixBusy(false);
     }
   }
 
@@ -103,7 +132,7 @@ export default function TeamPage() {
       {/* Add member */}
       <form onSubmit={add} className="rounded-xl border border-border bg-surface p-5">
         <p className="font-medium text-text">Add a team member</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <input
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
@@ -120,6 +149,14 @@ export default function TeamPage() {
               className="flex-1 bg-transparent text-text outline-none"
             />
           </div>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email (sign-in codes go here)"
+            type="email"
+            aria-label="Email"
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-text outline-none focus:border-gold"
+          />
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as StaffRole)}
@@ -141,7 +178,7 @@ export default function TeamPage() {
           </button>
         </div>
         <p className="text-text-muted text-xs mt-3">
-          They sign in at this portal with their phone number. If the number already has an account, it’s promoted.
+          They sign in at this portal with their phone number and a code emailed to this address. If the number already has an account, it’s promoted.
         </p>
       </form>
 
@@ -152,6 +189,7 @@ export default function TeamPage() {
             <tr>
               <th className="px-5 py-3 text-left font-medium">Name</th>
               <th className="px-5 py-3 text-left font-medium">Phone</th>
+              <th className="px-5 py-3 text-left font-medium">Email</th>
               <th className="px-5 py-3 text-left font-medium">Role</th>
               <th className="px-5 py-3" />
             </tr>
@@ -161,6 +199,38 @@ export default function TeamPage() {
               <tr key={m.id}>
                 <td className="px-5 py-3 text-text">{m.fullName}</td>
                 <td className="px-5 py-3 text-text-muted">{m.phone}</td>
+                <td className="px-5 py-3">
+                  {fixingId === m.id ? (
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); void saveEmail(m); }}
+                      className="flex items-center gap-2"
+                    >
+                      <input
+                        autoFocus
+                        type="email"
+                        value={fixEmail}
+                        onChange={(e) => setFixEmail(e.target.value)}
+                        placeholder="name@example.com"
+                        aria-label={`Email for ${m.fullName}`}
+                        className="w-56 rounded-lg border border-border bg-surface px-2 py-1 text-sm text-text outline-none focus:border-gold"
+                      />
+                      <button type="submit" disabled={fixBusy} className="rounded-lg bg-gold px-3 py-1 text-xs font-semibold text-surface-dark disabled:opacity-50">
+                        {fixBusy ? 'Saving…' : 'Save'}
+                      </button>
+                      <button type="button" onClick={() => { setFixingId(null); setFixEmail(''); }} className="text-xs text-text-muted underline">Cancel</button>
+                    </form>
+                  ) : m.email ? (
+                    <span className="text-text-muted">
+                      {m.email}
+                      <button onClick={() => { setFixingId(m.id); setFixEmail(m.email ?? ''); }} className="ml-2 text-xs text-text-muted underline">Change</button>
+                    </span>
+                  ) : (
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">Missing email — cannot sign in</span>
+                      <button onClick={() => { setFixingId(m.id); setFixEmail(''); }} className="text-xs text-gold-deep underline">Add email</button>
+                    </span>
+                  )}
+                </td>
                 <td className="px-5 py-3">
                   {m.isOwner ? (
                     <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs text-gold-deep">Owner</span>
@@ -181,7 +251,7 @@ export default function TeamPage() {
             ))}
             {staff && staff.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-5 py-6 text-center text-text-muted">
+                <td colSpan={5} className="px-5 py-6 text-center text-text-muted">
                   No team members yet.
                 </td>
               </tr>

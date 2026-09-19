@@ -1,9 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import type { PasswordSignInInput, RegisterInput, RequestOtpInput, VerifyOtpInput } from '@onyxhawk/types';
+import type { AdminRequestOtpResult, PasswordSignInInput, RegisterInput, RequestOtpInput, VerifyOtpInput } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
-import { issueSignInOtp, verifySignInOtp, OtpError } from '../auth/otp.js';
+import { issueSignInOtp, verifySignInOtp, issueAdminSignInOtp, verifyAdminSignInOtp, OtpError } from '../auth/otp.js';
+import { STAFF_ROLES } from '../auth/staff.js';
 import { signRegistrationToken, verifyRegistrationToken } from '../auth/jwt.js';
 import { verifyPassword } from '../auth/password.js';
 import { lockoutSecondsRemaining, recordFailure, clearFailures } from '../auth/throttle.js';
@@ -39,6 +40,20 @@ const RegisterSchema = z.object({
     .optional(),
   referralCode: z.string().trim().toUpperCase().optional(),
 }) satisfies z.ZodType<RegisterInput>;
+
+const EMAIL_MISSING_MESSAGE = 'This account has no email on file. Ask the owner to add one on the Team page.';
+
+/**
+ * Why a phone cannot sign in as staff, or null when it can. Unknown numbers
+ * and customers get the same answer the old flow gave: not a staff account.
+ */
+function staffGate(user: { role: string; isOwner: boolean; deletedAt: Date | null; email: string | null } | null) {
+  if (!user || user.deletedAt || !(user.isOwner || STAFF_ROLES.has(user.role as never))) {
+    return { status: 404, error: 'No staff account found for this number.', code: 'NOT_STAFF' as const };
+  }
+  if (!user.email) return { status: 403, error: EMAIL_MISSING_MESSAGE, code: 'EMAIL_MISSING' as const };
+  return null;
+}
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
   // ── Step 1: request OTP ────────────────────────────────────────────────
@@ -98,6 +113,61 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  // ── Staff sign-in by emailed code ──────────────────────────────────────
+  // The phone is still the lookup key; the code goes to the account's email.
+  // Customers keep the SMS endpoints above — this path is staff only, and a
+  // staff account without an email on file cannot sign in until the owner
+  // adds one on the Team page.
+
+  app.post('/admin/request-otp', async (req, reply) => {
+    const parsed = RequestOtpSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const user = await prisma.user.findUnique({ where: { phone: parsed.data.phone } });
+    const gate = staffGate(user);
+    if (gate) return reply.code(gate.status).send({ error: gate.error, code: gate.code });
+
+    try {
+      const { maskedEmail, devOtp } = await issueAdminSignInOtp({ phone: user!.phone, email: user!.email! }, req.log);
+      const body: AdminRequestOtpResult = { ok: true, maskedEmail };
+      if (devOtp) body.devOtp = devOtp;
+      return reply.send(body);
+    } catch (err) {
+      if (err instanceof OtpError) return reply.code(429).send({ error: err.message, code: err.code });
+      throw err;
+    }
+  });
+
+  app.post('/admin/verify-otp', async (req, reply) => {
+    const parsed = VerifyOtpSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    let ok: boolean;
+    try {
+      ok = await verifyAdminSignInOtp(parsed.data.phone, parsed.data.code);
+    } catch (err) {
+      if (err instanceof OtpError) return reply.code(429).send({ error: err.message, code: err.code });
+      throw err;
+    }
+    if (!ok) return reply.code(401).send({ error: 'invalid or expired code' });
+
+    const user = await prisma.user.findUnique({ where: { phone: parsed.data.phone } });
+    const gate = staffGate(user);
+    if (gate) return reply.code(gate.status).send({ error: gate.error, code: gate.code });
+
+    const tokens = await issueSession({ id: user!.id, role: user!.role }, { device: req.headers['user-agent'] ?? undefined });
+    return reply.send({
+      kind: 'AUTHENTICATED',
+      session: {
+        user: toPublicUser(user!),
+        accessToken: tokens.accessToken,
+        accessExpiresAt: tokens.accessExpiresAt.toISOString(),
+        refreshToken: tokens.refreshToken,
+        refreshExpiresAt: tokens.refreshExpiresAt.toISOString(),
+      },
+    });
+  });
+
   // ── Password sign-in (staff; no SMS involved) ───────────────────────────
   // Only accounts that have deliberately been given a password can use this;
   // customers remain OTP-only. Set one with scripts/set-password.ts.
@@ -125,6 +195,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
     if (!user || user.deletedAt || !user.passwordHash) return reject();
     if (!(await verifyPassword(password, user.passwordHash))) return reject();
+    // Same rule as the emailed code: no email on file, no staff sign-in.
+    if (!user.email && (user.isOwner || STAFF_ROLES.has(user.role))) {
+      return reply.code(403).send({ error: EMAIL_MISSING_MESSAGE, code: 'EMAIL_MISSING' });
+    }
 
     clearFailures(phone);
     const tokens = await issueSession(

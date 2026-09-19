@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,18 +41,20 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      const res = await api.requestOtp(e164(phone));
+      // Staff codes are emailed; the phone is only the lookup key.
+      const res = await api.adminRequestOtp(e164(phone));
       const otp = res.devOtp ?? null;
       setDevOtp(otp);
+      setMaskedEmail(res.maskedEmail);
       if (otp) setCode(otp); // auto-fill in dev
       setStep('code');
     } catch (err) {
       const msg = messageFrom(err, 'Could not send the code.');
       setError(msg);
-      // The server stores the code before attempting the SMS, so when only
-      // delivery failed a valid code still exists — show the entry box so a
+      // The server stores the code before attempting delivery, so when only
+      // the email failed a valid code still exists — show the entry box so a
       // code issued another way (scripts/issue-otp.ts) can be used.
-      if (msg.startsWith('SMS')) setStep('code');
+      if (msg.startsWith('Email')) setStep('code');
     } finally {
       setBusy(false);
     }
@@ -93,11 +96,7 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      const res = await api.verifyOtp(e164(phone), code);
-      if (res.kind !== 'AUTHENTICATED') {
-        setError('No account found for this number. Admins must be provisioned first.');
-        return;
-      }
+      const res = await api.adminVerifyOtp(e164(phone), code);
       const role = res.session.user.role;
       if (!STAFF_ROLES.includes(role)) {
         setError('This number is not a staff account.');
@@ -121,7 +120,7 @@ export default function LoginPage() {
         <h1 className="text-4xl mt-2" style={{ fontFamily: 'Georgia, serif' }}>
           Back-office<span className="text-gold-deep italic">.</span>
         </h1>
-        <p className="text-text-muted text-sm mt-2">Sign in with your admin phone number.</p>
+        <p className="text-text-muted text-sm mt-2">Sign in with your staff phone number — the code goes to your email.</p>
 
         {error && (
           <div className="mt-5 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>
@@ -146,7 +145,7 @@ export default function LoginPage() {
               disabled={busy || !phone}
               className="mt-4 w-full rounded-lg bg-gold py-3 font-semibold text-surface-dark disabled:opacity-50"
             >
-              {busy ? 'Sending…' : 'Send code'}
+              {busy ? 'Sending…' : 'Email me a code'}
             </button>
             <button
               onClick={() => { setStep('password'); setError(null); }}
@@ -201,11 +200,16 @@ export default function LoginPage() {
               onClick={() => { setStep('phone'); setPassword(''); setError(null); }}
               className="mt-3 w-full text-text-muted text-sm underline"
             >
-              Use an SMS code instead
+              Use an emailed code instead
             </button>
           </div>
         ) : (
           <div className="mt-6">
+            {maskedEmail && (
+              <p className="mb-4 rounded-lg bg-gold-soft/20 px-4 py-3 text-sm text-text" role="status">
+                Code sent to your email — check <span className="font-medium">{maskedEmail}</span>.
+              </p>
+            )}
             <label className="text-text-muted text-xs uppercase tracking-widest">Verification code</label>
             <input
               value={code}
@@ -237,7 +241,7 @@ export default function LoginPage() {
             >
               {busy ? 'Verifying…' : 'Sign in'}
             </button>
-            <button onClick={() => { setStep('phone'); setCode(''); }} className="mt-3 w-full text-text-muted text-sm underline">
+            <button onClick={() => { setStep('phone'); setCode(''); setMaskedEmail(null); }} className="mt-3 w-full text-text-muted text-sm underline">
               Use a different number
             </button>
           </div>

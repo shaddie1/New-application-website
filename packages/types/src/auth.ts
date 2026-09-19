@@ -34,6 +34,15 @@ export interface Session extends AuthTokens {
   user: PublicUser;
 }
 
+/** POST /auth/admin/request-otp — staff sign-in code, delivered by email. */
+export interface AdminRequestOtpResult {
+  ok: true;
+  /** Where the code went, masked: "o***e@onyxhawk.co.ke". */
+  maskedEmail: string;
+  // In dev, the code is surfaced so the login page can auto-fill. Never set in prod.
+  devOtp?: string;
+}
+
 /** POST /auth/request-otp */
 export interface RequestOtpInput {
   phone: string; // E.164

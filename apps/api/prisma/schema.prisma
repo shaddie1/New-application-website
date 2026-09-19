@@ -109,9 +109,12 @@ model OtpCode {
   user      User?     @relation(fields: [userId], references: [id])
   userId    String?
   phone     String    // phone the OTP was sent to (may not yet be linked to a user)
+  // Staff sign-in codes go out by email (purpose ADMIN_SIGN_IN); the address
+  // is kept so the dev panel can show where the code went.
+  email     String?
   codeHash  String    // never store the OTP in plaintext
   codePlain String?   // plaintext only in non-production for admin dev panel; null in prod
-  purpose   String    // "SIGN_IN" | "PHONE_VERIFY" | "PASSWORD_RESET"
+  purpose   String    // "SIGN_IN" | "ADMIN_SIGN_IN" | "PHONE_VERIFY" | "PASSWORD_RESET"
   expiresAt DateTime
   consumedAt DateTime?
   attempts  Int       @default(0)

@@ -42,7 +42,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 // signed-in user is actually allowed it — otherwise the request 403s.
 const FINANCE_ROLES = ['ADMIN', 'FINANCIAL_MANAGER', 'SHAREHOLDER'];
 
-type OtpRow = { phone: string; codePlain: string; createdAt: string; expiresAt: string };
+type OtpRow = { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string };
 
 export default function DashboardPage() {
   const { session } = useAuth();
@@ -149,7 +149,7 @@ function LiveOtpPanel() {
 
       {!loading && codes.length === 0 && (
         <p className="text-text-muted text-sm italic">
-          No active codes right now — request an OTP from the mobile app to see it here.
+          No active codes right now — request a code from the login page or the mobile app to see it here.
         </p>
       )}
 
@@ -177,7 +177,8 @@ function OtpRowCard({ row }: { row: OtpRow }) {
   return (
     <div className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3">
       <div className="flex-1 min-w-0">
-        <p className="text-text-muted text-xs truncate">{row.phone}</p>
+        {/* Staff codes go by email, customer codes by SMS — show where each one went. */}
+        <p className="text-text-muted text-xs truncate">{row.email ?? row.phone}{row.email ? ' · email' : ' · SMS'}</p>
         <p className="font-mono text-2xl tracking-[0.35em] text-gold-deep mt-0.5">{row.codePlain}</p>
       </div>
       <div className="text-right shrink-0">

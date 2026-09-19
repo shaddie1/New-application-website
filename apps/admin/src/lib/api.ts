@@ -10,6 +10,8 @@ import type {
   RespondQuoteInput,
   AdminStaffDto,
   CreateStaffInput,
+  UpdateStaffInput,
+  AdminRequestOtpResult,
   ExpenseDto,
   CreateExpenseInput,
   FinancialSummary,
@@ -115,6 +117,16 @@ async function tryRefresh(refreshToken: string): Promise<Session | null> {
 }
 
 export const api = {
+  /** Staff sign-in: the code goes to the account's email; phone is the lookup key. */
+  adminRequestOtp: (phone: string) =>
+    request<AdminRequestOtpResult>('/auth/admin/request-otp', { method: 'POST', body: JSON.stringify({ phone }) }),
+
+  adminVerifyOtp: (phone: string, code: string) =>
+    request<{ kind: 'AUTHENTICATED'; session: Session }>('/auth/admin/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
+    }),
+
   requestOtp: (phone: string) =>
     request<RequestOtpResult>('/auth/request-otp', { method: 'POST', body: JSON.stringify({ phone }) }),
 
@@ -178,6 +190,9 @@ export const api = {
 
   addStaff: (input: CreateStaffInput) =>
     request<{ staff: AdminStaffDto }>('/admin/staff', { method: 'POST', auth: true, body: JSON.stringify(input) }),
+
+  updateStaff: (id: string, input: UpdateStaffInput) =>
+    request<{ staff: AdminStaffDto }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'PATCH', auth: true, body: JSON.stringify(input) }),
 
   removeStaff: (id: string) =>
     request<{ ok: true }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
@@ -498,7 +513,7 @@ export const api = {
 
   // ── Dev OTP viewer (owner only, returns [] in production) ────────────────
   recentOtps: () =>
-    request<{ codes: { phone: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
+    request<{ codes: { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
       '/admin/otps/recent',
       { method: 'GET', auth: true },
     ),

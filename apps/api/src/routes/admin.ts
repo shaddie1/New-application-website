@@ -22,11 +22,13 @@ import type {
   AssignCrewInput,
   AdminStaffDto,
   CreateStaffInput,
+  UpdateStaffInput,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
+import { STAFF_ROLES } from '../auth/staff.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
 
 const BookingsQuerySchema = z.object({
@@ -57,8 +59,13 @@ const RespondSchema = z.object({
 const CreateStaffSchema = z.object({
   phone: z.string().trim().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +254712480392)'),
   fullName: z.string().trim().min(1).max(120),
+  email: z.string().trim().toLowerCase().email().max(200),
   role: z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER']),
 }) satisfies z.ZodType<CreateStaffInput>;
+
+const UpdateStaffSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(200),
+}) satisfies z.ZodType<UpdateStaffInput>;
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
@@ -209,15 +216,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.post('/staff', { preHandler: requireOwner }, async (req, reply) => {
     const parsed = CreateStaffSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const { phone, fullName, role } = parsed.data;
+    const { phone, fullName, role, email } = parsed.data;
 
     const existing = await prisma.user.findUnique({ where: { phone }, select: { id: true } });
+    const emailOwner = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (emailOwner && emailOwner.id !== existing?.id) {
+      return reply.code(409).send({ error: 'That email is already on another account.' });
+    }
     const user = existing
-      ? await prisma.user.update({ where: { phone }, data: { role: role as UserRole, fullName }, select: staffSelect })
+      ? await prisma.user.update({ where: { phone }, data: { role: role as UserRole, fullName, email }, select: staffSelect })
       : await prisma.user.create({
           data: {
             phone,
             fullName,
+            email,
             role: role as UserRole,
             phoneVerified: true,
             referralCode: await generateUniqueReferralCode(),
@@ -225,6 +237,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           select: staffSelect,
         });
     return reply.code(existing ? 200 : 201).send({ staff: toStaffDto(user) });
+  });
+
+  // Set (or correct) a member's email — the backfill path for accounts
+  // provisioned before sign-in codes went by email.
+  app.patch<{ Params: { id: string } }>('/staff/:id', { preHandler: requireOwner }, async (req, reply) => {
+    const parsed = UpdateStaffSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true, isOwner: true, deletedAt: true } });
+    if (!target || target.deletedAt || !(target.isOwner || STAFF_ROLES.has(target.role))) {
+      return reply.code(404).send({ error: 'staff member not found' });
+    }
+    const emailOwner = await prisma.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } });
+    if (emailOwner && emailOwner.id !== target.id) {
+      return reply.code(409).send({ error: 'That email is already on another account.' });
+    }
+    const user = await prisma.user.update({ where: { id: target.id }, data: { email: parsed.data.email }, select: staffSelect });
+    return reply.send({ staff: toStaffDto(user) });
   });
 
   // Revoke a staff member (demote back to customer). Can't remove the owner or yourself.
@@ -248,7 +278,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
         orderBy: { createdAt: 'desc' },
         take: 20,
-        select: { phone: true, codePlain: true, createdAt: true, expiresAt: true },
+        select: { phone: true, email: true, purpose: true, codePlain: true, createdAt: true, expiresAt: true },
       });
       return reply.send({ codes });
     } catch {
@@ -260,15 +290,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-// Typed as the full UserRole so `.has()` accepts any role, not just staff ones.
-const STAFF_ROLES = new Set<UserRole>([
-  UserRole.ADMIN,
-  UserRole.SUPPORT,
-  UserRole.FINANCIAL_MANAGER,
-  UserRole.MARKETING,
-  UserRole.CLEANING_SUPERVISOR,
-  UserRole.SHAREHOLDER,
-]);
 
 async function requireAdminRole(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
@@ -288,6 +309,7 @@ const staffSelect = {
   id: true,
   fullName: true,
   phone: true,
+  email: true,
   role: true,
   isOwner: true,
   createdAt: true,
@@ -298,6 +320,7 @@ function toStaffDto(u: Prisma.UserGetPayload<{ select: typeof staffSelect }>): A
     id: u.id,
     fullName: u.fullName,
     phone: u.phone,
+    email: u.email,
     role: u.role as AdminStaffDto['role'],
     isOwner: u.isOwner,
     createdAt: u.createdAt.toISOString(),
