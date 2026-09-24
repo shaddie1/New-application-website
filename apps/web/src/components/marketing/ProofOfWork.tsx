@@ -16,7 +16,14 @@ export function ProofOfWork() {
         align="center"
       />
 
-      <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <figure>
+          <Photo slot={SITE_PHOTOS.crewOnJob} className="aspect-[3/4]" />
+          <figcaption className="mt-3 text-sm text-charcoal-muted">
+            On site in Nairobi — fumigation equipment set up and ready to go.
+          </figcaption>
+        </figure>
+
         <figure>
           <Photo slot={SITE_PHOTOS.upholstery} className="aspect-[3/4]" />
           <figcaption className="mt-3 text-sm text-charcoal-muted">
@@ -31,7 +38,7 @@ export function ProofOfWork() {
           </figcaption>
         </figure>
 
-        <figure className="sm:col-span-2 lg:col-span-1">
+        <figure>
           <Photo slot={SITE_PHOTOS.proofResult} className="aspect-[3/4]" />
           <figcaption className="mt-3 text-sm text-charcoal-muted">
             The finished armchair, back in place and ready to use.

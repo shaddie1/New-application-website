@@ -36,18 +36,23 @@ export const WHATSAPP_LINK = `https://wa.me/${COMPANY.whatsAppNumber}?text=${enc
 export type PhotoSlot = { src: string | null; alt: string; placeholder: string };
 
 export const SITE_PHOTOS: Record<
-  'hero' | 'aboutTeam' | 'upholstery' | 'proofResult' | 'detail',
+  'hero' | 'aboutTeam' | 'upholstery' | 'proofResult' | 'detail' | 'crewOnJob',
   PhotoSlot
 > = {
   hero: {
-    src: '/photos/crew-floor-machine.jpg',
-    alt: 'An OnyxHawk crew member in branded uniform cleaning on site in Nairobi',
-    placeholder: 'Photo of a uniformed crew on site goes here.',
+    src: '/photos/team-uniforms-hero-crop.jpg',
+    alt: 'The OnyxHawk crew in branded uniform at the office',
+    placeholder: 'Photo of the full crew in uniform goes here.',
   },
   aboutTeam: {
     src: '/photos/crew-on-site.jpg',
     alt: 'An OnyxHawk crew member deep-cleaning armchairs in a Nairobi office',
     placeholder: 'A photo of the crew on site in Nairobi goes here.',
+  },
+  crewOnJob: {
+    src: '/photos/crew-floor-machine.jpg',
+    alt: 'An OnyxHawk crew member in branded uniform cleaning on site in Nairobi',
+    placeholder: 'Photo of a uniformed crew on site goes here.',
   },
   upholstery: {
     src: '/photos/upholstery-clean.jpg',
@@ -65,6 +70,17 @@ export const SITE_PHOTOS: Record<
     placeholder: 'Detail of the work.',
   },
 };
+
+/**
+ * The hero photo cycles through these, cross-fading, with the caption changing
+ * alongside it. Order matters: the first one loads eagerly as the LCP image.
+ */
+export const HERO_SLIDES: { slot: keyof typeof SITE_PHOTOS; caption: string }[] = [
+  { slot: 'hero', caption: 'Our crew, uniformed and ready for the day' },
+  { slot: 'crewOnJob', caption: 'Deep clean underway in a Nairobi office' },
+  { slot: 'aboutTeam', caption: 'Upholstery shampoo and floor care on site' },
+  { slot: 'upholstery', caption: 'Foam treatment worked into the fabric' },
+];
 
 /** Headline proof points. Shown as the trust bar under the hero. */
 export const TRUST_STATS = [
@@ -224,30 +240,48 @@ export const SERVICE_AREAS = [
 ] as const;
 
 export type Segment = {
+  /** Anchor id on the homepage's "who we serve" section, and the nav dropdown target. */
+  slug: string;
   title: string;
   description: string;
-  icon: 'home' | 'office' | 'medical' | 'hardhat';
+  icon: 'home' | 'office' | 'medical' | 'hardhat' | 'buildings' | 'users';
   areas?: readonly string[];
 };
 
 export const SEGMENTS: Segment[] = [
   {
+    slug: 'residential',
     title: 'Residential',
     description: 'Homes, apartments and holiday lets across Nairobi’s suburbs.',
     icon: 'home',
     areas: SERVICE_AREAS,
   },
   {
-    title: 'Commercial',
-    description: 'Offices, retail units, gyms, schools and places of worship.',
+    slug: 'offices-corporate',
+    title: 'Offices & corporate',
+    description: 'Workspaces cleaned around your opening hours, with no disruption to the day.',
     icon: 'office',
   },
   {
+    slug: 'retail-hospitality',
+    title: 'Retail & hospitality',
+    description: 'Shops, showrooms, gyms and hospitality spaces kept guest-ready.',
+    icon: 'buildings',
+  },
+  {
+    slug: 'medical',
     title: 'Medical',
     description: 'Clinics, dental practices, labs and hospital wards.',
     icon: 'medical',
   },
   {
+    slug: 'schools-institutions',
+    title: 'Schools & institutions',
+    description: 'Classrooms, halls and shared facilities cleaned outside school hours.',
+    icon: 'users',
+  },
+  {
+    slug: 'developers',
     title: 'Developers',
     description: 'Post-construction handover cleans for contractors and property firms.',
     icon: 'hardhat',

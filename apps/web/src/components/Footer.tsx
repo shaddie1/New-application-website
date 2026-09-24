@@ -100,6 +100,9 @@ export function Footer() {
               <Link href="/how-it-works" className="hover:text-text-on-dark">
                 How it works
               </Link>
+              <Link href="/portfolio" className="hover:text-text-on-dark">
+                Portfolio
+              </Link>
               <Link href="/about" className="hover:text-text-on-dark">
                 About us
               </Link>

@@ -3,6 +3,7 @@ import type { ComponentType, SVGProps } from 'react';
 import {
   AirIcon,
   BadgeCheckIcon,
+  BuildingsIcon,
   CalendarIcon,
   CameraIcon,
   ClockIcon,
@@ -20,6 +21,7 @@ import {
   SparkleIcon,
   StarIcon,
   TagIcon,
+  UsersIcon,
 } from '../icons';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -30,6 +32,8 @@ export const ICONS: Record<string, Icon> = {
   office: OfficeIcon,
   medical: MedicalIcon,
   hardhat: HardHatIcon,
+  buildings: BuildingsIcon,
+  users: UsersIcon,
   sofa: SofaIcon,
   rug: RugIcon,
   pest: PestIcon,
