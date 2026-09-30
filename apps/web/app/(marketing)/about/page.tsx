@@ -3,7 +3,6 @@ import type { Metadata } from 'next';
 import { SurfaceCard, IconChip, Section, SectionHeading } from '../../../src/components/layout';
 import { SparkleIcon, StarIcon, ShieldIcon } from '../../../src/components/icons';
 import { Team } from '../../../src/components/marketing/Team';
-import { TrustBar } from '../../../src/components/marketing/Hero';
 import { WhyChooseUs } from '../../../src/components/marketing/WhyChooseUs';
 import { FinalCta } from '../../../src/components/marketing/FinalCta';
 import { Photo } from '../../../src/components/Photo';
@@ -43,8 +42,6 @@ export default function AboutPage() {
           lead="OnyxHawk began with one crew, one van and a conviction that cleaning could be run like a modern service business rather than a phone-and-cash arrangement."
         />
       </Section>
-
-      <TrustBar />
 
       <Section>
         <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">

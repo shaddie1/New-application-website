@@ -82,14 +82,6 @@ export const HERO_SLIDES: { slot: keyof typeof SITE_PHOTOS; caption: string }[] 
   { slot: 'upholstery', caption: 'Foam treatment worked into the fabric' },
 ];
 
-/** Headline proof points. Shown as the trust bar under the hero. */
-export const TRUST_STATS = [
-  { value: '6+', label: 'Years in business' },
-  { value: '4.9★', label: 'Average rating' },
-  { value: '500+', label: 'Clients served' },
-  { value: '2,000+', label: 'Cleans completed' },
-] as const;
-
 export type ServiceEntry = {
   /** Catalog code in the API, used to deep link the quote flow. */
   code: string;

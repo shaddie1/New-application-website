@@ -2,7 +2,6 @@ import { Container } from '../layout';
 import { ButtonLink } from '../ui';
 import { CheckIcon } from '../icons';
 import { HeroPhotos } from './HeroPhotos';
-import { TRUST_STATS } from '../../content/site';
 
 const HERO_PROOF = ['Vetted, insured crews', 'Pay by M-Pesa', 'Before & after photos'];
 
@@ -54,28 +53,6 @@ export function Hero() {
           </div>
         </Container>
       </HeroPhotos>
-
-      <TrustBar />
     </section>
-  );
-}
-
-export function TrustBar() {
-  return (
-    <div className="border-y border-line bg-white">
-      <Container>
-        <dl className="grid grid-cols-2 gap-y-8 py-10 sm:grid-cols-4">
-          {TRUST_STATS.map((stat) => (
-            <div key={stat.label} className="text-center">
-              <dt className="sr-only">{stat.label}</dt>
-              <dd>
-                <span className="block text-3xl font-bold tracking-tight text-bronze sm:text-4xl">{stat.value}</span>
-                <span className="mt-1 block text-sm text-charcoal-muted">{stat.label}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </Container>
-    </div>
   );
 }
