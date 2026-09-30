@@ -50,7 +50,7 @@ export function SiteHeader() {
   useEffect(() => setOpen(false), [pathname]);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-cream/90 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-line bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-6">
         <Brand />
 
@@ -65,7 +65,7 @@ export function SiteHeader() {
                   href={item.href}
                   className={cn(
                     'text-sm transition-colors',
-                    active ? 'font-medium text-bronze' : 'text-charcoal-muted hover:text-charcoal',
+                    active ? 'font-medium text-aqua-deep' : 'text-charcoal-muted hover:text-charcoal',
                   )}
                 >
                   {item.label}
@@ -79,7 +79,7 @@ export function SiteHeader() {
                   href={item.href}
                   className={cn(
                     'flex items-center gap-1 text-sm transition-colors',
-                    active ? 'font-medium text-bronze' : 'text-charcoal-muted hover:text-charcoal',
+                    active ? 'font-medium text-aqua-deep' : 'text-charcoal-muted hover:text-charcoal',
                   )}
                 >
                   {item.label}
@@ -92,7 +92,7 @@ export function SiteHeader() {
                       <Link
                         key={child.href}
                         href={child.href}
-                        className="block rounded-md px-3 py-2 text-sm text-charcoal-muted transition-colors hover:bg-cream-deep hover:text-charcoal"
+                        className="block rounded-md px-3 py-2 text-sm text-charcoal-muted transition-colors hover:bg-mist hover:text-charcoal"
                       >
                         {child.label}
                       </Link>
@@ -120,7 +120,7 @@ export function SiteHeader() {
 
           <a
             href={`tel:${COMPANY.phoneE164}`}
-            className="hidden items-center gap-2 rounded-pill bg-gradient-to-br from-gold to-gold-deep px-4 py-2 text-sm font-semibold text-surface-dark shadow-sm transition-transform hover:scale-[1.03] lg:inline-flex"
+            className="hidden items-center gap-2 rounded-pill border border-navy/15 bg-navy-soft px-4 py-2 text-sm font-semibold text-navy transition-colors hover:border-navy/30 hover:bg-white lg:inline-flex"
           >
             <PhoneIcon className="h-4 w-4" />
             {COMPANY.phoneDisplay}
@@ -159,7 +159,7 @@ export function SiteHeader() {
       </div>
 
       {open ? (
-        <nav className="border-t border-line bg-cream px-5 py-4 md:hidden">
+        <nav className="border-t border-line bg-white px-5 py-4 md:hidden">
           <ul className="space-y-1">
             {NAV.map((item) => {
               const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
@@ -170,8 +170,8 @@ export function SiteHeader() {
                     className={cn(
                       'block rounded-md px-3 py-2.5 text-[15px]',
                       active
-                        ? 'bg-gold-bright/15 font-medium text-bronze'
-                        : 'text-charcoal-muted hover:bg-cream-deep hover:text-charcoal',
+                        ? 'bg-aqua-soft font-medium text-aqua-deep'
+                        : 'text-charcoal-muted hover:bg-mist hover:text-charcoal',
                     )}
                   >
                     {item.label}
@@ -182,7 +182,7 @@ export function SiteHeader() {
                         <li key={child.href}>
                           <Link
                             href={child.href}
-                            className="block rounded-md px-3 py-2 text-sm text-charcoal-muted hover:bg-cream-deep hover:text-charcoal"
+                            className="block rounded-md px-3 py-2 text-sm text-charcoal-muted hover:bg-mist hover:text-charcoal"
                           >
                             {child.label}
                           </Link>
@@ -197,7 +197,7 @@ export function SiteHeader() {
 
           <a
             href={`tel:${COMPANY.phoneE164}`}
-            className="mt-3 flex items-center justify-center gap-2 rounded-pill bg-gradient-to-br from-gold to-gold-deep px-4 py-2.5 text-sm font-semibold text-surface-dark"
+            className="mt-3 flex items-center justify-center gap-2 rounded-pill bg-gradient-to-br from-navy to-aqua-deep px-4 py-2.5 text-sm font-semibold text-white"
           >
             <PhoneIcon className="h-4 w-4" />
             {COMPANY.phoneDisplay}
@@ -206,7 +206,7 @@ export function SiteHeader() {
           {!signedIn ? (
             <Link
               href="/sign-in"
-              className="mt-3 block rounded-md px-3 py-2.5 text-[15px] text-charcoal-muted hover:bg-cream-deep hover:text-charcoal"
+              className="mt-3 block rounded-md px-3 py-2.5 text-[15px] text-charcoal-muted hover:bg-mist hover:text-charcoal"
             >
               Sign in
             </Link>

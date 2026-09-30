@@ -84,7 +84,7 @@ export function Footer() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={s.name}
-                  className="flex h-9 w-9 items-center justify-center rounded-pill border border-white/15 text-text-on-dark-muted transition-colors hover:border-gold hover:text-gold"
+                  className="flex h-9 w-9 items-center justify-center rounded-pill border border-white/15 text-text-on-dark-muted transition-colors hover:border-aqua-light hover:text-aqua-light"
                 >
                   {s.icon}
                 </a>

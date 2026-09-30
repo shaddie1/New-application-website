@@ -58,7 +58,7 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 const input = 'w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm';
-const btn = 'rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
+const btn = 'rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
 const btnGhost = 'rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-muted';
 
 /** Who entered a record and when — the trust line on every finance row. */
@@ -115,7 +115,7 @@ export default function FinancePage() {
             onClick={() => setTab(key)}
             className={`border-b-2 px-4 py-2 text-sm transition-colors ${
               tab === key
-                ? 'border-gold-deep font-medium text-gold-deep'
+                ? 'border-aqua font-medium text-navy'
                 : 'border-transparent text-text-muted hover:text-text'
             }`}
           >
@@ -155,7 +155,7 @@ function BreakdownList({ title, items }: { title: string; items: RevenueBreakdow
               </div>
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-bg-muted">
                 <div
-                  className="h-full rounded-full bg-gold"
+                  className="h-full rounded-full bg-aqua"
                   style={{ width: `${Math.round((item.incomeCents / max) * 100)}%` }}
                 />
               </div>
@@ -309,7 +309,7 @@ function MarketingTab({ from, to, onError }: TabProps & { from: string; to: stri
       />
 
       {showForm && (
-        <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-gold bg-gold-soft/10 p-5 sm:grid-cols-3">
+        <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3">
           <Labelled label="Campaign">
             <input required className={input} value={form.campaign} placeholder="e.g. April home cleaning push"
               onChange={(e) => setForm((f) => ({ ...f, campaign: e.target.value }))} />
@@ -478,7 +478,7 @@ function AssetsTab({ onError }: TabProps) {
       />
 
       {showForm && (
-        <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-gold bg-gold-soft/10 p-5 sm:grid-cols-3">
+        <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3">
           <Labelled label="Name">
             <input required className={input} value={form.name} placeholder="e.g. Karcher extractor"
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
@@ -685,7 +685,7 @@ function InvestmentsTab({ onError }: TabProps) {
             } catch (err) { onError(err, 'Could not save investment'); }
             finally { setSaving(false); }
           }}
-          className="mb-4 grid gap-3 rounded-xl border border-gold bg-gold-soft/10 p-5 sm:grid-cols-3"
+          className="mb-4 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3"
         >
           <Labelled label="Source">
             <input required className={input} value={form.source} placeholder="Who provided the funds"
@@ -833,7 +833,7 @@ function SharingTab({ onError }: TabProps) {
             } catch (err) { onError(err, 'Could not declare period'); }
             finally { setSaving(false); }
           }}
-          className="mb-4 grid gap-3 rounded-xl border border-gold bg-gold-soft/10 p-5 sm:grid-cols-4"
+          className="mb-4 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-4"
         >
           <Labelled label="Period name">
             <input required className={input} value={form.label} placeholder="e.g. Q1 2026"
@@ -987,7 +987,7 @@ function ReceiptsTab({ from, to, onError }: TabProps & { from: string; to: strin
                       <span className="text-xs text-success">Attached</span>
                     ) : (
                       <button
-                        className="text-xs text-gold-deep hover:underline"
+                        className="text-xs text-aqua-deep hover:underline"
                         onClick={async () => {
                           const ref = prompt('Receipt / M-Pesa reference:');
                           if (!ref?.trim()) return;

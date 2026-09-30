@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'dark' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'dark' | 'ghost' | 'accent';
 type Size = 'sm' | 'md' | 'lg';
 
 function buttonClasses(variant: Variant, size: Size, extra?: string): string {
@@ -13,11 +13,13 @@ function buttonClasses(variant: Variant, size: Size, extra?: string): string {
     lg: 'px-6 py-3 text-base',
   };
   const variants: Record<Variant, string> = {
-    // Metallic gold gradient for a more premium feel.
-    primary: 'bg-gradient-to-br from-gold to-gold-deep text-surface-dark shadow-sm hover:shadow-md hover:brightness-105',
-    secondary: 'border border-gold/40 bg-surface text-text hover:border-gold hover:bg-gold-soft/20',
-    dark: 'bg-surface-dark text-text-on-dark hover:opacity-90',
-    ghost: 'text-gold-deep hover:bg-gold-soft/20',
+    // Navy (the crew uniforms) sweeping into fresh aqua: confident, clean.
+    primary: 'bg-gradient-to-br from-navy to-aqua-deep text-white shadow-sm hover:shadow-md hover:brightness-110',
+    secondary: 'border border-navy/25 bg-surface text-navy hover:border-navy hover:bg-navy-soft',
+    dark: 'bg-navy text-white hover:bg-navy-deep',
+    ghost: 'text-aqua-deep hover:bg-aqua-soft',
+    // Bright aqua with navy text, for calls to action that sit on a navy band.
+    accent: 'bg-aqua-light text-navy-deep shadow-sm hover:shadow-md hover:brightness-105',
   };
   return [base, sizes[size], variants[variant], extra].filter(Boolean).join(' ');
 }
@@ -75,7 +77,7 @@ export function Banner({ tone = 'error', children }: { tone?: 'error' | 'success
   const tones = {
     error: 'bg-danger/10 text-danger border-danger/30',
     success: 'bg-success/10 text-success border-success/30',
-    info: 'bg-gold-soft/50 text-gold-deep border-gold/30',
+    info: 'bg-aqua-soft text-aqua-deep border-aqua/30',
   } as const;
   return <div className={`rounded-md border px-4 py-3 text-sm ${tones[tone]}`}>{children}</div>;
 }
@@ -99,7 +101,7 @@ export function Field({
 }
 
 const inputClasses =
-  'w-full rounded-md border border-border-strong bg-surface px-3.5 py-2.5 text-[15px] text-text outline-none placeholder:text-text-muted focus:border-gold';
+  'w-full rounded-md border border-border-strong bg-surface px-3.5 py-2.5 text-[15px] text-text outline-none placeholder:text-text-muted focus:border-aqua focus:ring-2 focus:ring-aqua/20';
 
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input className={[inputClasses, className].filter(Boolean).join(' ')} {...props} />;

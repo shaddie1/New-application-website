@@ -116,7 +116,7 @@ function EditDetails({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium uppercase tracking-wide text-text-muted">Account details</h2>
         {!editing ? (
-          <button onClick={() => setEditing(true)} className="text-sm text-gold-deep hover:underline">
+          <button onClick={() => setEditing(true)} className="text-sm text-aqua-deep hover:underline">
             Edit
           </button>
         ) : null}
@@ -221,7 +221,7 @@ function Addresses({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium uppercase tracking-wide text-text-muted">Addresses</h2>
         {!adding ? (
-          <button onClick={() => setAdding(true)} className="text-sm text-gold-deep hover:underline">
+          <button onClick={() => setAdding(true)} className="text-sm text-aqua-deep hover:underline">
             + Add
           </button>
         ) : null}
@@ -233,7 +233,7 @@ function Addresses({
             <div>
               <p className="flex items-center gap-2 font-medium text-text">
                 {a.label}
-                {a.isDefault ? <Pill className="bg-gold-soft text-gold-deep">Default</Pill> : null}
+                {a.isDefault ? <Pill className="bg-aqua-soft text-aqua-deep">Default</Pill> : null}
               </p>
               <p className="text-sm text-text-muted">
                 {a.line1}
@@ -242,7 +242,7 @@ function Addresses({
             </div>
             <div className="flex shrink-0 gap-3 text-sm">
               {!a.isDefault ? (
-                <button onClick={() => makeDefault(a.id)} className="text-gold-deep hover:underline">
+                <button onClick={() => makeDefault(a.id)} className="text-aqua-deep hover:underline">
                   Set default
                 </button>
               ) : null}
@@ -343,7 +343,7 @@ function Notifications({
                   onClick={() => toggle(c.channel)}
                   role="switch"
                   aria-checked={on}
-                  className={`relative h-6 w-11 rounded-pill transition-colors ${on ? 'bg-gold' : 'bg-border-strong'}`}
+                  className={`relative h-6 w-11 rounded-pill transition-colors ${on ? 'bg-aqua' : 'bg-border-strong'}`}
                 >
                   <span
                     className={`absolute top-0.5 h-5 w-5 rounded-pill bg-surface transition-all ${on ? 'left-[22px]' : 'left-0.5'}`}

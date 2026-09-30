@@ -77,7 +77,7 @@ export default function DashboardPage() {
                 <Pill className="bg-white/15 text-text-on-dark">{bookingStatusLabel(next.status)}</Pill>
               </div>
               <p className="mt-4 text-sm text-text-on-dark-muted">
-                {next.reference} · <span className="text-gold">{money(next.totalCents)}</span>
+                {next.reference} · <span className="text-aqua-light">{money(next.totalCents)}</span>
               </p>
             </Card>
           </Link>
@@ -117,7 +117,7 @@ export default function DashboardPage() {
               ) : (
                 <p className="mt-4 text-sm text-gold-deep">You’ve reached the top tier 🎉</p>
               )}
-              <Link href="/loyalty" className="mt-4 inline-block text-sm text-gold-deep hover:underline">
+              <Link href="/loyalty" className="mt-4 inline-block text-sm text-aqua-deep hover:underline">
                 View history →
               </Link>
             </Card>
@@ -139,7 +139,7 @@ export default function DashboardPage() {
               <ul className="divide-y divide-border">
                 {notifs.notifications.slice(0, 4).map((n) => (
                   <li key={n.id} className="flex gap-3 py-3 first:pt-0 last:pb-0">
-                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-pill ${n.readAt ? 'bg-border-strong' : 'bg-gold'}`} />
+                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-pill ${n.readAt ? 'bg-border-strong' : 'bg-aqua'}`} />
                     <div>
                       <p className="text-sm font-medium text-text">{n.title}</p>
                       <p className="text-sm text-text-muted">{n.body}</p>

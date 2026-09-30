@@ -29,9 +29,9 @@ function nairobiToday(): { y: number; m: number; d: number; key: string } {
 const STATUS_TONE: Record<BookingStatus, string> = {
   DRAFT: 'bg-border-strong',
   PENDING_PAYMENT: 'bg-warning',
-  CONFIRMED: 'bg-gold',
-  EN_ROUTE: 'bg-gold-deep',
-  IN_PROGRESS: 'bg-gold-deep',
+  CONFIRMED: 'bg-navy',
+  EN_ROUTE: 'bg-aqua',
+  IN_PROGRESS: 'bg-aqua',
   COMPLETED: 'bg-success',
   CANCELLED: 'bg-danger',
   NO_SHOW: 'bg-danger',
@@ -158,7 +158,7 @@ export default function CalendarPage() {
                 onClick={() => setSelected(c.key)}
                 className={`min-h-[96px] border-b border-r border-border p-1.5 text-left align-top transition-colors ${
                   c.inMonth ? 'bg-surface' : 'bg-bg-muted/40'
-                } ${isSelected ? 'ring-2 ring-gold ring-inset' : 'hover:bg-bg-muted/60'}`}
+                } ${isSelected ? 'ring-2 ring-aqua ring-inset' : 'hover:bg-bg-muted/60'}`}
               >
                 <div className="flex items-center justify-between">
                   <span

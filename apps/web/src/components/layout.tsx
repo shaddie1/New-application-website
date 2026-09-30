@@ -9,9 +9,9 @@ export function Container({ className, children }: { className?: string; childre
 
 /**
  * A vertical band of the page. `tone` picks the background:
- * - `base`   the page's own charcoal
- * - `raised` a subtly lighter charcoal, to separate adjacent sections
- * - `gold`   a warm tinted band for moments that should feel like a highlight
+ * - `base`   the white page
+ * - `raised` a cool mist band, to separate adjacent sections
+ * - `fresh`  an aqua-tinted band for moments that should feel like a highlight
  */
 export function Section({
   id,
@@ -20,14 +20,14 @@ export function Section({
   children,
 }: {
   id?: string;
-  tone?: 'base' | 'raised' | 'gold';
+  tone?: 'base' | 'raised' | 'fresh';
   className?: string;
   children: ReactNode;
 }) {
   const tones = {
     base: '',
-    raised: 'bg-white',
-    gold: 'bg-gradient-to-b from-gold-bright/[0.12] to-transparent',
+    raised: 'bg-mist',
+    fresh: 'bg-gradient-to-b from-aqua-soft/70 via-mist to-white',
   } as const;
 
   return (
@@ -54,7 +54,7 @@ export function SectionHeading({
   return (
     <header className={cn('max-w-2xl', align === 'center' && 'mx-auto text-center', className)}>
       {eyebrow ? (
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-bronze">{eyebrow}</p>
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-aqua-deep">{eyebrow}</p>
       ) : null}
       <h2 className="text-3xl font-bold leading-[1.1] tracking-tight text-charcoal sm:text-4xl">{title}</h2>
       {lead ? <p className="mt-4 text-base leading-relaxed text-charcoal-muted sm:text-lg">{lead}</p> : null}
@@ -62,7 +62,7 @@ export function SectionHeading({
   );
 }
 
-/** White card sitting on the cream page. */
+/** White card sitting on the page or a mist band. */
 export function SurfaceCard({
   className,
   children,
@@ -76,7 +76,7 @@ export function SurfaceCard({
     <div
       className={cn(
         'rounded-xl border border-line bg-white p-6 shadow-sm',
-        interactive && 'transition-colors hover:border-gold-bright/55 hover:bg-cream-deep',
+        interactive && 'transition hover:-translate-y-0.5 hover:border-aqua/50 hover:shadow-md',
         className,
       )}
     >
@@ -85,12 +85,12 @@ export function SurfaceCard({
   );
 }
 
-/** Gold-tinted circle holding a line icon — the visual anchor of every card. */
+/** Aqua-tinted circle holding a line icon — the visual anchor of every card. */
 export function IconChip({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={cn(
-        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-pill bg-gold-bright/15 text-bronze',
+        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-pill bg-aqua-soft text-aqua-deep',
         className,
       )}
     >

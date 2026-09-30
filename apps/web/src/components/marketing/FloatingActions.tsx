@@ -14,11 +14,11 @@ export function FloatingActions() {
   return (
     <>
       {/* Mobile: sticky action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-cream/95 px-4 py-3 backdrop-blur sm:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 px-4 py-3 backdrop-blur sm:hidden">
         <div className="flex items-center gap-3">
           <Link
             href="/quote"
-            className="flex-1 rounded-pill bg-gradient-to-br from-gold to-gold-deep px-5 py-3 text-center text-[15px] font-semibold text-surface-dark"
+            className="flex-1 rounded-pill bg-gradient-to-br from-navy to-aqua-deep px-5 py-3 text-center text-[15px] font-semibold text-white"
           >
             Get a free quote
           </Link>

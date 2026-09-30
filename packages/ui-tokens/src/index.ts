@@ -7,8 +7,8 @@
 
 export const colors = {
   // Surface
-  bg: '#F5F1E6',           // warm cream (Home, catalog, profile)
-  bgMuted: '#EDE7D8',
+  bg: '#FFFFFF',           // page background (white on every platform)
+  bgMuted: '#F2F2F2',
   surface: '#FFFFFF',
   surfaceDark: '#1B1814',  // near-black card (next-clean, STK sheet, points card)
 
@@ -45,10 +45,10 @@ export const colors = {
   inkSoft: '#241F1A',
   inkBorder: '#31291F',
 
-  // Bright brand palette (company brand sheet): cream page, black structure,
+  // Bright brand palette (company brand sheet): white page, black structure,
   // hawk gold as the accent, bronze wherever gold would be too pale to read.
-  cream: '#FDFAF2',        // page background
-  creamDeep: '#F4F1E6',    // alternating bands, hovers
+  cream: '#FFFFFF',        // page background
+  creamDeep: '#F6F6F6',    // alternating bands, hovers (neutral, not beige)
   neutralLight: '#F2F2F2',
   goldBright: '#D4A843',   // accent: fills, icons, key numbers
   bronze: '#A87D22',       // accent text and links on cream — gold alone is
@@ -56,6 +56,41 @@ export const colors = {
   charcoal: '#14120F',     // headings and body text
   charcoalMuted: '#5A5348', // secondary text
   line: '#E8E2D2',         // hairlines on cream
+
+  // Fresh palette (web + admin). Navy comes from the crew uniforms and carries
+  // primary actions and dark bands; aqua is the "clean" accent for icons,
+  // links and highlights. Gold stays for the logo and Hawk Points only.
+  navy: '#133A68',         // primary buttons, dark bands (11.5:1 with white)
+  navyDeep: '#0B2748',     // hover / pressed, footer
+  navySoft: '#E8EEF7',     // navy-tinted chips and selected rows
+  aqua: '#0D9488',         // icons, checks, fills, progress (3.7:1 — not for small text)
+  aquaDeep: '#0F766E',     // accent text and links on white (5.5:1)
+  aquaSoft: '#E3F5F2',     // tinted icon wells, selected options
+  aquaLight: '#5EEAD4',    // accent on navy surfaces
+  mist: '#F3F7FA',         // alternating bands and hovers (cool, not beige)
+} as const;
+
+/**
+ * Cool neutrals for web + admin, replacing the warm beige ones so navy and
+ * aqua read crisp rather than muddy. Same token names as `colors`, so these
+ * slot in without renaming any class. Mobile keeps the warm set for now.
+ */
+export const freshNeutrals = {
+  text: '#16202E',
+  textMuted: '#556274',
+  charcoal: '#0F1C2E',
+  charcoalMuted: '#4A5568',
+  bgMuted: '#EEF2F6',
+  border: '#DCE3EA',
+  borderStrong: '#B4BFCC',
+  line: '#E5EAF0',
+  surfaceDark: '#102A4A',
+  textOnDark: '#F3F6FA',
+  textOnDarkMuted: '#A9B8CB',
+  ink: '#0B1F38',
+  inkRaised: '#0B2748',
+  inkSoft: '#16355C',
+  inkBorder: '#24466F',
 } as const;
 
 export const radii = {

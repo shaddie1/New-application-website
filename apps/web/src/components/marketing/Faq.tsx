@@ -10,11 +10,11 @@ export function Faq() {
         {FAQS.map((faq) => (
           <details
             key={faq.q}
-            className="group rounded-xl border border-line bg-white px-6 py-5 transition-colors hover:border-gold-bright/45"
+            className="group rounded-xl border border-line bg-white px-6 py-5 transition-colors hover:border-aqua/45"
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium text-charcoal [&::-webkit-details-marker]:hidden">
               {faq.q}
-              <span className="shrink-0 text-xl leading-none text-bronze transition-transform group-open:rotate-45">
+              <span className="shrink-0 text-xl leading-none text-aqua-deep transition-transform group-open:rotate-45">
                 +
               </span>
             </summary>

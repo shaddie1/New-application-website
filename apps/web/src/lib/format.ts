@@ -64,7 +64,7 @@ export function bookingStatusTone(s: BookingStatus): string {
     case 'CONFIRMED':
     case 'EN_ROUTE':
     case 'IN_PROGRESS':
-      return 'bg-gold-soft text-gold-deep';
+      return 'bg-navy-soft text-navy';
     case 'PENDING_PAYMENT':
       return 'bg-warning/15 text-warning';
     case 'CANCELLED':

@@ -31,7 +31,7 @@ export function WhoWeServe() {
                       {segment.areas.map((area) => (
                         <li
                           key={area}
-                          className="rounded-pill border border-line bg-cream px-3 py-1 text-xs text-charcoal-muted"
+                          className="rounded-pill border border-line bg-white px-3 py-1 text-xs text-charcoal-muted"
                         >
                           {area}
                         </li>
@@ -46,7 +46,7 @@ export function WhoWeServe() {
       </div>
 
       {/* Countrywide callout */}
-      <div className="mt-8 rounded-xl border border-gold-bright/35 bg-gradient-to-br from-gold/[0.09] to-transparent p-8">
+      <div className="mt-8 rounded-xl border border-aqua/35 bg-white p-8">
         <h3 className="text-xl font-bold text-charcoal">Cleaning countrywide, not just Nairobi</h3>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-charcoal-muted">
           We mobilise crews for commercial contracts, medical facilities and post-construction handovers anywhere in
@@ -55,7 +55,7 @@ export function WhoWeServe() {
         <ul className="mt-6 grid gap-4 sm:grid-cols-3">
           {COVERAGE_POINTS.map((point) => (
             <li key={point.title} className="flex gap-3">
-              <CheckIcon className="mt-0.5 h-5 w-5 shrink-0 text-bronze" />
+              <CheckIcon className="mt-0.5 h-5 w-5 shrink-0 text-aqua-deep" />
               <div>
                 <p className="text-sm font-semibold text-charcoal">{point.title}</p>
                 <p className="mt-1 text-sm text-charcoal-muted">{point.description}</p>

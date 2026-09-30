@@ -8,18 +8,17 @@ import { useState, type ReactNode } from 'react';
  * Colours come from CSS variables (--chart-*) declared in globals.css, not from
  * hard-coded hex, so a second theme can re-skin every chart from one block.
  *
- * Palette decision (validated, not eyeballed): the brand's gold #D4A843 and
- * bronze #A87D22 are only ΔE 13.8 apart in normal vision — below the 15 floor —
- * so they cannot sit next to each other as two series. Everything here is
- * therefore SINGLE-HUE gold for magnitude, and the one two-series chart pairs
- * gold against charcoal (ΔE 58) and separates them by mark type as well.
+ * Palette decision (validated, not eyeballed): magnitude is SINGLE-HUE aqua
+ * #0D9488, which passes every check on white (3.7:1, inside the lightness band,
+ * above the chroma floor). The one two-series chart pairs aqua against the ink
+ * (ΔE 38.9 normal, 37.7 deutan) and separates them by mark type as well —
+ * area for income, line for net profit.
  *
- * Gold sits at 2.1:1 against the cream page, under the 3:1 mark contrast bar, so
- * every chart carries visible numeric labels rather than relying on the fill.
+ * Charts still carry visible numeric labels, so no value relies on fill alone.
  */
 
-const GOLD = '#D4A843';
-const CHARCOAL = '#14120F';
+const ACCENT = '#0D9488';
+const INK = '#0F1C2E';
 
 export function money(cents: number): string {
   return `KSh ${(cents / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
@@ -160,7 +159,7 @@ export function AchievementRing({
           ) : onSetTarget ? (
             <button
               onClick={onSetTarget}
-              className="rounded-full border border-gold-bright/60 px-2 py-1 text-[10px] font-medium text-bronze hover:bg-gold-bright/10"
+              className="rounded-full border border-aqua/60 px-2 py-1 text-[10px] font-medium text-aqua-deep hover:bg-aqua-soft"
             >
               + {setTargetLabel}
             </button>
@@ -224,10 +223,10 @@ export function TargetMeter({
 
       <p className="mt-2 text-2xl font-bold tracking-tight text-charcoal">{format(actual)}</p>
 
-      <div className="relative mt-3 h-3 rounded-pill bg-cream-deep">
+      <div className="relative mt-3 h-3 rounded-pill bg-mist">
         <div
           className="h-3 rounded-pill"
-          style={{ width: `${barPct}%`, backgroundColor: GOLD }}
+          style={{ width: `${barPct}%`, backgroundColor: ACCENT }}
           role="img"
           aria-label={`${format(actual)}${hasTarget ? ` of ${format(target)} target` : ''}`}
         />
@@ -236,7 +235,7 @@ export function TargetMeter({
           // two marks never blend into one another.
           <span
             className="absolute top-[-3px] h-[18px] w-[3px] rounded-sm border-x border-white"
-            style={{ left: `calc(${targetPct}% - 1.5px)`, backgroundColor: CHARCOAL }}
+            style={{ left: `calc(${targetPct}% - 1.5px)`, backgroundColor: INK }}
             aria-hidden="true"
           />
         )}
@@ -260,7 +259,7 @@ export type TrendPoint = {
 };
 
 /**
- * Income as a gold gradient area, net profit as a line over it.
+ * Income as an aqua gradient area, net profit as a line over it.
  *
  * Both series share ONE axis deliberately. They are the same unit (KSh) and net
  * profit is a component of income, so a second y-scale could render the profit
@@ -511,10 +510,10 @@ export function RankedBars({
                     <span className="ml-2 text-xs font-normal text-charcoal-muted">{share}%</span>
                   </span>
                 </div>
-                <div className="mt-1.5 h-2.5 overflow-hidden rounded-pill bg-cream-deep">
+                <div className="mt-1.5 h-2.5 overflow-hidden rounded-pill bg-mist">
                   <div
                     className="h-full rounded-pill"
-                    style={{ width: `${Math.max(2, (item.value / max) * 100)}%`, backgroundColor: GOLD }}
+                    style={{ width: `${Math.max(2, (item.value / max) * 100)}%`, backgroundColor: ACCENT }}
                   />
                 </div>
                 {item.sub && <p className="mt-1 text-xs text-charcoal-muted">{item.sub}</p>}
@@ -538,20 +537,20 @@ function ChartEmpty({ children }: { children: React.ReactNode }) {
 // ── Donut (part-to-whole) ───────────────────────────────────────────────────
 
 /**
- * Categorical palette for part-to-whole charts, validated against the cream
- * surface (#FDFAF2) on the adjacent-pair gate — a donut is a stacked bar wrapped
+ * Categorical palette for part-to-whole charts, validated against the white
+ * surface (#FFFFFF) on the adjacent-pair gate — a donut is a stacked bar wrapped
  * into a circle, so adjacent segments are what must separate.
  *
  * Order matters: it is the colourblind-safety mechanism, not decoration. Green
- * leads by request; this ordering still passes all five checks with no warnings
- * (worst adjacent CVD ΔE 22.7, normal-vision ΔE 28.1, all slots ≥ 3:1 contrast).
- * Do not reorder or extend without re-running the validator — red beside green,
- * or the brand gold beside bronze, both fail.
+ * leads by request; orange took the old bronze slot, and this ordering still
+ * passes all five checks with no warnings (worst adjacent CVD ΔE 22.7,
+ * normal-vision ΔE 29.0, all slots ≥ 3:1 contrast). Do not reorder or extend
+ * without re-running the validator — orange or red beside green both fail.
  */
-export const CATEGORICAL = ['#008300', '#2a78d6', '#A87D22', '#4a3aa7', '#e34948'] as const;
+export const CATEGORICAL = ['#008300', '#2a78d6', '#eb6834', '#4a3aa7', '#e34948'] as const;
 
 /** "Other" is a residual, not a category — it takes a neutral, never a hue. */
-const OTHER_GREY = '#8C857A';
+export const OTHER_GREY = '#8A94A3';
 const SURFACE = '#FFFFFF';
 
 export type Slice = { key: string; label: string; value: number };
@@ -603,7 +602,7 @@ export function DonutChart({
 
   if (positive.length === 0) {
     return (
-      <div className="flex h-56 items-center justify-center rounded-lg bg-cream text-sm text-charcoal-muted">
+      <div className="flex h-56 items-center justify-center rounded-lg bg-mist text-sm text-charcoal-muted">
         {emptyLabel}
       </div>
     );

@@ -343,7 +343,7 @@ export default function FinancialsPage() {
         </div>
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Income generated so far</p>
-          <p className="mt-1 text-2xl text-gold" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="mt-1 text-2xl text-aqua-light" style={{ fontFamily: 'Georgia, serif' }}>
             {loading || !totals ? '—' : fmt(totals.totalIncomeCents)}
           </p>
         </div>
@@ -383,7 +383,7 @@ export default function FinancialsPage() {
             onClick={() => setTab(key)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
               tab === key
-                ? 'border-gold-deep text-gold-deep font-medium'
+                ? 'border-aqua text-navy font-medium'
                 : 'border-transparent text-text-muted hover:text-text'
             }`}
           >
@@ -399,7 +399,7 @@ export default function FinancialsPage() {
             <span className="text-sm text-text-muted">{jobs.length} job{jobs.length !== 1 ? 's' : ''} recorded</span>
             <button
               onClick={() => { setShowJobForm((v) => !v); }}
-              className="rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
+              className="rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
             >
               {showJobForm ? 'Cancel' : '+ New job'}
             </button>
@@ -409,7 +409,7 @@ export default function FinancialsPage() {
           {showJobForm && (
             <form
               onSubmit={(e) => void handleCreateJob(e)}
-              className="mb-4 rounded-xl border border-gold bg-gold-soft/10 p-5 grid grid-cols-2 md:grid-cols-4 gap-3"
+              className="mb-4 rounded-xl border border-aqua/40 bg-white p-5 grid grid-cols-2 md:grid-cols-4 gap-3"
             >
               <div className="col-span-2">
                 <label className="block text-xs text-text-muted mb-1">Job title</label>
@@ -543,7 +543,7 @@ export default function FinancialsPage() {
                 <button
                   type="submit"
                   disabled={savingJob}
-                  className="rounded-lg bg-gold-deep text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+                  className="rounded-lg bg-navy text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
                 >
                   {savingJob ? 'Saving…' : 'Create job'}
                 </button>
@@ -724,7 +724,7 @@ export default function FinancialsPage() {
                           <span className="text-xs text-text-muted w-16 shrink-0">{t.label}</span>
                           <div className="flex-1 space-y-1">
                             <div className="bg-bg-muted rounded-full h-2.5 overflow-hidden">
-                              <div className="h-full rounded-full bg-gold" style={{ width: `${incomePct}%` }} />
+                              <div className="h-full rounded-full bg-aqua" style={{ width: `${incomePct}%` }} />
                             </div>
                             <div className="bg-bg-muted rounded-full h-2.5 overflow-hidden">
                               <div
@@ -734,7 +734,7 @@ export default function FinancialsPage() {
                             </div>
                           </div>
                           <span className="text-xs font-medium w-28 text-right shrink-0">
-                            <span className="text-gold-deep block">{fmt(t.incomeCents)}</span>
+                            <span className="text-aqua-deep block">{fmt(t.incomeCents)}</span>
                             <span className={positive ? 'text-success block' : 'text-danger block'}>
                               {fmt(t.netCents)}
                             </span>
@@ -746,7 +746,7 @@ export default function FinancialsPage() {
                 </div>
                 <div className="mt-4 flex items-center gap-5 text-xs text-text-muted">
                   <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-sm bg-gold" /> Income
+                    <span className="h-2.5 w-2.5 rounded-sm bg-aqua" /> Income
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="h-2.5 w-2.5 rounded-sm bg-success" /> Net profit
@@ -1030,7 +1030,7 @@ function JobList({
                     <button
                       type="submit"
                       disabled={savingExpense}
-                      className="rounded-lg bg-gold-deep text-white px-4 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
+                      className="rounded-lg bg-navy text-white px-4 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
                     >
                       {savingExpense ? 'Adding…' : '+ Add expense'}
                     </button>
@@ -1051,7 +1051,7 @@ function SummaryCard({
   label: string; cents?: number; color?: string; loading?: boolean; accent?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border p-5 ${accent ? 'border-gold bg-gold-soft/20' : 'border-border bg-surface'}`}>
+    <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
       <p className={`mt-2 text-3xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>
         {loading || cents === undefined ? '—' : fmt(cents)}

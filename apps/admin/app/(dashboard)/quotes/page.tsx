@@ -43,7 +43,7 @@ export default function QuotesPage() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-gold-deep text-xs uppercase tracking-widest">{q.serviceLineName}</span>
+                  <span className="text-aqua-deep text-xs uppercase tracking-widest">{q.serviceLineName}</span>
                   <StatusBadge status={q.status} />
                 </div>
                 <p className="text-lg mt-1" style={{ fontFamily: 'Georgia, serif' }}>{q.siteType}</p>
@@ -62,7 +62,7 @@ export default function QuotesPage() {
               </div>
               <button
                 onClick={() => setActive(q)}
-                className="rounded-lg bg-gold px-3 py-1.5 text-sm font-semibold text-surface-dark"
+                className="rounded-lg bg-navy px-3 py-1.5 text-sm font-semibold text-white"
               >
                 Respond
               </button>
@@ -154,7 +154,7 @@ function RespondModal({
 
         <div className="mt-6 flex gap-3">
           <button onClick={onClose} className="flex-1 rounded-lg border border-border py-2.5 text-text">Cancel</button>
-          <button onClick={submit} disabled={busy} className="flex-1 rounded-lg bg-gold py-2.5 font-semibold text-surface-dark disabled:opacity-50">
+          <button onClick={submit} disabled={busy} className="flex-1 rounded-lg bg-navy py-2.5 font-semibold text-white disabled:opacity-50">
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -165,7 +165,7 @@ function RespondModal({
 
 function StatusBadge({ status }: { status: QuoteStatus }) {
   const map: Record<QuoteStatus, string> = {
-    PENDING: 'bg-gold-soft text-gold-deep',
+    PENDING: 'bg-warning/15 text-warning',
     SITE_VISIT_SCHEDULED: 'bg-service-office/20 text-service-office',
     QUOTED: 'bg-success/15 text-success',
     WON: 'bg-success/15 text-success',

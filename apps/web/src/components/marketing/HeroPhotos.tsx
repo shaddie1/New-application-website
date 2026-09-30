@@ -31,7 +31,7 @@ export function HeroPhotos({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className="relative isolate flex min-h-[560px] items-center overflow-hidden bg-cream sm:min-h-[620px] lg:min-h-[calc(100vh-4rem)]"
+      className="relative isolate flex min-h-[560px] items-center overflow-hidden bg-white sm:min-h-[620px] lg:min-h-[calc(100vh-4rem)]"
       onFocusCapture={() => setPaused(true)}
       onBlurCapture={() => setPaused(false)}
     >
@@ -54,11 +54,11 @@ export function HeroPhotos({ children }: { children: ReactNode }) {
         );
       })}
 
-      {/* A soft cream wash behind the headline only; the right half of the photo stays
+      {/* A soft white wash behind the headline only; the right half of the photo stays
           untouched. Phones have no free side, so the wash covers the frame lightly. */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 -z-10 bg-cream/80 lg:bg-transparent lg:bg-gradient-to-r lg:from-cream lg:from-25% lg:via-cream/75 lg:via-45% lg:to-transparent lg:to-65%"
+        className="absolute inset-0 -z-10 bg-white/80 lg:bg-transparent lg:bg-gradient-to-r lg:from-white lg:from-25% lg:via-white/75 lg:via-45% lg:to-transparent lg:to-65%"
       />
 
       <div className="w-full">{children}</div>
@@ -70,7 +70,7 @@ export function HeroPhotos({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => step(-1)}
               aria-label="Previous photo"
-              className="grid h-11 w-11 place-items-center rounded-pill bg-white/90 text-charcoal shadow-md transition hover:bg-gold-bright hover:text-charcoal"
+              className="grid h-11 w-11 place-items-center rounded-pill bg-white/90 text-navy shadow-md transition hover:bg-navy hover:text-white"
             >
               <ArrowRightIcon className="h-5 w-5 -rotate-90" />
             </button>
@@ -78,7 +78,7 @@ export function HeroPhotos({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => step(1)}
               aria-label="Next photo"
-              className="grid h-11 w-11 place-items-center rounded-pill bg-white/90 text-charcoal shadow-md transition hover:bg-gold-bright hover:text-charcoal"
+              className="grid h-11 w-11 place-items-center rounded-pill bg-white/90 text-navy shadow-md transition hover:bg-navy hover:text-white"
             >
               <ArrowRightIcon className="h-5 w-5 rotate-90" />
             </button>

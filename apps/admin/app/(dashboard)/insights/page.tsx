@@ -147,12 +147,12 @@ export default function InsightsPage() {
           <p className="mt-1 text-sm text-charcoal-muted">Targets, trends and where the money comes from.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-cream-deep">←</button>
+          <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-mist">←</button>
           <span className="w-36 text-center text-sm font-medium">{overview?.monthLabel ?? '…'}</span>
-          <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-cream-deep">→</button>
+          <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-mist">→</button>
           <button
             onClick={() => setShowTargets((v) => !v)}
-            className="rounded-lg bg-gold-deep px-4 py-2 text-sm text-white hover:opacity-90"
+            className="rounded-lg bg-navy px-4 py-2 text-sm text-white hover:opacity-90"
           >
             {showTargets ? 'Cancel' : 'Set targets'}
           </button>
@@ -162,7 +162,7 @@ export default function InsightsPage() {
       {error && <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
       {showTargets && (
-        <form onSubmit={(e) => void saveTargets(e)} className="mb-6 grid gap-3 rounded-xl border border-gold-bright/45 bg-gold-bright/[0.08] p-5 sm:grid-cols-4">
+        <form onSubmit={(e) => void saveTargets(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/45 bg-white p-5 sm:grid-cols-4">
           <div>
             <label className="mb-1 block text-xs text-charcoal-muted">Revenue target (KSh)</label>
             <input type="number" min="0" className={input} value={targetForm.revenueKes}
@@ -180,7 +180,7 @@ export default function InsightsPage() {
           </div>
           <div className="flex items-end">
             <button type="submit" disabled={saving}
-              className="rounded-lg bg-gold-deep px-4 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50">
+              className="rounded-lg bg-navy px-4 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50">
               {saving ? 'Saving…' : `Save for ${overview?.monthLabel ?? 'month'}`}
             </button>
           </div>

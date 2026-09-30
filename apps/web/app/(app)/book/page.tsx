@@ -184,8 +184,8 @@ export default function BookPage() {
           ) : (
             lines.map((line) => (
               <button key={line.id} onClick={() => chooseService(line)} disabled={busy} className="block w-full text-left">
-                <Card className="flex items-center gap-4 transition-colors hover:border-gold">
-                  <span className="h-11 w-11 shrink-0 rounded-lg" style={{ backgroundColor: line.colorHex ?? '#C9A55C' }} />
+                <Card className="flex items-center gap-4 transition-colors hover:border-aqua">
+                  <span className="h-11 w-11 shrink-0 rounded-lg" style={{ backgroundColor: line.colorHex ?? '#0D9488' }} />
                   <div className="flex-1">
                     <p className="font-medium text-text">{line.name}</p>
                     {line.tagline ? <p className="text-sm text-text-muted">{line.tagline}</p> : null}
@@ -210,7 +210,7 @@ export default function BookPage() {
                   key={ct.id}
                   onClick={() => setCleanTypeCode(ct.code)}
                   className={`rounded-lg border p-3 text-left ${
-                    cleanTypeCode === ct.code ? 'border-gold bg-gold-soft/30' : 'border-border'
+                    cleanTypeCode === ct.code ? 'border-aqua bg-aqua-soft/70' : 'border-border'
                   }`}
                 >
                   <span className="block font-medium text-text">{ct.name}</span>
@@ -233,7 +233,7 @@ export default function BookPage() {
                   <label
                     key={a.id}
                     className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 ${
-                      addOnCodes.includes(a.code) ? 'border-gold bg-gold-soft/30' : 'border-border'
+                      addOnCodes.includes(a.code) ? 'border-aqua bg-aqua-soft/70' : 'border-border'
                     }`}
                   >
                     <span className="flex items-center gap-3">
@@ -241,7 +241,7 @@ export default function BookPage() {
                         type="checkbox"
                         checked={addOnCodes.includes(a.code)}
                         onChange={() => toggleAddOn(a.code)}
-                        className="accent-gold"
+                        className="accent-aqua"
                       />
                       <span className="text-text">{a.name}</span>
                     </span>
@@ -281,7 +281,7 @@ export default function BookPage() {
                   key={d.iso}
                   onClick={() => pickDate(d.iso)}
                   className={`flex min-w-[64px] flex-col items-center rounded-lg border px-3 py-2 ${
-                    date === d.iso ? 'border-gold bg-gold-soft/30' : 'border-border'
+                    date === d.iso ? 'border-aqua bg-aqua-soft/70' : 'border-border'
                   }`}
                 >
                   <span className="text-xs text-text-muted">{d.weekday}</span>
@@ -306,7 +306,7 @@ export default function BookPage() {
                       key={s.startsAt}
                       onClick={() => setScheduledAt(s.startsAt)}
                       className={`rounded-pill border px-4 py-2 text-sm ${
-                        scheduledAt === s.startsAt ? 'border-gold bg-gold-soft/30 text-text' : 'border-border text-text-muted'
+                        scheduledAt === s.startsAt ? 'border-aqua bg-aqua-soft/70 text-text' : 'border-border text-text-muted'
                       }`}
                     >
                       {formatTime(s.startsAt)}
@@ -389,7 +389,7 @@ function StepHeader({ step }: { step: Step }) {
         {order.map((s, i) => (
           <span
             key={s}
-            className={`h-1.5 flex-1 rounded-pill ${i <= idx ? 'bg-gold' : 'bg-bg-muted'}`}
+            className={`h-1.5 flex-1 rounded-pill ${i <= idx ? 'bg-aqua' : 'bg-bg-muted'}`}
             title={labels[s]}
           />
         ))}
@@ -487,7 +487,7 @@ function AddressPicker({
             <label
               key={a.id}
               className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 ${
-                addressId === a.id ? 'border-gold bg-gold-soft/30' : 'border-border'
+                addressId === a.id ? 'border-aqua bg-aqua-soft/70' : 'border-border'
               }`}
             >
               <input
@@ -495,7 +495,7 @@ function AddressPicker({
                 name="address"
                 checked={addressId === a.id}
                 onChange={() => setAddressId(a.id)}
-                className="accent-gold"
+                className="accent-aqua"
               />
               <span>
                 <span className="block text-text">{a.label}</span>
@@ -538,7 +538,7 @@ function AddressPicker({
           </div>
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} className="mt-2 text-sm text-gold-deep hover:underline">
+        <button onClick={() => setAdding(true)} className="mt-2 text-sm text-aqua-deep hover:underline">
           + Add a new address
         </button>
       )}
@@ -603,7 +603,7 @@ function PaymentPanel({
   // In flight
   return (
     <Card className="space-y-4 text-center">
-      <div className="mx-auto"><Spinner className="text-gold" /></div>
+      <div className="mx-auto"><Spinner className="text-aqua" /></div>
       <h2 className="font-serif text-2xl text-text">Check your phone</h2>
       <p className="text-text-muted">
         We’ve sent an M-Pesa prompt{payment.msisdn ? ` to ${payment.msisdn}` : ''}. Enter your PIN to confirm

@@ -86,10 +86,10 @@ export default function PrivacyPage() {
         <Section title="Contact">
           <p>
             Questions or requests:{' '}
-            <a href="mailto:info@onyxhawkcleaningservice.com" className="text-bronze hover:underline">
+            <a href="mailto:info@onyxhawkcleaningservice.com" className="text-aqua-deep hover:underline">
               info@onyxhawkcleaningservice.com
             </a>{' '}
-            · <a href="tel:+254702416697" className="text-bronze hover:underline">+254 702 416 697</a> · Nairobi, Kenya.
+            · <a href="tel:+254702416697" className="text-aqua-deep hover:underline">+254 702 416 697</a> · Nairobi, Kenya.
           </p>
         </Section>
       </div>

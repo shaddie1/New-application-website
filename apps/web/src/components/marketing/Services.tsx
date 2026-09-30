@@ -15,7 +15,7 @@ function ServiceCard({ service }: { service: ServiceEntry }) {
       <p className="mt-2 flex-1 text-sm leading-relaxed text-charcoal-muted">{service.description}</p>
       <Link
         href={`/quote?service=${service.code}`}
-        className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-bronze transition-colors hover:text-charcoal"
+        className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-aqua-deep transition-colors hover:text-charcoal"
       >
         Get quote
         <ArrowRightIcon className="h-4 w-4" />

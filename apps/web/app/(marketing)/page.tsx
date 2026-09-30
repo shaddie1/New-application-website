@@ -43,7 +43,7 @@ export default function HomePage() {
       <Hero />
 
       {/* About teaser */}
-      <Section tone="gold">
+      <Section tone="fresh">
         <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
           <div>
             <SectionHeading
@@ -53,7 +53,7 @@ export default function HomePage() {
             />
             <Link
               href="/about"
-              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-bronze transition-colors hover:text-charcoal"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-aqua-deep transition-colors hover:text-charcoal"
             >
               Read our story
               <ArrowRightIcon className="h-4 w-4" />

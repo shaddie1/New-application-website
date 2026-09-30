@@ -84,7 +84,7 @@ export default function AboutPage() {
         />
         <div className="mt-12 grid gap-5 lg:grid-cols-3">
           {PILLARS.map((pillar) => (
-            <SurfaceCard key={pillar.title} className="bg-cream">
+            <SurfaceCard key={pillar.title} className="bg-white">
               <IconChip>
                 <pillar.icon />
               </IconChip>

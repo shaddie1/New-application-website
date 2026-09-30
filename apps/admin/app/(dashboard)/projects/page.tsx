@@ -52,8 +52,8 @@ const FREQUENCY_SUFFIX: Record<PaymentFrequency, string> = {
 };
 
 const input = 'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm';
-const btn = 'rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
-const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-cream-deep';
+const btn = 'rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
+const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-mist';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -89,7 +89,7 @@ function stageTone(stage: ProjectStage) {
   if (stage === 'COMPLETE') return 'bg-success/10 text-success';
   if (stage === 'CANCELLED') return 'bg-danger/10 text-danger';
   if (stage === 'SNAGGING') return 'bg-warning/15 text-warning';
-  return 'bg-cream-deep text-charcoal-muted';
+  return 'bg-mist text-charcoal-muted';
 }
 
 /** Thin progress bar for a project's checklist completion. */
@@ -239,7 +239,7 @@ export default function ProjectsPage() {
       )}
 
       {showForm && (
-        <form onSubmit={(e) => void create(e)} className="mb-6 grid gap-3 rounded-xl border border-gold-bright/40 bg-gold-bright/[0.06] p-5 sm:grid-cols-3">
+        <form onSubmit={(e) => void create(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs text-charcoal-muted">Project title</label>
             <input required className={input} value={form.title} placeholder="e.g. Post-construction clean — Riverside Block C"
@@ -318,13 +318,13 @@ export default function ProjectsPage() {
       <div className="mb-4 flex gap-1 border-b border-line">
         <button
           onClick={() => setShowClosed(false)}
-          className={`border-b-2 px-4 py-2 text-sm ${!showClosed ? 'border-gold-deep font-medium text-gold-deep' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+          className={`border-b-2 px-4 py-2 text-sm ${!showClosed ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
         >
           Open ({open.length})
         </button>
         <button
           onClick={() => setShowClosed(true)}
-          className={`border-b-2 px-4 py-2 text-sm ${showClosed ? 'border-gold-deep font-medium text-gold-deep' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+          className={`border-b-2 px-4 py-2 text-sm ${showClosed ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
         >
           Closed ({closed.length})
         </button>
@@ -407,7 +407,7 @@ function ActivityLog({ projectId, reloadKey }: { projectId: string; reloadKey: n
       {events.map((e) => (
         <li key={e.id} className="relative">
           <span
-            className="absolute -left-[27px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-cream"
+            className="absolute -left-[27px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-white"
             style={{ backgroundColor: EVENT_TONE[e.kind] }}
           />
           <p className="text-sm text-charcoal">{e.summary}</p>
@@ -513,7 +513,7 @@ function ProjectCard({
             <span
               key={s}
               className={`rounded-full px-2 py-0.5 text-[11px] ${
-                done ? 'bg-gold-bright/20 text-bronze' : 'bg-cream-deep text-charcoal-muted'
+                done ? 'bg-aqua-soft text-aqua-deep' : 'bg-mist text-charcoal-muted'
               }`}
             >
               {STAGE_LABELS[s]}
@@ -523,17 +523,17 @@ function ProjectCard({
       </div>
 
       {expanded && (
-        <div className="border-t border-line bg-cream/40 px-5 py-4">
+        <div className="border-t border-line bg-mist/60 px-5 py-4">
           <div className="mb-4 flex items-center gap-1 border-b border-line">
             <button
               onClick={() => setTab('questions')}
-              className={`border-b-2 px-3 py-2 text-sm ${tab === 'questions' ? 'border-gold-deep font-medium text-gold-deep' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+              className={`border-b-2 px-3 py-2 text-sm ${tab === 'questions' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
             >
               Questions ({p.checklistCount})
             </button>
             <button
               onClick={() => setTab('log')}
-              className={`border-b-2 px-3 py-2 text-sm ${tab === 'log' ? 'border-gold-deep font-medium text-gold-deep' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+              className={`border-b-2 px-3 py-2 text-sm ${tab === 'log' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
             >
               Activity log ({p.eventCount})
             </button>
@@ -586,7 +586,7 @@ function ProjectCard({
                           className={`rounded-lg px-2.5 py-1 text-xs ${
                             c.answer === true && !c.notApplicable
                               ? 'bg-success text-white'
-                              : 'border border-line text-charcoal-muted hover:bg-cream-deep'
+                              : 'border border-line text-charcoal-muted hover:bg-mist'
                           }`}
                         >
                           Yes
@@ -596,7 +596,7 @@ function ProjectCard({
                           className={`rounded-lg px-2.5 py-1 text-xs ${
                             c.answer === false && !c.notApplicable
                               ? 'bg-danger text-white'
-                              : 'border border-line text-charcoal-muted hover:bg-cream-deep'
+                              : 'border border-line text-charcoal-muted hover:bg-mist'
                           }`}
                         >
                           No
@@ -606,7 +606,7 @@ function ProjectCard({
                           className={`rounded-lg px-2.5 py-1 text-xs ${
                             c.notApplicable
                               ? 'bg-charcoal text-white'
-                              : 'border border-line text-charcoal-muted hover:bg-cream-deep'
+                              : 'border border-line text-charcoal-muted hover:bg-mist'
                           }`}
                         >
                           N/A

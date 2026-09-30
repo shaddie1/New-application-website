@@ -197,7 +197,7 @@ function AssignModal({
                   </button>
                 ))}
               </div>
-              <button onClick={assign} disabled={busy} className="mt-3 w-full rounded-lg bg-gold py-2.5 font-semibold text-surface-dark disabled:opacity-50">
+              <button onClick={assign} disabled={busy} className="mt-3 w-full rounded-lg bg-navy py-2.5 font-semibold text-white disabled:opacity-50">
                 {busy ? 'Saving…' : 'Assign'}
               </button>
             </>
@@ -212,8 +212,8 @@ function AssignModal({
 
 function StatusBadge({ status }: { status: BookingStatus }) {
   const map: Partial<Record<BookingStatus, string>> = {
-    PENDING_PAYMENT: 'bg-gold-soft text-gold-deep',
-    CONFIRMED: 'bg-gold-soft text-gold-deep',
+    PENDING_PAYMENT: 'bg-warning/15 text-warning',
+    CONFIRMED: 'bg-navy-soft text-navy',
     EN_ROUTE: 'bg-service-office/20 text-service-office',
     IN_PROGRESS: 'bg-service-office/20 text-service-office',
     COMPLETED: 'bg-success/15 text-success',
