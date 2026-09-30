@@ -117,14 +117,14 @@ async function tryRefresh(refreshToken: string): Promise<Session | null> {
 }
 
 export const api = {
-  /** Staff sign-in: the code goes to the account's email; phone is the lookup key. */
-  adminRequestOtp: (phone: string) =>
-    request<AdminRequestOtpResult>('/auth/admin/request-otp', { method: 'POST', body: JSON.stringify({ phone }) }),
+  /** Staff sign-in: staff enter their email and the code is sent there. */
+  adminRequestOtp: (email: string) =>
+    request<AdminRequestOtpResult>('/auth/admin/request-otp', { method: 'POST', body: JSON.stringify({ email }) }),
 
-  adminVerifyOtp: (phone: string, code: string) =>
+  adminVerifyOtp: (email: string, code: string) =>
     request<{ kind: 'AUTHENTICATED'; session: Session }>('/auth/admin/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ phone, code }),
+      body: JSON.stringify({ email, code }),
     }),
 
   requestOtp: (phone: string) =>
@@ -132,12 +132,6 @@ export const api = {
 
   verifyOtp: (phone: string, code: string) =>
     request<VerifyOtpResult>('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ phone, code }) }),
-
-  signInWithPassword: (phone: string, password: string) =>
-    request<{ session: Session }>('/auth/sign-in-password', {
-      method: 'POST',
-      body: JSON.stringify({ phone, password }),
-    }),
 
   logout: (refreshToken: string) =>
     request<{ ok: true }>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),

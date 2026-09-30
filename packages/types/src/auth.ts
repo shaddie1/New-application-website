@@ -34,6 +34,16 @@ export interface Session extends AuthTokens {
   user: PublicUser;
 }
 
+/** POST /auth/admin/request-otp — staff identify themselves by email. */
+export interface AdminRequestOtpInput {
+  email: string;
+}
+/** POST /auth/admin/verify-otp */
+export interface AdminVerifyOtpInput {
+  email: string;
+  code: string;
+}
+
 /** POST /auth/admin/request-otp — staff sign-in code, delivered by email. */
 export interface AdminRequestOtpResult {
   ok: true;

@@ -12,13 +12,10 @@ export default function LoginPage() {
   const router = useRouter();
   const { session, setSession } = useAuth();
 
-  const [step, setStep] = useState<'phone' | 'code' | 'password'>('phone');
-  const [phone, setPhone] = useState('');
+  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [devOtp, setDevOtp] = useState<string | null>(null);
-  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,23 +26,23 @@ export default function LoginPage() {
     }
   }, [session, router]);
 
-  const e164 = (input: string): string => {
-    const digits = input.replace(/\D/g, '');
-    if (digits.startsWith('254')) return `+${digits}`;
-    if (digits.startsWith('0')) return `+254${digits.slice(1)}`;
-    if (digits.length === 9) return `+254${digits}`;
-    return `+${digits}`;
-  };
+  const normalisedEmail = email.trim().toLowerCase();
 
   const sendCode = async () => {
     setError(null);
+
+    // Guard here rather than relying on the button's disabled state — pressing
+    // Enter in the field bypasses that.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalisedEmail)) {
+      setError('Enter your staff email address.');
+      return;
+    }
+
     setBusy(true);
     try {
-      // Staff codes are emailed; the phone is only the lookup key.
-      const res = await api.adminRequestOtp(e164(phone));
+      const res = await api.adminRequestOtp(normalisedEmail);
       const otp = res.devOtp ?? null;
       setDevOtp(otp);
-      setMaskedEmail(res.maskedEmail);
       if (otp) setCode(otp); // auto-fill in dev
       setStep('code');
     } catch (err) {
@@ -60,46 +57,14 @@ export default function LoginPage() {
     }
   };
 
-  const signInWithPassword = async () => {
-    setError(null);
-
-    // Guard here rather than relying on the button's disabled state — pressing
-    // Enter in the password field bypasses that, and an empty phone produced a
-    // bare "+" that the API rejected as a confusing 400.
-    const normalised = e164(phone);
-    if (!/^\+[1-9]\d{7,14}$/.test(normalised)) {
-      setError('Enter your phone number, e.g. 712 345 678.');
-      return;
-    }
-    if (!password) {
-      setError('Enter your password.');
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const res = await api.signInWithPassword(normalised, password);
-      if (!STAFF_ROLES.includes(res.session.user.role)) {
-        setError('This number is not a staff account.');
-        return;
-      }
-      setSession(res.session);
-      router.replace('/');
-    } catch (err) {
-      setError(messageFrom(err, 'Could not sign in.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const verify = async () => {
     setError(null);
     setBusy(true);
     try {
-      const res = await api.adminVerifyOtp(e164(phone), code);
+      const res = await api.adminVerifyOtp(normalisedEmail, code);
       const role = res.session.user.role;
       if (!STAFF_ROLES.includes(role)) {
-        setError('This number is not a staff account.');
+        setError('This email is not a staff account.');
         return;
       }
       setSession(res.session);
@@ -115,101 +80,44 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.jpg" alt="OnyxHawk Cleaning Service" className="h-16 w-auto mb-4" />
+        <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-16 w-auto mb-4" />
         <p className="text-text-muted text-xs uppercase tracking-[0.2em]">OnyxHawk</p>
         <h1 className="text-4xl mt-2" style={{ fontFamily: 'Georgia, serif' }}>
-          Back-office<span className="text-gold-deep italic">.</span>
+          Back-office<span className="text-aqua-deep italic">.</span>
         </h1>
-        <p className="text-text-muted text-sm mt-2">Sign in with your staff phone number — the code goes to your email.</p>
+        <p className="text-text-muted text-sm mt-2">Sign in with your staff email — we’ll send you a 6-digit code.</p>
 
         {error && (
           <div className="mt-5 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>
         )}
 
-        {step === 'phone' ? (
+        {step === 'email' ? (
           <div className="mt-6">
-            <label className="text-text-muted text-xs uppercase tracking-widest">Phone</label>
-            <div className="mt-2 flex items-center rounded-lg border border-border bg-surface px-4 py-3">
-              <span className="text-text-muted mr-2">+254</span>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="712 480 392"
-                inputMode="tel"
-                className="flex-1 bg-transparent outline-none text-text"
-                onKeyDown={(e) => e.key === 'Enter' && sendCode()}
-              />
-            </div>
+            <label htmlFor="staff-email" className="text-text-muted text-xs uppercase tracking-widest">Email</label>
+            <input
+              id="staff-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@onyxhawkcleaningservice.com"
+              autoComplete="email"
+              autoFocus
+              className="mt-2 w-full rounded-lg border border-border bg-surface px-4 py-3 outline-none text-text focus:border-aqua"
+              onKeyDown={(e) => e.key === 'Enter' && sendCode()}
+            />
             <button
               onClick={sendCode}
-              disabled={busy || !phone}
-              className="mt-4 w-full rounded-lg bg-gold py-3 font-semibold text-surface-dark disabled:opacity-50"
+              disabled={busy || !email.trim()}
+              className="mt-4 w-full rounded-lg bg-navy py-3 font-semibold text-white disabled:opacity-50"
             >
               {busy ? 'Sending…' : 'Email me a code'}
-            </button>
-            <button
-              onClick={() => { setStep('password'); setError(null); }}
-              className="mt-3 w-full text-text-muted text-sm underline"
-            >
-              Sign in with a password instead
-            </button>
-          </div>
-        ) : step === 'password' ? (
-          <div className="mt-6">
-            <label className="text-text-muted text-xs uppercase tracking-widest">Phone</label>
-            <div className="mt-2 flex items-center rounded-lg border border-border bg-surface px-4 py-3">
-              <span className="text-text-muted mr-2">+254</span>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="712 480 392"
-                inputMode="tel"
-                className="flex-1 bg-transparent outline-none text-text"
-                onKeyDown={(e) => { if (e.key === 'Enter' && phone && password) void signInWithPassword(); }}
-              />
-            </div>
-            <label className="mt-4 block text-text-muted text-xs uppercase tracking-widest">Password</label>
-            <div className="mt-2 flex items-center rounded-lg border border-border bg-surface px-4 py-3">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Your password"
-                autoComplete="current-password"
-                className="flex-1 bg-transparent outline-none text-text"
-                onKeyDown={(e) => { if (e.key === 'Enter' && phone && password) void signInWithPassword(); }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                title={showPassword ? 'Hide password' : 'Show password'}
-                className="ml-2 shrink-0 text-text-muted hover:text-text"
-              >
-                {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-              </button>
-            </div>
-            <button
-              onClick={signInWithPassword}
-              disabled={busy || !phone || !password}
-              className="mt-4 w-full rounded-lg bg-gold py-3 font-semibold text-surface-dark disabled:opacity-50"
-            >
-              {busy ? 'Signing in…' : 'Sign in'}
-            </button>
-            <button
-              onClick={() => { setStep('phone'); setPassword(''); setError(null); }}
-              className="mt-3 w-full text-text-muted text-sm underline"
-            >
-              Use an emailed code instead
             </button>
           </div>
         ) : (
           <div className="mt-6">
-            {maskedEmail && (
-              <p className="mb-4 rounded-lg bg-gold-soft/20 px-4 py-3 text-sm text-text" role="status">
-                Code sent to your email — check <span className="font-medium">{maskedEmail}</span>.
-              </p>
-            )}
+            <p className="mb-4 rounded-lg border border-aqua/40 bg-white px-4 py-3 text-sm text-text" role="status">
+              Code sent to <span className="font-medium">{normalisedEmail}</span> — check your inbox.
+            </p>
             <label className="text-text-muted text-xs uppercase tracking-widest">Verification code</label>
             <input
               value={code}
@@ -220,10 +128,10 @@ export default function LoginPage() {
               onKeyDown={(e) => e.key === 'Enter' && verify()}
             />
             {devOtp && (
-              <div className="mt-3 rounded-lg border border-gold bg-gold-soft/20 px-4 py-3 flex items-center justify-between">
+              <div className="mt-3 rounded-lg border border-aqua/40 bg-white px-4 py-3 flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-widest text-text-muted">Dev — code auto-filled</p>
-                  <p className="font-mono text-2xl tracking-[0.4em] text-gold-deep mt-0.5">{devOtp}</p>
+                  <p className="font-mono text-2xl tracking-[0.4em] text-aqua-deep mt-0.5">{devOtp}</p>
                 </div>
                 <button
                   type="button"
@@ -237,36 +145,17 @@ export default function LoginPage() {
             <button
               onClick={verify}
               disabled={busy || code.length !== 6}
-              className="mt-4 w-full rounded-lg bg-gold py-3 font-semibold text-surface-dark disabled:opacity-50"
+              className="mt-4 w-full rounded-lg bg-navy py-3 font-semibold text-white disabled:opacity-50"
             >
               {busy ? 'Verifying…' : 'Sign in'}
             </button>
-            <button onClick={() => { setStep('phone'); setCode(''); setMaskedEmail(null); }} className="mt-3 w-full text-text-muted text-sm underline">
-              Use a different number
+            <button onClick={() => { setStep('email'); setCode(''); setError(null); }} className="mt-3 w-full text-text-muted text-sm underline">
+              Use a different email
             </button>
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function EyeIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-function EyeOffIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <path d="M2 12s3.6-7 10-7c1.9 0 3.6.6 5 1.5M22 12s-3.6 7-10 7c-1.9 0-3.6-.6-5-1.5" />
-      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
-      <path d="M3 3l18 18" />
-    </svg>
   );
 }
 

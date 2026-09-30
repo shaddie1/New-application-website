@@ -54,8 +54,9 @@ export async function issueSignInOtp(phone: string, log: SmsLogger): Promise<{ d
 }
 
 /**
- * Issue a staff ADMIN_SIGN_IN code, delivered to the account's email. The
- * phone stays the lookup key so the login screen does not change shape.
+ * Issue a staff ADMIN_SIGN_IN code, delivered to the account's email. Staff
+ * sign in by email, but the code is stored against the account's phone, its
+ * stable key, so the OTP table and scripts/issue-otp.ts are unchanged.
  */
 export async function issueAdminSignInOtp(
   user: { phone: string; email: string },
