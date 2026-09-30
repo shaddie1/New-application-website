@@ -77,7 +77,7 @@ function Pane({ label, url }: { label: string; url: string | null }) {
   return (
     <View
       className="flex-1 rounded-lg overflow-hidden items-center justify-center"
-      style={{ aspectRatio: 1, backgroundColor: '#EDE7D8' }}
+      style={{ aspectRatio: 1, backgroundColor: '#F2F2F2' }}
     >
       {url ? (
         <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />

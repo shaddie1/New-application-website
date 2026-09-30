@@ -401,7 +401,7 @@ function StkPushView({
         </Pressable>
       </View>
 
-      <View className="absolute left-5 right-5 bottom-6 rounded-lg bg-gold-soft/20 px-3 py-2">
+      <View className="absolute left-5 right-5 bottom-6 rounded-lg border border-gold/40 bg-surface px-3 py-2">
         <Text className="text-text-on-dark text-[11px]">
           Didn't get the prompt? Dial <Text className="text-gold">*334#</Text> → "Lipa na M-Pesa" → "Pay Bill" → {booking.reference}.
         </Text>
@@ -542,7 +542,7 @@ function BookedView({ booking, onDone }: { booking: BookingDto; onDone: () => vo
               {formatKes(booking.totalCents)}
             </Text>
           </View>
-          <View className="mt-3 rounded-md bg-gold-soft/40 px-3 py-2 flex-row items-center">
+          <View className="mt-3 rounded-md border border-gold/40 bg-surface px-3 py-2 flex-row items-center">
             <Text className="text-surface-dark text-xs">
               ★ You'll earn <Text className="font-semibold">+{booking.pointsToEarn} Hawk Points</Text> when the crew completes.
             </Text>

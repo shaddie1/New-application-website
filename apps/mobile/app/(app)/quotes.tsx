@@ -100,7 +100,7 @@ export default function QuotesScreen() {
               </Text>
 
               {q.status === 'QUOTED' && q.quotedAmountCents != null && (
-                <View className="mt-3 rounded-lg bg-gold-soft/30 px-3 py-2">
+                <View className="mt-3 rounded-lg border border-gold/40 bg-surface px-3 py-2">
                   <Text className="text-text text-sm">
                     Quoted: <Text className="font-semibold">KSh {(q.quotedAmountCents / 100).toLocaleString()}</Text>
                   </Text>
