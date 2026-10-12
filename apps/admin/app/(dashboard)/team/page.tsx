@@ -178,7 +178,7 @@ export default function TeamPage() {
           </button>
         </div>
         <p className="text-text-muted text-xs mt-3">
-          They sign in at this portal with their phone number and a code emailed to this address. If the number already has an account, it’s promoted.
+          They sign in at this portal with this email address — we email them a 6-digit code. If the number already has an account, it’s promoted.
         </p>
       </form>
 

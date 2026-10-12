@@ -1,7 +1,5 @@
 import type {
   Session,
-  RequestOtpResult,
-  VerifyOtpResult,
   AdminStats,
   AdminBookingDto,
   AdminQuoteRequestDto,
@@ -126,12 +124,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, code }),
     }),
-
-  requestOtp: (phone: string) =>
-    request<RequestOtpResult>('/auth/request-otp', { method: 'POST', body: JSON.stringify({ phone }) }),
-
-  verifyOtp: (phone: string, code: string) =>
-    request<VerifyOtpResult>('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ phone, code }) }),
 
   logout: (refreshToken: string) =>
     request<{ ok: true }>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
