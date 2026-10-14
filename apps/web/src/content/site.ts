@@ -119,7 +119,11 @@ export type ServiceEntry = {
   name: string;
   description: string;
   icon: 'home' | 'office' | 'medical' | 'hardhat' | 'sofa' | 'rug' | 'pest' | 'air';
+  /** Accent colour for the service card; each service gets its own. */
+  tone: ServiceTone;
 };
+
+export type ServiceTone = 'emerald' | 'blue' | 'rose' | 'amber' | 'fuchsia' | 'cyan' | 'violet' | 'sky';
 
 /** Everyday cleaning — the core lines most clients book. */
 export const EVERYDAY_SERVICES: ServiceEntry[] = [
@@ -128,24 +132,28 @@ export const EVERYDAY_SERVICES: ServiceEntry[] = [
     name: 'Residential cleaning',
     description: 'Homes and apartments — regular upkeep, deep cleans, and move-in or move-out.',
     icon: 'home',
+    tone: 'emerald',
   },
   {
     code: 'office',
     name: 'Office & commercial',
     description: 'Workspaces, retail and hospitality, cleaned around your opening hours.',
     icon: 'office',
+    tone: 'blue',
   },
   {
     code: 'hospital',
     name: 'Medical & hospital',
     description: 'Clinics and wards cleaned to clinical hygiene standards by certified crews.',
     icon: 'medical',
+    tone: 'rose',
   },
   {
     code: 'post_build',
     name: 'Post-construction',
     description: 'Dust, debris and paint residue cleared so a finished site is ready to hand over.',
     icon: 'hardhat',
+    tone: 'amber',
   },
 ];
 
@@ -156,24 +164,28 @@ export const SPECIALIST_SERVICES: ServiceEntry[] = [
     name: 'Sofa & upholstery',
     description: 'Deep extraction cleaning for sofas, armchairs and headboards.',
     icon: 'sofa',
+    tone: 'fuchsia',
   },
   {
     code: 'carpet',
     name: 'Carpet & rugs',
     description: 'Stain treatment and hot-water extraction that lifts embedded dirt.',
     icon: 'rug',
+    tone: 'cyan',
   },
   {
     code: 'fumigation',
     name: 'Fumigation & pest control',
     description: 'Safe, licensed treatment for roaches, bedbugs, termites and rodents.',
     icon: 'pest',
+    tone: 'violet',
   },
   {
     code: 'ac_duct',
     name: 'AC, mattress & curtains',
     description: 'Air conditioning units, ducts, mattresses, curtains and drapes.',
     icon: 'air',
+    tone: 'sky',
   },
 ];
 
