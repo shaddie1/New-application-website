@@ -42,11 +42,8 @@ export type PhotoSlot = {
 };
 
 export const SITE_PHOTOS: Record<
-  | 'hero'
   | 'aboutTeam'
-  | 'upholstery'
   | 'proofResult'
-  | 'detail'
   | 'crewOnJob'
   | 'officeShelves'
   | 'carpetScrub'
@@ -56,11 +53,6 @@ export const SITE_PHOTOS: Record<
   | 'chairCourtyard',
   PhotoSlot
 > = {
-  hero: {
-    src: '/photos/team-uniforms-hero-crop.jpg',
-    alt: 'The OnyxHawk crew in branded uniform at the office',
-    placeholder: 'Photo of the full crew in uniform goes here.',
-  },
   aboutTeam: {
     src: '/photos/crew-on-site.jpg',
     alt: 'An OnyxHawk crew member deep-cleaning armchairs in a Nairobi office',
@@ -71,20 +63,10 @@ export const SITE_PHOTOS: Record<
     alt: 'An OnyxHawk crew member in branded uniform cleaning on site in Nairobi',
     placeholder: 'Photo of a uniformed crew on site goes here.',
   },
-  upholstery: {
-    src: '/photos/upholstery-clean.jpg',
-    alt: 'An OnyxHawk crew member deep-cleaning an upholstered armchair',
-    placeholder: 'Upholstery cleaning in progress.',
-  },
   proofResult: {
     src: '/photos/armchair-result.jpg',
     alt: 'An armchair after an OnyxHawk deep clean',
     placeholder: 'The finished result.',
-  },
-  detail: {
-    src: '/photos/upholstery-detail.jpg',
-    alt: 'Close-up of an OnyxHawk crew member cleaning upholstery in protective gloves',
-    placeholder: 'Detail of the work.',
   },
   officeShelves: {
     src: '/photos/office-shelf-dusting.jpg',
@@ -126,10 +108,9 @@ export const SITE_PHOTOS: Record<
  * alongside it. Order matters: the first one loads eagerly as the LCP image.
  */
 export const HERO_SLIDES: { slot: keyof typeof SITE_PHOTOS; caption: string }[] = [
-  { slot: 'hero', caption: 'Our crew, uniformed and ready for the day' },
-  { slot: 'crewOnJob', caption: 'Deep clean underway in a Nairobi office' },
   { slot: 'aboutTeam', caption: 'Upholstery shampoo and floor care on site' },
-  { slot: 'upholstery', caption: 'Foam treatment worked into the fabric' },
+  { slot: 'chairWash', caption: 'Office chairs washed by hand, one at a time' },
+  { slot: 'crewOnJob', caption: 'Deep clean underway in a Nairobi office' },
 ];
 
 export type ServiceEntry = {

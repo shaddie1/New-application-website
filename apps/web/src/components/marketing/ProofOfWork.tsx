@@ -25,16 +25,16 @@ export function ProofOfWork() {
         </figure>
 
         <figure>
-          <Photo slot={SITE_PHOTOS.upholstery} className="aspect-[3/4]" />
+          <Photo slot={SITE_PHOTOS.carpetScrub} className="aspect-[3/4]" />
           <figcaption className="mt-3 text-sm text-charcoal-muted">
-            Upholstery deep clean in progress — foam treatment worked into the fabric.
+            Office carpet shampooed with a rotary scrubber.
           </figcaption>
         </figure>
 
         <figure>
-          <Photo slot={SITE_PHOTOS.detail} className="aspect-[3/4]" />
+          <Photo slot={SITE_PHOTOS.officeShelves} className="aspect-[3/4]" />
           <figcaption className="mt-3 text-sm text-charcoal-muted">
-            Protective gloves, eco-friendly products, and attention to every seam.
+            Shelving and display units dusted in an executive office.
           </figcaption>
         </figure>
 

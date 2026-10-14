@@ -13,11 +13,8 @@ export const metadata: Metadata = {
 };
 
 const GALLERY: { slot: keyof typeof SITE_PHOTOS; caption: string }[] = [
-  { slot: 'hero', caption: 'The OnyxHawk crew, branded and ready for the day.' },
   { slot: 'crewOnJob', caption: 'On site in Nairobi — fumigation equipment set up and ready to go.' },
   { slot: 'aboutTeam', caption: 'A crew member deep-cleaning armchairs in a Nairobi office.' },
-  { slot: 'upholstery', caption: 'Upholstery deep clean in progress — foam treatment worked into the fabric.' },
-  { slot: 'detail', caption: 'Protective gloves, eco-friendly products, and attention to every seam.' },
   { slot: 'proofResult', caption: 'The finished armchair, back in place and ready to use.' },
   { slot: 'workstation', caption: 'Workstation partitions wiped down, top to bottom, gloves on.' },
   { slot: 'carpetScrub', caption: 'Office carpet shampooed with a rotary scrubber.' },
