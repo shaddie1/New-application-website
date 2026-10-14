@@ -33,10 +33,27 @@ export const WHATSAPP_LINK = `https://wa.me/${COMPANY.whatsAppNumber}?text=${enc
  * Files are produced by scripts/prepare-photos.ps1, which bakes in EXIF
  * rotation and resizes for mobile.
  */
-export type PhotoSlot = { src: string | null; alt: string; placeholder: string };
+export type PhotoSlot = {
+  src: string | null;
+  alt: string;
+  placeholder: string;
+  /** CSS object-position, for landscape shots whose subject sits off-centre in a portrait frame. */
+  position?: string;
+};
 
 export const SITE_PHOTOS: Record<
-  'hero' | 'aboutTeam' | 'upholstery' | 'proofResult' | 'detail' | 'crewOnJob',
+  | 'hero'
+  | 'aboutTeam'
+  | 'upholstery'
+  | 'proofResult'
+  | 'detail'
+  | 'crewOnJob'
+  | 'officeShelves'
+  | 'carpetScrub'
+  | 'workstation'
+  | 'armchairsResult'
+  | 'chairWash'
+  | 'chairCourtyard',
   PhotoSlot
 > = {
   hero: {
@@ -68,6 +85,39 @@ export const SITE_PHOTOS: Record<
     src: '/photos/upholstery-detail.jpg',
     alt: 'Close-up of an OnyxHawk crew member cleaning upholstery in protective gloves',
     placeholder: 'Detail of the work.',
+  },
+  officeShelves: {
+    src: '/photos/office-shelf-dusting.jpg',
+    alt: 'An OnyxHawk crew member in branded uniform dusting office shelving',
+    placeholder: 'Office shelving being dusted.',
+  },
+  carpetScrub: {
+    src: '/photos/carpet-scrub-machine.jpg',
+    alt: 'An OnyxHawk crew member shampooing an office carpet with a rotary scrubber',
+    placeholder: 'Carpet shampoo with a rotary scrubber.',
+  },
+  workstation: {
+    src: '/photos/workstation-wipe-down.jpg',
+    alt: 'An OnyxHawk crew member in gloves wiping down office workstation partitions',
+    placeholder: 'Workstations being wiped down.',
+  },
+  armchairsResult: {
+    src: '/photos/white-armchairs-result.jpg',
+    alt: 'A white upholstered armchair after an OnyxHawk clean',
+    placeholder: 'An armchair after cleaning.',
+    position: '90% center',
+  },
+  chairWash: {
+    src: '/photos/office-chairs-wash.jpg',
+    alt: 'An OnyxHawk crew member washing an office chair outdoors',
+    placeholder: 'Office chairs being washed.',
+    position: '80% center',
+  },
+  chairCourtyard: {
+    src: '/photos/office-chairs-courtyard.jpg',
+    alt: 'An OnyxHawk crew member cleaning a courtyard full of office chairs',
+    placeholder: 'A full set of office chairs being cleaned.',
+    position: '35% center',
   },
 };
 
@@ -299,7 +349,7 @@ export type TeamMember = {
  * the role alone until then rather than showing a placeholder person.
  */
 export const TEAM: TeamMember[] = [
-  { role: 'Chief Executive Officer' },
+  { role: 'Chief Executive Officer', photo: '/photos/passport.jpeg' },
   { role: 'Chief Operations Officer' },
   { role: 'Marketing Manager' },
   { role: 'Graphic Designer' },

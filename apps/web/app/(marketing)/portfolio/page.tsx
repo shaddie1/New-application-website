@@ -19,6 +19,12 @@ const GALLERY: { slot: keyof typeof SITE_PHOTOS; caption: string }[] = [
   { slot: 'upholstery', caption: 'Upholstery deep clean in progress — foam treatment worked into the fabric.' },
   { slot: 'detail', caption: 'Protective gloves, eco-friendly products, and attention to every seam.' },
   { slot: 'proofResult', caption: 'The finished armchair, back in place and ready to use.' },
+  { slot: 'workstation', caption: 'Workstation partitions wiped down, top to bottom, gloves on.' },
+  { slot: 'carpetScrub', caption: 'Office carpet shampooed with a rotary scrubber.' },
+  { slot: 'officeShelves', caption: 'Shelving and display units dusted in an executive office.' },
+  { slot: 'chairWash', caption: 'Office chairs washed by hand, one at a time.' },
+  { slot: 'chairCourtyard', caption: 'A courtyard full of office chairs, cleaned on site.' },
+  { slot: 'armchairsResult', caption: 'A white armchair after an upholstery clean.' },
 ];
 
 export default function PortfolioPage() {

@@ -29,6 +29,7 @@ export function Photo({
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
           className={cn('h-full w-full object-cover', imgClassName)}
+          style={slot.position ? { objectPosition: slot.position } : undefined}
         />
       </div>
     );
