@@ -121,6 +121,8 @@ export type ServiceEntry = {
   icon: 'home' | 'office' | 'medical' | 'hardhat' | 'sofa' | 'rug' | 'pest' | 'air';
   /** Accent colour for the service card; each service gets its own. */
   tone: ServiceTone;
+  /** Banner photo for the card, under /public. Cards without one get a tone-coloured banner. */
+  image?: string;
 };
 
 export type ServiceTone = 'emerald' | 'blue' | 'rose' | 'amber' | 'fuchsia' | 'cyan' | 'violet' | 'sky';
@@ -133,6 +135,7 @@ export const EVERYDAY_SERVICES: ServiceEntry[] = [
     description: 'Homes and apartments — regular upkeep, deep cleans, and move-in or move-out.',
     icon: 'home',
     tone: 'emerald',
+    image: '/photos/services/residential.webp',
   },
   {
     code: 'office',
@@ -140,6 +143,7 @@ export const EVERYDAY_SERVICES: ServiceEntry[] = [
     description: 'Workspaces, retail and hospitality, cleaned around your opening hours.',
     icon: 'office',
     tone: 'blue',
+    image: '/photos/services/office.webp',
   },
   {
     code: 'hospital',
@@ -147,6 +151,7 @@ export const EVERYDAY_SERVICES: ServiceEntry[] = [
     description: 'Clinics and wards cleaned to clinical hygiene standards by certified crews.',
     icon: 'medical',
     tone: 'rose',
+    image: '/photos/services/hospital.webp',
   },
   {
     code: 'post_build',
@@ -165,6 +170,7 @@ export const SPECIALIST_SERVICES: ServiceEntry[] = [
     description: 'Deep extraction cleaning for sofas, armchairs and headboards.',
     icon: 'sofa',
     tone: 'fuchsia',
+    image: '/photos/services/sofa.webp',
   },
   {
     code: 'carpet',
