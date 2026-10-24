@@ -48,6 +48,10 @@ import type {
   CreateCompanyDocumentInput,
   DocumentsResult,
   DocumentUploadUrlResult,
+  WebsiteJobsResult,
+  WebsiteJobPhotoUploadUrlResult,
+  SaveWebsiteJobInput,
+  WebsiteJobMutationResult,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -456,6 +460,47 @@ export const api = {
 
   deleteDocument: (id: string) =>
     request<{ ok: true }>(`/admin/documents/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  // ── Website jobs (owner, admin and marketing) ────────────────────────────
+  websiteJobs: () => request<WebsiteJobsResult>('/admin/website-jobs', { method: 'GET', auth: true }),
+
+  /** Photos are always re-encoded to JPEG first, so that is the only type asked for. */
+  websiteJobPhotoUploadUrl: () =>
+    request<WebsiteJobPhotoUploadUrlResult>('/admin/website-jobs/upload-url', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ contentType: 'image/jpeg' }),
+    }),
+
+  createWebsiteJob: (input: SaveWebsiteJobInput) =>
+    request<WebsiteJobMutationResult>('/admin/website-jobs', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  updateWebsiteJob: (id: string, input: SaveWebsiteJobInput) =>
+    request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  // request() always sends a JSON content type, and the API refuses an empty
+  // body under that header, so these send an empty object.
+  publishWebsiteJob: (id: string) =>
+    request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/publish`, {
+      method: 'POST',
+      auth: true,
+      body: '{}',
+    }),
+
+  unpublishWebsiteJob: (id: string) =>
+    request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/unpublish`, {
+      method: 'POST',
+      auth: true,
+      body: '{}',
+    }),
 
   // ── Pending report submissions (owner only) ──────────────────────────────
   pendingReports: () =>
