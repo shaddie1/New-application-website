@@ -41,6 +41,11 @@ const EnvSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().optional(),
   R2_PUBLIC_URL: z.string().url().optional(),
+
+  // Render deploy hook for the public website, which builds published website
+  // jobs into its static pages. Publishing, unpublishing or editing a published
+  // job POSTs here. Unset: changes still save, but the site is not rebuilt.
+  WEB_DEPLOY_HOOK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

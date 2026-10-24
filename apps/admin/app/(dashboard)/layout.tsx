@@ -27,6 +27,9 @@ const OWNER_GOVERNANCE = [
   { href: '/team', label: 'Team' },
 ];
 
+// Owner, admins and marketing; the API refuses everyone else regardless.
+const WEBSITE = [{ href: '/website-jobs', label: 'Website jobs' }];
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = useRequireAdmin();
   const { signOut } = useAuth();
@@ -38,13 +41,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   if (!session) return null; // redirecting to /login
 
-  const sections = session.user.isOwner
-    ? [
-        { title: 'Operations', items: OPERATIONS },
-        { title: 'Finance', items: OWNER_FINANCE },
-        { title: 'Governance', items: OWNER_GOVERNANCE },
-      ]
-    : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }];
+  const { role, isOwner } = session.user;
+  const canPublishWebsite = isOwner || role === 'ADMIN' || role === 'MARKETING';
+
+  const sections = [
+    ...(isOwner
+      ? [
+          { title: 'Operations', items: OPERATIONS },
+          { title: 'Finance', items: OWNER_FINANCE },
+          { title: 'Governance', items: OWNER_GOVERNANCE },
+        ]
+      : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }]),
+    ...(canPublishWebsite ? [{ title: 'Website', items: WEBSITE }] : []),
+  ];
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
