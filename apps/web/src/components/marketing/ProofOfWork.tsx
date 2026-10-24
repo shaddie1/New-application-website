@@ -1,12 +1,22 @@
+import Link from 'next/link';
+
 import { Section, SectionHeading } from '../layout';
-import { Photo } from '../Photo';
-import { SITE_PHOTOS } from '../../content/site';
+import { ArrowRightIcon } from '../icons';
+import { JobCard } from './JobCard';
+import { getPublishedJobs } from '../../lib/websiteJobs';
+
+/** How many jobs the homepage shows; the portfolio has every one. */
+const HOMEPAGE_JOBS = 4;
 
 /**
- * Real job photos. The site claims photo proof on every visit, so showing
- * actual work — rather than stock imagery — is the point of this section.
+ * The newest published jobs, built into the page. Publishing a job in admin
+ * rebuilds the site, so this stays current without a fetch on each visit.
+ * With nothing published the section is left out rather than shown empty.
  */
-export function ProofOfWork() {
+export async function ProofOfWork() {
+  const jobs = (await getPublishedJobs()).slice(0, HOMEPAGE_JOBS);
+  if (jobs.length === 0) return null;
+
   return (
     <Section id="our-work" tone="raised">
       <SectionHeading
@@ -16,34 +26,22 @@ export function ProofOfWork() {
         align="center"
       />
 
-      <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <figure>
-          <Photo slot={SITE_PHOTOS.crewOnJob} className="aspect-[3/4]" />
-          <figcaption className="mt-3 text-sm text-charcoal-muted">
-            On site in Nairobi — fumigation equipment set up and ready to go.
-          </figcaption>
-        </figure>
+      <ul className="mt-12 grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+        {jobs.map((job) => (
+          <li key={job.id}>
+            <JobCard job={job} />
+          </li>
+        ))}
+      </ul>
 
-        <figure>
-          <Photo slot={SITE_PHOTOS.carpetScrub} className="aspect-[3/4]" />
-          <figcaption className="mt-3 text-sm text-charcoal-muted">
-            Office carpet shampooed with a rotary scrubber.
-          </figcaption>
-        </figure>
-
-        <figure>
-          <Photo slot={SITE_PHOTOS.officeShelves} className="aspect-[3/4]" />
-          <figcaption className="mt-3 text-sm text-charcoal-muted">
-            Shelving and display units dusted in an executive office.
-          </figcaption>
-        </figure>
-
-        <figure>
-          <Photo slot={SITE_PHOTOS.proofResult} className="aspect-[3/4]" />
-          <figcaption className="mt-3 text-sm text-charcoal-muted">
-            The finished armchair, back in place and ready to use.
-          </figcaption>
-        </figure>
+      <div className="mt-10 text-center">
+        <Link
+          href="/portfolio"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-aqua-deep transition-colors hover:text-charcoal"
+        >
+          See all our work
+          <ArrowRightIcon className="h-4 w-4" />
+        </Link>
       </div>
     </Section>
   );

@@ -6,6 +6,8 @@
  * the real catalog rather than drifting from it.
  */
 
+import type { ClientSegment } from '@onyxhawk/types';
+
 export const COMPANY = {
   name: 'OnyxHawk Cleaning Service',
   shortName: 'OnyxHawk',
@@ -41,18 +43,7 @@ export type PhotoSlot = {
   position?: string;
 };
 
-export const SITE_PHOTOS: Record<
-  | 'aboutTeam'
-  | 'proofResult'
-  | 'crewOnJob'
-  | 'officeShelves'
-  | 'carpetScrub'
-  | 'workstation'
-  | 'armchairsResult'
-  | 'chairWash'
-  | 'chairCourtyard',
-  PhotoSlot
-> = {
+export const SITE_PHOTOS: Record<'aboutTeam' | 'crewOnJob' | 'chairWash', PhotoSlot> = {
   aboutTeam: {
     src: '/photos/crew-on-site.jpg',
     alt: 'An OnyxHawk crew member deep-cleaning armchairs in a Nairobi office',
@@ -63,43 +54,11 @@ export const SITE_PHOTOS: Record<
     alt: 'An OnyxHawk crew member in branded uniform cleaning on site in Nairobi',
     placeholder: 'Photo of a uniformed crew on site goes here.',
   },
-  proofResult: {
-    src: '/photos/armchair-result.jpg',
-    alt: 'An armchair after an OnyxHawk deep clean',
-    placeholder: 'The finished result.',
-  },
-  officeShelves: {
-    src: '/photos/office-shelf-dusting.jpg',
-    alt: 'An OnyxHawk crew member in branded uniform dusting office shelving',
-    placeholder: 'Office shelving being dusted.',
-  },
-  carpetScrub: {
-    src: '/photos/carpet-scrub-machine.jpg',
-    alt: 'An OnyxHawk crew member shampooing an office carpet with a rotary scrubber',
-    placeholder: 'Carpet shampoo with a rotary scrubber.',
-  },
-  workstation: {
-    src: '/photos/workstation-wipe-down.jpg',
-    alt: 'An OnyxHawk crew member in gloves wiping down office workstation partitions',
-    placeholder: 'Workstations being wiped down.',
-  },
-  armchairsResult: {
-    src: '/photos/white-armchairs-result.jpg',
-    alt: 'A white upholstered armchair after an OnyxHawk clean',
-    placeholder: 'An armchair after cleaning.',
-    position: '90% center',
-  },
   chairWash: {
     src: '/photos/office-chairs-wash.jpg',
     alt: 'An OnyxHawk crew member washing an office chair outdoors',
     placeholder: 'Office chairs being washed.',
     position: '80% center',
-  },
-  chairCourtyard: {
-    src: '/photos/office-chairs-courtyard.jpg',
-    alt: 'An OnyxHawk crew member cleaning a courtyard full of office chairs',
-    placeholder: 'A full set of office chairs being cleaned.',
-    position: '35% center',
   },
 };
 
@@ -328,6 +287,14 @@ export const SEGMENTS: Segment[] = [
     icon: 'hardhat',
   },
 ];
+
+/** A published job's client type in plain words, on job cards and the portfolio filter. */
+export const CLIENT_SEGMENT_LABEL: Record<ClientSegment, string> = {
+  RESIDENTIAL: 'Home',
+  COMMERCIAL: 'Business',
+  MEDICAL: 'Clinic',
+  DEVELOPER: 'Property developer',
+};
 
 export const COVERAGE_POINTS = [
   { title: 'Nationwide reach', description: 'Beyond Nairobi, we mobilise crews to sites countrywide.' },
