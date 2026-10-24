@@ -424,6 +424,19 @@ describe('admin website jobs: update', () => {
     expect(deleteObject).not.toHaveBeenCalled();
   });
 
+  it('saves an edit that keeps the saved photos while storage is not configured', async () => {
+    env.R2_BUCKET = undefined;
+    const stored = { ...photoRow(key('one'), 0), url: 'https://old-host.test/website-jobs/one.jpg' };
+    storeJob(jobRow({ photos: [stored] }));
+
+    const res = await as('marketing', 'PUT', '/admin/website-jobs/job1', { ...valid, area: 'Kilimani', photoKeys: [key('one')] });
+
+    expect(res.statusCode).toBe(200);
+    expect(jobUpdate.mock.calls[0]![0].data.photos.create).toEqual([
+      { objectKey: 'website-jobs/one.jpg', url: 'https://old-host.test/website-jobs/one.jpg', sortOrder: 0 },
+    ]);
+  });
+
   it('answers 404 for an unknown id on update, publish and unpublish', async () => {
     storeJob(null);
     for (const [method, url, payload] of [

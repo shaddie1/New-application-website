@@ -113,12 +113,14 @@ export const websiteJobRoutes: FastifyPluginAsync = async (app) => {
     // One nested write, which Prisma runs as a single transaction: the fields
     // and the whole ordered photo list are replaced together.
     const { photoKeys, completedOn, ...fields } = parsed.data;
+    // Kept photos keep their stored URLs, so an edit works even while storage is off.
+    const storedUrls = new Map(existing.photos.map((p) => [p.objectKey, p.url]));
     const row = await prisma.websiteJob.update({
       where: { id: req.params.id },
       data: {
         ...fields,
         completedOn: new Date(completedOn),
-        photos: { deleteMany: {}, create: toPhotoRows(photoKeys) },
+        photos: { deleteMany: {}, create: toPhotoRows(photoKeys, storedUrls) },
       },
       include: jobInclude,
     });
@@ -197,8 +199,12 @@ function nairobiToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' }); // YYYY-MM-DD
 }
 
-function toPhotoRows(photoKeys: string[]) {
-  return photoKeys.map((objectKey, sortOrder) => ({ objectKey, url: publicUrlFor(objectKey), sortOrder }));
+function toPhotoRows(photoKeys: string[], storedUrls = new Map<string, string>()) {
+  return photoKeys.map((objectKey, sortOrder) => ({
+    objectKey,
+    url: storedUrls.get(objectKey) ?? publicUrlFor(objectKey),
+    sortOrder,
+  }));
 }
 
 type JobRow = Prisma.WebsiteJobGetPayload<{ include: typeof jobInclude }>;
