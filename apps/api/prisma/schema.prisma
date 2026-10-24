@@ -100,6 +100,7 @@ model User {
   investmentsCreated   Investment[]         @relation("InvestmentCreatedBy")
   distributionsCreated ProfitDistribution[] @relation("ProfitDistributionCreatedBy")
   targetsCreated       MonthlyTarget[]      @relation("MonthlyTargetCreatedBy")
+  websiteJobsCreated   WebsiteJob[]         @relation("WebsiteJobCreatedBy")
 
   @@index([referredByUserId])
 }
@@ -1043,6 +1044,49 @@ model CompanyDocument {
 
   @@index([category])
   @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Website jobs — finished work staff publish to the public site
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A finished job shown on the public website's "Our work" section and
+ * portfolio. Client type and area only: there is deliberately no column for a
+ * client's name, phone or address. The service is a catalog code, free text
+ * like Job.serviceLineCode, so a retired code never invalidates the row.
+ */
+model WebsiteJob {
+  id              String            @id @default(cuid())
+  serviceLineCode String
+  clientSegment   ClientSegment
+  /** Neighbourhood or town only, e.g. "Westlands". */
+  area            String
+  completedOn     DateTime          @db.Date
+  description     String
+  /** Null while unpublished; the site shows only jobs where this is set. */
+  publishedAt     DateTime?
+  photos          WebsiteJobPhoto[]
+  createdBy       User              @relation("WebsiteJobCreatedBy", fields: [createdById], references: [id])
+  createdById     String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([publishedAt, completedOn])
+}
+
+/** One photo of a website job. The first by sortOrder is the cover. */
+model WebsiteJobPhoto {
+  id        String     @id @default(cuid())
+  job       WebsiteJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId     String
+  /** Key under `website-jobs/` in object storage; the url is built from it. */
+  objectKey String
+  url       String
+  sortOrder Int
+  createdAt DateTime   @default(now())
+
+  @@index([jobId, sortOrder])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
