@@ -32,6 +32,19 @@ export function formatDateTime(iso: string): string {
   return `${formatDate(iso)} · ${formatTime(iso)}`;
 }
 
+// UTC, because a bare "YYYY-MM-DD" parses as UTC midnight: any other zone west
+// of it would show the day before, and on the 1st the month before.
+const MONTH_YEAR_OPTS: Intl.DateTimeFormatOptions = {
+  timeZone: 'UTC',
+  month: 'long',
+  year: 'numeric',
+};
+
+/** "2026-09-20" → "September 2026". */
+export function formatMonthYear(isoDate: string): string {
+  return new Date(isoDate).toLocaleDateString('en-GB', MONTH_YEAR_OPTS);
+}
+
 /** Minutes → "2h 30m" / "45m". */
 export function duration(minutes: number): string {
   const h = Math.floor(minutes / 60);
