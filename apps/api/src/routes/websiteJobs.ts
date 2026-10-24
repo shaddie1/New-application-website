@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Prisma } from '@prisma/client';
+import { ClientSegment, type Prisma } from '@prisma/client';
 import type {
   PublicWebsiteJobDto,
   PublicWebsiteJobsResult,
@@ -19,8 +19,6 @@ import { requireWebsiteAccess } from '../auth/roles.js';
 import { deleteObject, isConfigured, presignUpload, publicUrlFor } from '../storage/r2.js';
 import { requestSiteRebuild } from '../website/deployHook.js';
 
-const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
-
 /**
  * A photo as the upload-url route issued it: an object key, never a URL, and
  * only under website-jobs/. Dots and slashes are refused after the prefix, so
@@ -31,7 +29,7 @@ const PhotoKey = z.string().regex(/^website-jobs\/[\w-]+\.jpg$/, 'must be a key 
 /** Every field is required, so any saved job can be published. */
 const SaveSchema = z.object({
   serviceLineCode: z.string().trim().min(1).max(50),
-  clientSegment: z.enum(SEGMENTS),
+  clientSegment: z.nativeEnum(ClientSegment),
   area: z.string().trim().min(1).max(60),
   completedOn: z
     .string()
@@ -141,32 +139,27 @@ export const websiteJobRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ job: toDto(row), siteUpdate } satisfies WebsiteJobMutationResult);
   });
 
-  app.post<{ Params: { id: string } }>('/:id/publish', async (req, reply) => {
-    const existing = await prisma.websiteJob.findUnique({ where: { id: req.params.id } });
-    if (!existing) return reply.code(404).send({ error: 'website job not found' });
-
-    const row = await prisma.websiteJob.update({
-      where: { id: req.params.id },
-      data: { publishedAt: new Date() },
-      include: jobInclude,
-    });
-    const siteUpdate = await requestSiteRebuild(req.log);
-    return reply.send({ job: toDto(row), siteUpdate } satisfies WebsiteJobMutationResult);
-  });
-
-  app.post<{ Params: { id: string } }>('/:id/unpublish', async (req, reply) => {
-    const existing = await prisma.websiteJob.findUnique({ where: { id: req.params.id } });
-    if (!existing) return reply.code(404).send({ error: 'website job not found' });
-
-    const row = await prisma.websiteJob.update({
-      where: { id: req.params.id },
-      data: { publishedAt: null },
-      include: jobInclude,
-    });
-    const siteUpdate = await requestSiteRebuild(req.log);
-    return reply.send({ job: toDto(row), siteUpdate } satisfies WebsiteJobMutationResult);
-  });
+  app.post<{ Params: { id: string } }>('/:id/publish', (req, reply) => setPublishedAt(req, reply, new Date()));
+  app.post<{ Params: { id: string } }>('/:id/unpublish', (req, reply) => setPublishedAt(req, reply, null));
 };
+
+/** Publish (a date) or unpublish (null) a job, then ask for the site rebuild. */
+async function setPublishedAt(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+  publishedAt: Date | null,
+) {
+  const existing = await prisma.websiteJob.findUnique({ where: { id: req.params.id } });
+  if (!existing) return reply.code(404).send({ error: 'website job not found' });
+
+  const row = await prisma.websiteJob.update({
+    where: { id: req.params.id },
+    data: { publishedAt },
+    include: jobInclude,
+  });
+  const siteUpdate = await requestSiteRebuild(req.log);
+  return reply.send({ job: toDto(row), siteUpdate } satisfies WebsiteJobMutationResult);
+}
 
 // ── Public ──────────────────────────────────────────────────────────────────
 

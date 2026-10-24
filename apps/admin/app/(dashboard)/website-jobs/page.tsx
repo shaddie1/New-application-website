@@ -52,6 +52,13 @@ function siteUpdateNotice(siteUpdate: SiteUpdateStatus): Notice {
   };
 }
 
+function uploadErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    return err.status === 503 ? "Photo uploads aren't set up yet." : `Upload failed (${err.status}).`;
+  }
+  return err instanceof Error ? err.message : 'Upload failed.';
+}
+
 /** A photo in the form: one already saved with the job, or a new one on its way up. */
 interface PhotoItem {
   id: string;
@@ -212,13 +219,7 @@ export default function WebsiteJobsPage() {
     } catch (err) {
       // Storage was switched off after the page loaded.
       if (err instanceof ApiError && err.status === 503) setUploadEnabled(false);
-      patchPhoto(id, {
-        status: 'failed',
-        error:
-          err instanceof ApiError
-            ? err.status === 503 ? "Photo uploads aren't set up yet." : `Upload failed (${err.status}).`
-            : err instanceof Error ? err.message : 'Upload failed.',
-      });
+      patchPhoto(id, { status: 'failed', error: uploadErrorMessage(err) });
     }
   };
 
