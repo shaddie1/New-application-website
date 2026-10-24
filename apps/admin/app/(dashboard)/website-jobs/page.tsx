@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClientSegment, SaveWebsiteJobInput, SiteUpdateStatus, WebsiteJobDto } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
@@ -143,6 +143,17 @@ export default function WebsiteJobsPage() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [photoErrors, setPhotoErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // The ids in `photos`, updated at once, so slow work for a photo that was removed
+  // (or whose form was closed) is dropped instead of uploading a photo no job uses.
+  const photoIds = useRef(new Set<string>());
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+
+  // Leaving the page drops any work still running and frees the previews.
+  useEffect(() => () => {
+    photoIds.current.clear();
+    releasePreviews(photosRef.current);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -188,11 +199,11 @@ export default function WebsiteJobsPage() {
         : EMPTY_FORM,
     );
     // Saved photos are kept by sending their object keys back on save.
-    setPhotos(
-      (job?.photos ?? []).map((p): PhotoItem => ({
-        id: nextPhotoId(), status: 'done', objectKey: p.objectKey, previewUrl: p.url, blob: null, progress: 100, error: null,
-      })),
-    );
+    const saved = (job?.photos ?? []).map((p): PhotoItem => ({
+      id: nextPhotoId(), status: 'done', objectKey: p.objectKey, previewUrl: p.url, blob: null, progress: 100, error: null,
+    }));
+    photoIds.current = new Set(saved.map((p) => p.id));
+    setPhotos(saved);
     setFieldErrors({});
     setPhotoErrors([]);
     setError(null);
@@ -202,14 +213,19 @@ export default function WebsiteJobsPage() {
   };
 
   const closeForm = () => {
-    releasePreviews(photos);
+    // The ref, not `photos`: after a save's await, `photos` is the list from before it.
+    releasePreviews(photosRef.current);
+    photoIds.current.clear();
     setShowForm(false);
     setEditingId(null);
     setPhotos([]);
   };
 
-  const patchPhoto = (id: string, patch: Partial<PhotoItem>) =>
+  /** Does nothing once the photo is removed, so a late upload result is ignored. */
+  const patchPhoto = (id: string, patch: Partial<PhotoItem>) => {
+    if (!photoIds.current.has(id)) return;
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  };
 
   const upload = async (id: string, blob: Blob) => {
     patchPhoto(id, { status: 'uploading', progress: 0, error: null });
@@ -226,6 +242,7 @@ export default function WebsiteJobsPage() {
   const addPhotos = async (files: File[]) => {
     setPhotoErrors([]);
     const added = files.map((file) => ({ id: nextPhotoId(), file }));
+    for (const { id } of added) photoIds.current.add(id);
     setPhotos((prev) => [
       ...prev,
       ...added.map(({ id }): PhotoItem => ({
@@ -235,12 +252,16 @@ export default function WebsiteJobsPage() {
 
     // One at a time: decoding several 12-megapixel photos at once can exhaust a
     // phone's memory. Uploads are not awaited, so a slow one holds up nothing.
+    // A photo removed (or its form closed) before or during its turn is skipped.
     for (const { id, file } of added) {
+      if (!photoIds.current.has(id)) continue;
       let blob: Blob;
       try {
         blob = await preparePhoto(file);
       } catch (err) {
+        if (!photoIds.current.has(id)) continue;
         // Left out of the job entirely: there is nothing the website could show.
+        photoIds.current.delete(id);
         setPhotos((prev) => prev.filter((p) => p.id !== id));
         setPhotoErrors((prev) => [
           ...prev,
@@ -248,6 +269,7 @@ export default function WebsiteJobsPage() {
         ]);
         continue;
       }
+      if (!photoIds.current.has(id)) continue;
       patchPhoto(id, { blob, previewUrl: URL.createObjectURL(blob) });
       void upload(id, blob);
     }
@@ -267,6 +289,7 @@ export default function WebsiteJobsPage() {
 
   const removePhoto = (photo: PhotoItem) => {
     releasePreviews([photo]);
+    photoIds.current.delete(photo.id);
     setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
   };
 
@@ -357,7 +380,8 @@ export default function WebsiteJobsPage() {
             Finished jobs shown on the website under Our work. A new job stays off the website until you publish it.
           </p>
         </div>
-        <button className={btn} onClick={() => (showForm ? closeForm() : openForm(null))}>
+        {/* Locked while saving: the save closes the form when it finishes. */}
+        <button className={btn} disabled={saving} onClick={() => (showForm ? closeForm() : openForm(null))}>
           {showForm ? 'Cancel' : '+ Add job'}
         </button>
       </div>
@@ -535,7 +559,7 @@ export default function WebsiteJobsPage() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <button className={btnGhost} disabled={busy} onClick={() => openForm(job)}>Edit</button>
+                    <button className={btnGhost} disabled={busy || saving} onClick={() => openForm(job)}>Edit</button>
                     {job.publishedAt ? (
                       <button className={btnGhost} disabled={busy} onClick={() => void togglePublished(job)}>
                         {busy ? 'Unpublishing…' : 'Unpublish'}
