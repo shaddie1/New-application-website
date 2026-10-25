@@ -45,7 +45,7 @@ const person = (over: Partial<UserRow> & Pick<UserRow, 'id' | 'role'>): UserRow 
 });
 
 async function patchProfile(userId: string, payload: object) {
-  const { token } = await signAccessToken(userId, byId(userId)!.role);
+  const { token } = await signAccessToken(userId, byId(userId)!.role, 'EMAIL');
   const server = Fastify();
   await server.register(profileRoutes, { prefix: '/profile' });
   return server.inject({ method: 'PATCH', url: '/profile', payload, headers: { authorization: `Bearer ${token}` } });

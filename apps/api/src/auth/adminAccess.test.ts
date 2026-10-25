@@ -11,6 +11,8 @@ const CUSTOMER_ADDRESS = 'Plot 14, Riverside Drive';
 const CONTACT_KEYS = ['"phone"', '"customerPhone"', '"clientPhone"', '"clientLocation"', '"siteLocation"', '"address"', '"line1"', '"accessNotes"'];
 
 const users: Record<string, { id: string; role: string; isOwner: boolean; shareholder: { id: string } | null }> = {
+  owner: { id: 'owner', role: 'ADMIN', isOwner: true, shareholder: null },
+  admin: { id: 'admin', role: 'ADMIN', isOwner: false, shareholder: null },
   shareholder: { id: 'shareholder', role: 'SHAREHOLDER', isOwner: false, shareholder: { id: 'sh-zachary' } },
   customer: { id: 'customer', role: 'CUSTOMER', isOwner: false, shareholder: null },
   crew: { id: 'crew', role: 'CREW', isOwner: false, shareholder: null },
@@ -110,7 +112,9 @@ vi.mock('../db.js', () => ({
 
 const { buildServer } = await import('../server.js');
 const { signAccessToken } = await import('./jwt.js');
-const { SHAREHOLDER_READABLE_ROUTES, SHAREHOLDER_READ_ONLY, adminAccess, shareholderRedaction, stripCustomerContact } = await import('./adminAccess.js');
+const { EMAIL_SIGN_IN_REQUIRED, SHAREHOLDER_READABLE_ROUTES, SHAREHOLDER_READ_ONLY, adminAccess, shareholderRedaction, stripCustomerContact } =
+  await import('./adminAccess.js');
+const { SignJWT } = await import('jose');
 
 type Route = { method: string; url: string };
 const routes: Route[] = [];
@@ -131,8 +135,8 @@ const normalise = (url: string) => (url.length > 1 ? url.replace(/\/$/, '') : ur
 const adminRoutes = () => routes.filter((r) => r.url.startsWith('/admin'));
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
-async function call(userId: string, method: string, url: string) {
-  const { token } = await signAccessToken(userId, users[userId]!.role);
+async function call(userId: string, method: string, url: string, signInMethod: 'EMAIL' | 'SMS' = 'EMAIL') {
+  const { token } = await signAccessToken(userId, users[userId]!.role, signInMethod);
   return app.inject({
     method: method as 'GET',
     url,
@@ -190,6 +194,46 @@ describe('shareholder access to /admin', () => {
   });
 });
 
+describe('/admin accepts only sessions that began with an email code', () => {
+  it.each(['owner', 'admin', 'shareholder'])('refuses an SMS session for %s on every kind of /admin route', async (userId) => {
+    for (const [method, url] of [
+      ['GET', '/admin/stats'],
+      ['GET', '/admin/staff'],
+      ['GET', `/admin/financials/summary${QUERY}`],
+      ['POST', '/admin/projects'],
+      ['PATCH', '/admin/staff/x'],
+    ] as const) {
+      const res = await call(userId, method, url, 'SMS');
+      expect({ route: `${method} ${url}`, status: res.statusCode, body: res.json() }).toEqual({
+        route: `${method} ${url}`,
+        status: 403,
+        body: { error: EMAIL_SIGN_IN_REQUIRED, code: 'EMAIL_SIGN_IN_REQUIRED' },
+      });
+    }
+  });
+
+  it('treats a token from before the method was recorded as SMS', async () => {
+    // Signed the old way: a role, no signInMethod claim.
+    const legacy = await new SignJWT({ role: 'ADMIN' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuer('onyxhawk-api')
+      .setSubject('owner')
+      .setIssuedAt()
+      .setExpirationTime('15m')
+      .sign(new TextEncoder().encode(process.env.JWT_SECRET!));
+
+    const res = await app.inject({ method: 'GET', url: '/admin/stats', headers: { authorization: `Bearer ${legacy}` } });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('EMAIL_SIGN_IN_REQUIRED');
+  });
+
+  it('lets an email session through', async () => {
+    expect((await call('admin', 'GET', '/admin/stats')).statusCode).toBe(200);
+    expect((await call('owner', 'GET', `/admin/financials/summary${QUERY}`)).statusCode).toBe(200);
+  });
+});
+
 describe('/admin is staff-only', () => {
   it.each(['customer', 'crew'])('refuses a %s account on admin routes, projects and job reports included', async (userId) => {
     for (const [method, url] of [
@@ -224,7 +268,7 @@ describe('stripping customer contact details', () => {
     users.manager = { id: 'manager', role: 'FINANCIAL_MANAGER', isOwner: false, shareholder: null };
 
     const as = async (userId: string) => {
-      const { token } = await signAccessToken(userId, users[userId]!.role);
+      const { token } = await signAccessToken(userId, users[userId]!.role, 'EMAIL');
       return (await server.inject({ method: 'GET', url: '/admin/financials/summary', headers: { authorization: `Bearer ${token}` } })).json();
     };
     expect(await as('shareholder')).toEqual({ clientName: 'Mary' });

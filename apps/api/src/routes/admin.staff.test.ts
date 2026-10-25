@@ -106,7 +106,7 @@ const member = () => row({ id: 'm1', phone: '+254712000444', fullName: 'Wanjiku 
 
 async function as(userId: string, method: 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) {
   const tokenRole = users.find((u) => u.id === userId)?.role ?? 'ADMIN';
-  const { token } = await signAccessToken(userId, tokenRole);
+  const { token } = await signAccessToken(userId, tokenRole, 'EMAIL');
   const server = Fastify();
   await server.register(adminRoutes, { prefix: '/admin' });
   return server.inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });

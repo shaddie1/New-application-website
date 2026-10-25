@@ -64,7 +64,7 @@ async function as(
   payload?: object,
   tokenRole = userId === 'demoted' ? 'ADMIN' : users[userId]!.role,
 ) {
-  const { token } = await signAccessToken(userId, tokenRole);
+  const { token } = await signAccessToken(userId, tokenRole, 'EMAIL');
   return (await app()).inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });
 }
 

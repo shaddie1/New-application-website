@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { UserRole } from '@prisma/client';
 
 import { prisma } from '../db.js';
-import { verifyAccessToken } from './jwt.js';
+import { verifyAccessToken, type AccessClaims } from './jwt.js';
 import { STAFF_ROLES } from './staff.js';
 
 declare module 'fastify' {
@@ -37,6 +37,9 @@ export const SHAREHOLDER_READABLE_ROUTES: ReadonlySet<string> = new Set([
 
 export const SHAREHOLDER_READ_ONLY = 'Shareholders can view the figures and ownership pages, but not change anything.';
 
+/** Sent with `code: EMAIL_SIGN_IN_REQUIRED`, which the admin app answers by signing out to the email login. */
+export const EMAIL_SIGN_IN_REQUIRED = 'Sign in to the back-office with your email code.';
+
 const READ_METHODS = new Set(['GET', 'HEAD']);
 
 /**
@@ -45,6 +48,8 @@ const READ_METHODS = new Set(['GET', 'HEAD']);
  * from the database, not the token, so a role change applies on the next
  * request rather than when the access token expires:
  *  - only staff and owners may call /admin at all;
+ *  - only sessions that began with an email code: an SMS session (the web and
+ *    mobile apps) cannot, so a staff phone alone never opens the back-office;
  *  - a shareholder who is not an owner may only read SHAREHOLDER_READABLE_ROUTES.
  * A missing or invalid token is left to the route's requireAuth, which answers 401.
  */
@@ -54,15 +59,19 @@ export async function adminAccess(req: FastifyRequest, reply: FastifyReply): Pro
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return;
 
-  let userId: string;
+  let claims: AccessClaims;
   try {
-    userId = (await verifyAccessToken(header.slice('Bearer '.length).trim())).sub;
+    claims = await verifyAccessToken(header.slice('Bearer '.length).trim());
   } catch {
     return;
   }
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, isOwner: true } });
+  const user = await prisma.user.findUnique({ where: { id: claims.sub }, select: { role: true, isOwner: true } });
   if (!user) return reply.code(401).send({ error: 'unauthorized' });
   if (!user.isOwner && !STAFF_ROLES.has(user.role)) return reply.code(403).send({ error: 'admin access required' });
+  // Tokens from before the method was recorded carry none, and count as SMS.
+  if (claims.signInMethod !== 'EMAIL') {
+    return reply.code(403).send({ error: EMAIL_SIGN_IN_REQUIRED, code: 'EMAIL_SIGN_IN_REQUIRED' });
+  }
   if (user.isOwner || user.role !== UserRole.SHAREHOLDER) return;
 
   // A plugin's '/' route can match with or without the trailing slash.

@@ -20,6 +20,8 @@ export interface PublicUser {
   role: UserRole;
   /** True for the owner / super-admin (can manage other admins). */
   isOwner?: boolean;
+  /** The one owner who can change other owners; their sign-in email changes only by script. */
+  isPrimaryOwner?: boolean;
   avatarUrl?: string | null;
 }
 

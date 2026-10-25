@@ -143,9 +143,19 @@ model RefreshToken {
   device     String?  // user-agent / device label
   expiresAt  DateTime
   revokedAt  DateTime?
+  // How the session began. Only EMAIL sessions may use /admin. Rotation
+  // copies it to the next token; sessions from before this column count as SMS.
+  signInMethod SignInMethod @default(SMS)
   createdAt  DateTime @default(now())
 
   @@index([userId])
+}
+
+// SMS: the customer phone sign-in (web and mobile apps). EMAIL: the staff
+// email sign-in (admin portal).
+enum SignInMethod {
+  SMS
+  EMAIL
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
