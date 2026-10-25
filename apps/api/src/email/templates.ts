@@ -1,7 +1,13 @@
 import { html, maskEmail } from './format.js';
 import { ADMIN_LOGIN_URL, button, codeBlock, finePrint, link, paragraph, renderLayout, strong } from './layout.js';
 
-export type EmailTemplate = 'admin-sign-in-code' | 'staff-welcome' | 'sign-in-email-changed' | 'staff-role-changed';
+export type EmailTemplate =
+  | 'admin-sign-in-code'
+  | 'staff-welcome'
+  | 'sign-in-email-changed'
+  | 'staff-role-changed'
+  | 'email-change-code'
+  | 'email-change-approval';
 
 export interface EmailMessage {
   /** Names the email in logs, which never include the subject or body (the body carries sign-in codes). */
@@ -134,4 +140,66 @@ ${finePrint(html`Button not working? Open ${link(ADMIN_LOGIN_URL, ADMIN_LOGIN_UR
     html: page,
     text,
   };
+}
+
+/** Code to the new address when a staff member changes their own sign-in email (POST /profile/email/request). */
+export function emailChangeCodeEmail({ code, expiresInMinutes }: { code: string; expiresInMinutes: number }): EmailMessage {
+  const expiry = `${expiresInMinutes} ${expiresInMinutes === 1 ? 'minute' : 'minutes'}`;
+  const notMe = 'If you didn’t ask for this, ignore this email. This address won’t be used.';
+  const { html: page, text } = renderLayout({
+    preheader: `Use it to confirm your new OnyxHawk sign-in email. It expires in ${expiry}.`,
+    heading: 'Confirm your new email',
+    body: html`${paragraph('Enter this code on your OnyxHawk profile to make this address your sign-in email:')}
+${codeBlock(code)}
+${paragraph(`It expires in ${expiry} and works once.`)}
+${finePrint(notMe)}`,
+    bodyText: [
+      'Enter this code on your OnyxHawk profile to make this address your sign-in email:',
+      '',
+      code,
+      '',
+      `It expires in ${expiry} and works once.`,
+      '',
+      notMe,
+    ].join('\n'),
+    reason: 'You received this because someone asked to make this address the sign-in email for an OnyxHawk team account.',
+  });
+  return { template: 'email-change-code', subject: 'Confirm your new OnyxHawk sign-in email', html: page, text };
+}
+
+/**
+ * Code to an owner's current address approving a change of their sign-in
+ * email: owners confirm with both this and the code sent to the new address.
+ */
+export function emailChangeApprovalEmail({
+  code,
+  expiresInMinutes,
+  newEmail,
+}: {
+  code: string;
+  expiresInMinutes: number;
+  newEmail: string;
+}): EmailMessage {
+  const masked = maskEmail(newEmail);
+  const expiry = `${expiresInMinutes} ${expiresInMinutes === 1 ? 'minute' : 'minutes'}`;
+  const notMe = 'If you didn’t ask for this, don’t share the code. Your email stays as it is. Tell the primary owner.';
+  const { html: page, text } = renderLayout({
+    preheader: `Approve changing your OnyxHawk sign-in email to ${masked}.`,
+    heading: 'Approve the change',
+    body: html`${paragraph(html`You asked to change your OnyxHawk sign-in email to ${strong(masked)}. To approve it, enter this code on your profile, together with the code sent to the new address:`)}
+${codeBlock(code)}
+${paragraph(`It expires in ${expiry} and works once.`)}
+${finePrint(notMe)}`,
+    bodyText: [
+      `You asked to change your OnyxHawk sign-in email to ${masked}. To approve it, enter this code on your profile, together with the code sent to the new address:`,
+      '',
+      code,
+      '',
+      `It expires in ${expiry} and works once.`,
+      '',
+      notMe,
+    ].join('\n'),
+    reason: 'You received this because this is the sign-in email for an OnyxHawk owner account.',
+  });
+  return { template: 'email-change-approval', subject: 'Approve changing your OnyxHawk sign-in email', html: page, text };
 }

@@ -13,6 +13,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { escapeHtml } from '../src/email/format.js';
 import {
   adminSignInCodeEmail,
+  emailChangeApprovalEmail,
+  emailChangeCodeEmail,
   signInEmailChangedEmail,
   staffRoleChangedEmail,
   staffWelcomeEmail,
@@ -47,6 +49,16 @@ const samples: { file: string; title: string; message: EmailMessage }[] = [
     file: 'staff-role-changed',
     title: 'Role changed (the primary owner moved an owner to a staff role)',
     message: staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: 'Shadrack Amihanda' }),
+  },
+  {
+    file: 'email-change-code',
+    title: 'Confirm your new email (the new address, POST /profile/email/request)',
+    message: emailChangeCodeEmail({ code: '482913', expiresInMinutes: 10 }),
+  },
+  {
+    file: 'email-change-approval',
+    title: 'Approve the change (an owner’s current address, POST /profile/email/request)',
+    message: emailChangeApprovalEmail({ code: '615204', expiresInMinutes: 10, newEmail: 'zachary.m@example.com' }),
   },
   {
     file: 'escaping-check',
