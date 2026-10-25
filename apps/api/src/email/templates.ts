@@ -4,7 +4,7 @@ import { ADMIN_LOGIN_URL, button, codeBlock, finePrint, link, paragraph, renderL
 export type EmailTemplate = 'admin-sign-in-code' | 'staff-welcome' | 'sign-in-email-changed';
 
 export interface EmailMessage {
-  /** Names the email in logs, which never include the subject or body: sign-in codes are in both. */
+  /** Names the email in logs, which never include the subject or body (the body carries sign-in codes). */
   template: EmailTemplate;
   subject: string;
   html: string;
@@ -34,7 +34,8 @@ ${finePrint(IGNORE_IF_UNEXPECTED)}`,
     ].join('\n'),
     reason: 'You received this because someone asked for a sign-in code for this address on the OnyxHawk back-office.',
   });
-  return { template: 'admin-sign-in-code', subject: `Your OnyxHawk sign-in code: ${code}`, html: page, text };
+  // The code stays out of the subject: lock screens and notifications show subjects.
+  return { template: 'admin-sign-in-code', subject: 'Your OnyxHawk sign-in code', html: page, text };
 }
 
 /**

@@ -50,8 +50,9 @@ describe.each(everyTemplate)('%s email layout', (_name, message) => {
 describe('adminSignInCodeEmail', () => {
   const message = adminSignInCodeEmail({ code: '482913', expiresInMinutes: 10 });
 
-  it('puts the code in the subject, as specified', () => {
-    expect(message.subject).toBe('Your OnyxHawk sign-in code: 482913');
+  it('keeps the code out of the subject, which lock screens show', () => {
+    expect(message.subject).toBe('Your OnyxHawk sign-in code');
+    expect(message.subject).not.toContain('482913');
     expect(message.template).toBe('admin-sign-in-code');
   });
 

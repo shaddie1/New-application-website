@@ -37,8 +37,8 @@ let resend: Resend | undefined;
  * anywhere else it is written to PREVIEW_DIR and only the file's path is logged.
  *
  * Throws EmailDeliveryError, after logging, when Resend refuses the email or
- * cannot be reached. Logs never include the subject or body (sign-in codes are
- * in both) or the API key.
+ * cannot be reached. Logs never include the subject or body (the body carries
+ * sign-in codes) or the API key.
  */
 export async function sendEmail(to: string, message: EmailMessage, log: EmailLogger, context: LogContext = {}): Promise<void> {
   if (env.NODE_ENV !== 'production') {
