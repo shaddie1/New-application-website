@@ -29,7 +29,26 @@ const create = vi.fn(async ({ data }: { data: Partial<UserRow> }) => {
   users.push(user);
   return { ...user };
 });
-vi.mock('../db.js', () => ({ prisma: { user: { findUnique, update, create } } }));
+// Records whether each revocation ran inside the transaction that saved the email.
+let insideTransaction = false;
+const revocations: { where: unknown; data: unknown; inTransaction: boolean }[] = [];
+const revokeRefreshTokens = vi.fn(async (args: { where: unknown; data: unknown }) => {
+  revocations.push({ ...args, inTransaction: insideTransaction });
+  return { count: 2 };
+});
+const db = {
+  user: { findUnique, update, create },
+  refreshToken: { updateMany: revokeRefreshTokens },
+  $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+    insideTransaction = true;
+    try {
+      return await fn(db);
+    } finally {
+      insideTransaction = false;
+    }
+  }),
+};
+vi.mock('../db.js', () => ({ prisma: db }));
 vi.mock('../auth/referral.js', () => ({ generateUniqueReferralCode: async () => 'OHTEST1' }));
 vi.mock('../notifications/service.js', () => ({ notifyCrewAssigned: vi.fn(), notifyQuoteResponded: vi.fn() }));
 
@@ -64,6 +83,7 @@ const calledBefore = (first: { mock: { invocationCallOrder: number[] } }, then: 
 beforeEach(() => {
   vi.clearAllMocks();
   users = [owner()];
+  revocations.length = 0;
   trySendEmail.mockResolvedValue(true);
 });
 
@@ -112,6 +132,25 @@ describe('POST /admin/staff', () => {
     expect(trySendEmail).not.toHaveBeenCalled();
   });
 
+  it("will not change a current member's email, so another owner's cannot be changed this way", async () => {
+    users.push(
+      row({ id: 'co-owner', phone: '+254712000555', fullName: 'Amina Hassan', email: 'amina@onyxhawkcleaningservice.com', role: 'ADMIN', isOwner: true }),
+    );
+
+    const res = await asOwner('POST', '/admin/staff', {
+      phone: '+254712000555',
+      fullName: 'Amina Hassan',
+      email: 'amina.h@example.com',
+      role: 'ADMIN',
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(users.find((u) => u.id === 'co-owner')!.email).toBe('amina@onyxhawkcleaningservice.com');
+    expect(update).not.toHaveBeenCalled();
+    expect(revokeRefreshTokens).not.toHaveBeenCalled();
+    expect(trySendEmail).not.toHaveBeenCalled();
+  });
+
   it('still adds the member when the welcome email fails', async () => {
     trySendEmail.mockResolvedValue(false);
 
@@ -142,6 +181,18 @@ describe('PATCH /admin/staff/:id', () => {
     expect(calledBefore(update, trySendEmail)).toBe(true);
   });
 
+  it('signs the member out everywhere, revoking their refresh tokens with the change', async () => {
+    users.push(member());
+
+    const res = await asOwner('PATCH', '/admin/staff/m1', { email: 'wanjiku.kamau@example.com' });
+
+    expect(res.statusCode).toBe(200);
+    expect(revocations).toEqual([
+      { where: { userId: 'm1', revokedAt: null }, data: { revokedAt: expect.any(Date) }, inTransaction: true },
+    ]);
+    expect(calledBefore(revokeRefreshTokens, trySendEmail)).toBe(true);
+  });
+
   it('only welcomes the new address when there was no email before', async () => {
     users.push({ ...member(), email: null });
 
@@ -151,13 +202,16 @@ describe('PATCH /admin/staff/:id', () => {
     expect(sent()).toEqual([expect.objectContaining({ to: 'wanjiku@example.com', template: 'staff-welcome' })]);
   });
 
-  it('sends nothing when the email has not actually changed', async () => {
+  it('treats a case- or spacing-only change as no change: no emails, no sign-out', async () => {
     users.push({ ...member(), email: 'Wanjiku@Example.com' });
 
     const res = await asOwner('PATCH', '/admin/staff/m1', { email: ' WANJIKU@example.com ' });
 
     expect(res.statusCode).toBe(200);
+    // UpdateStaffSchema trims and lowercases, so the stored address is normalised.
+    expect(res.json().staff.email).toBe('wanjiku@example.com');
     expect(trySendEmail).not.toHaveBeenCalled();
+    expect(revokeRefreshTokens).not.toHaveBeenCalled();
   });
 
   it("changes the owner's own email, welcoming the new address as Owner", async () => {
@@ -170,6 +224,22 @@ describe('PATCH /admin/staff/:id', () => {
     // Nobody else added them, so there is no "added by" line.
     expect(welcome!.text).toContain('You’ve been added to the OnyxHawk platform as Owner.');
     expect(notice).toMatchObject({ to: 'amihanda@onyxhawkcleaningservice.com', template: 'sign-in-email-changed' });
+    expect(revocations).toEqual([expect.objectContaining({ where: { userId: 'owner', revokedAt: null }, inTransaction: true })]);
+  });
+
+  it("refuses to change another owner's email, changing nothing", async () => {
+    users.push(
+      row({ id: 'co-owner', phone: '+254712000555', fullName: 'Amina Hassan', email: 'amina@onyxhawkcleaningservice.com', role: 'ADMIN', isOwner: true }),
+    );
+
+    const res = await asOwner('PATCH', '/admin/staff/co-owner', { email: 'amina.h@example.com' });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'You can’t change another owner’s email.' });
+    expect(users.find((u) => u.id === 'co-owner')!.email).toBe('amina@onyxhawkcleaningservice.com');
+    expect(update).not.toHaveBeenCalled();
+    expect(revokeRefreshTokens).not.toHaveBeenCalled();
+    expect(trySendEmail).not.toHaveBeenCalled();
   });
 
   it('still saves the new email when sending fails', async () => {

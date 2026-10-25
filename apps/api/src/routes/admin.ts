@@ -220,13 +220,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const { phone, fullName, role, email } = parsed.data;
 
-    const existing = await prisma.user.findUnique({ where: { phone }, select: { id: true, role: true, isOwner: true } });
+    const existing = await prisma.user.findUnique({ where: { phone }, select: { id: true, role: true, isOwner: true, email: true } });
     const emailOwner = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (emailOwner && emailOwner.id !== existing?.id) {
       return reply.code(409).send({ error: 'That email is already on another account.' });
     }
     // A new account or a promoted customer is welcomed; re-adding an existing member just updates them.
     const joiningTeam = !existing || !(existing.isOwner || STAFF_ROLES.has(existing.role));
+    // A member's email changes only through PATCH, which guards owners, signs
+    // them out everywhere and tells both addresses.
+    if (existing && !joiningTeam && existing.email?.toLowerCase() !== email) {
+      return reply.code(409).send({ error: 'This person is already on the team. Use Change next to their email instead.' });
+    }
     const addedBy = joiningTeam ? await actorName(req, existing?.id) : null;
 
     const user = existing
@@ -251,7 +256,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(existing ? 200 : 201).send({ staff: toStaffDto(user) });
   });
 
-  // Set (or correct) a member's email, the owner's included — also the
+  // Set (or correct) a member's email, or the signed-in owner's own — also the
   // backfill path for accounts provisioned before sign-in codes went by email.
   app.patch<{ Params: { id: string } }>('/staff/:id', { preHandler: requireOwner }, async (req, reply) => {
     const parsed = UpdateStaffSchema.safeParse(req.body);
@@ -265,6 +270,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!target || target.deletedAt || !(target.isOwner || STAFF_ROLES.has(target.role))) {
       return reply.code(404).send({ error: 'staff member not found' });
     }
+    // The sign-in email is the key to an account, so one owner cannot redirect another's.
+    if (target.isOwner && target.id !== req.auth!.sub) {
+      return reply.code(403).send({ error: 'You can’t change another owner’s email.' });
+    }
     const emailOwner = await prisma.user.findUnique({ where: { email: newEmail }, select: { id: true } });
     if (emailOwner && emailOwner.id !== target.id) {
       return reply.code(409).send({ error: 'That email is already on another account.' });
@@ -275,7 +284,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const changed = previousEmail?.toLowerCase() !== newEmail;
     const addedBy = changed ? await actorName(req, target.id) : null;
 
-    const user = await prisma.user.update({ where: { id: target.id }, data: { email: newEmail }, select: staffSelect });
+    // A new sign-in email signs the account out everywhere: its refresh tokens
+    // are revoked with the change, so no session outlives the address it began
+    // under. Access tokens already issued run out within JWT_ACCESS_TTL.
+    const user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({ where: { id: target.id }, data: { email: newEmail }, select: staffSelect });
+      if (changed) {
+        await tx.refreshToken.updateMany({ where: { userId: target.id, revokedAt: null }, data: { revokedAt: new Date() } });
+      }
+      return updated;
+    });
 
     if (changed) {
       const context = { staffId: user.id };
