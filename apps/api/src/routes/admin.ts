@@ -28,7 +28,9 @@ import type {
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
-import { STAFF_ROLES } from '../auth/staff.js';
+import { STAFF_ROLES, staffRoleLabel } from '../auth/staff.js';
+import { trySendEmail } from '../email/service.js';
+import { signInEmailChangedEmail, staffWelcomeEmail } from '../email/templates.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
 
 const BookingsQuerySchema = z.object({
@@ -218,11 +220,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const { phone, fullName, role, email } = parsed.data;
 
-    const existing = await prisma.user.findUnique({ where: { phone }, select: { id: true } });
+    const existing = await prisma.user.findUnique({ where: { phone }, select: { id: true, role: true, isOwner: true } });
     const emailOwner = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (emailOwner && emailOwner.id !== existing?.id) {
       return reply.code(409).send({ error: 'That email is already on another account.' });
     }
+    // A new account or a promoted customer is welcomed; re-adding an existing member just updates them.
+    const joiningTeam = !existing || !(existing.isOwner || STAFF_ROLES.has(existing.role));
+    const addedBy = joiningTeam ? await actorName(req, existing?.id) : null;
+
     const user = existing
       ? await prisma.user.update({ where: { phone }, data: { role: role as UserRole, fullName, email }, select: staffSelect })
       : await prisma.user.create({
@@ -236,24 +242,51 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           },
           select: staffSelect,
         });
+
+    if (joiningTeam) {
+      await trySendEmail(email, staffWelcomeEmail({ fullName: user.fullName, roleLabel: staffRoleLabel(user), addedBy }), req.log, {
+        staffId: user.id,
+      });
+    }
     return reply.code(existing ? 200 : 201).send({ staff: toStaffDto(user) });
   });
 
-  // Set (or correct) a member's email — the backfill path for accounts
-  // provisioned before sign-in codes went by email.
+  // Set (or correct) a member's email, the owner's included — also the
+  // backfill path for accounts provisioned before sign-in codes went by email.
   app.patch<{ Params: { id: string } }>('/staff/:id', { preHandler: requireOwner }, async (req, reply) => {
     const parsed = UpdateStaffSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const newEmail = parsed.data.email;
 
-    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true, isOwner: true, deletedAt: true } });
+    const target = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, role: true, isOwner: true, deletedAt: true, email: true },
+    });
     if (!target || target.deletedAt || !(target.isOwner || STAFF_ROLES.has(target.role))) {
       return reply.code(404).send({ error: 'staff member not found' });
     }
-    const emailOwner = await prisma.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } });
+    const emailOwner = await prisma.user.findUnique({ where: { email: newEmail }, select: { id: true } });
     if (emailOwner && emailOwner.id !== target.id) {
       return reply.code(409).send({ error: 'That email is already on another account.' });
     }
-    const user = await prisma.user.update({ where: { id: target.id }, data: { email: parsed.data.email }, select: staffSelect });
+    // Stored emails can differ only in case (customer sign-up keeps them as
+    // typed), so only a real change notifies anyone.
+    const previousEmail = target.email;
+    const changed = previousEmail?.toLowerCase() !== newEmail;
+    const addedBy = changed ? await actorName(req, target.id) : null;
+
+    const user = await prisma.user.update({ where: { id: target.id }, data: { email: newEmail }, select: staffSelect });
+
+    if (changed) {
+      const context = { staffId: user.id };
+      const sends = [
+        trySendEmail(newEmail, staffWelcomeEmail({ fullName: user.fullName, roleLabel: staffRoleLabel(user), addedBy }), req.log, context),
+      ];
+      if (previousEmail) {
+        sends.push(trySendEmail(previousEmail, signInEmailChangedEmail({ fullName: user.fullName, newEmail }), req.log, context));
+      }
+      await Promise.all(sends);
+    }
     return reply.send({ staff: toStaffDto(user) });
   });
 
@@ -303,6 +336,17 @@ async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<v
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
   if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+}
+
+/**
+ * The signed-in owner's name, for "added by" in staff emails. Null when they
+ * are acting on their own account. Looked up before the change is saved, so a
+ * failure here stops the request rather than leaving a saved change unannounced.
+ */
+async function actorName(req: FastifyRequest, subjectId?: string): Promise<string | null> {
+  if (req.auth!.sub === subjectId) return null;
+  const actor = await prisma.user.findUnique({ where: { id: req.auth!.sub }, select: { fullName: true } });
+  return actor?.fullName ?? null;
 }
 
 const staffSelect = {
