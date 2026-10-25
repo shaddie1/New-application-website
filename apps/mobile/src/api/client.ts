@@ -47,9 +47,11 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
   const { auth, headers, ...rest } = init;
   const session = useAuthStore.getState().session;
 
+  // Claim a JSON body only when there is one: Fastify rejects an empty body
+  // sent as application/json (FST_ERR_CTP_EMPTY_JSON_BODY), e.g. on DELETE.
   const finalHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
     Accept: 'application/json',
+    ...(rest.body != null ? { 'Content-Type': 'application/json' } : {}),
     ...(headers as Record<string, string> | undefined),
   };
   if (auth && session) finalHeaders.Authorization = `Bearer ${session.accessToken}`;
