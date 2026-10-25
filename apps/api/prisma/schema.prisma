@@ -53,6 +53,13 @@ model User {
   role           UserRole    @default(CUSTOMER)
   // Owner / super-admin: an ADMIN who can also manage other admins (the Team page).
   isOwner        Boolean     @default(false)
+  // The one owner who can change other owners: the majority shareholder. Set
+  // only by scripts/set-primary-owner.ts, never through the API. At most one
+  // row may be true, enforced by the partial unique index
+  // "User_one_primary_owner" in migration 20261025000000_add_primary_owner;
+  // Prisma cannot express a partial index here, so keep that index if a
+  // generated migration ever tries to drop it.
+  isPrimaryOwner Boolean     @default(false)
   tier           LoyaltyTier @default(BRONZE)
   // Lifetime CREDIT points earned (never decreases). Tier is derived from this,
   // NOT from current balance — otherwise redeeming points would demote the user.
@@ -101,6 +108,10 @@ model User {
   distributionsCreated ProfitDistribution[] @relation("ProfitDistributionCreatedBy")
   targetsCreated       MonthlyTarget[]      @relation("MonthlyTargetCreatedBy")
   websiteJobsCreated   WebsiteJob[]         @relation("WebsiteJobCreatedBy")
+
+  // Team role changes this user made, and ones made to them.
+  roleChangesMade      StaffRoleChange[]    @relation("StaffRoleChangeActor")
+  roleChangesReceived  StaffRoleChange[]    @relation("StaffRoleChangeTarget")
 
   @@index([referredByUserId])
 }
@@ -1157,4 +1168,21 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, readAt])
+}
+
+// Audit trail of team role changes made through the API: today, the primary
+// owner moving an owner to a staff role. Append-only; nothing updates or
+// deletes these rows.
+model StaffRoleChange {
+  id        String   @id @default(cuid())
+  actor     User     @relation("StaffRoleChangeActor", fields: [actorId], references: [id])
+  actorId   String
+  target    User     @relation("StaffRoleChangeTarget", fields: [targetId], references: [id])
+  targetId  String
+  /// "OWNER" or a UserRole value: ownership is a flag, not a role, so it is spelled out here.
+  oldRole   String
+  newRole   String
+  createdAt DateTime @default(now())
+
+  @@index([targetId, createdAt])
 }
