@@ -11,7 +11,15 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { escapeHtml } from '../src/email/format.js';
-import { adminSignInCodeEmail, signInEmailChangedEmail, staffWelcomeEmail, type EmailMessage } from '../src/email/templates.js';
+import {
+  adminSignInCodeEmail,
+  emailChangeApprovalEmail,
+  emailChangeCodeEmail,
+  signInEmailChangedEmail,
+  staffRoleChangedEmail,
+  staffWelcomeEmail,
+  type EmailMessage,
+} from '../src/email/templates.js';
 
 const OUT_DIR = fileURLToPath(new URL('../email-previews/', import.meta.url));
 
@@ -36,6 +44,21 @@ const samples: { file: string; title: string; message: EmailMessage }[] = [
     file: 'sign-in-email-changed',
     title: 'Sign-in email changed (the old address on PATCH /admin/staff/:id)',
     message: signInEmailChangedEmail({ fullName: 'Wanjiku Kamau', newEmail: 'wanjiku.kamau@example.com' }),
+  },
+  {
+    file: 'staff-role-changed',
+    title: 'Role changed (the primary owner moved an owner to a staff role)',
+    message: staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: 'Shadrack Amihanda' }),
+  },
+  {
+    file: 'email-change-code',
+    title: 'Confirm your new email (the new address, POST /profile/email/request)',
+    message: emailChangeCodeEmail({ code: '482913', expiresInMinutes: 10 }),
+  },
+  {
+    file: 'email-change-approval',
+    title: 'Approve the change (an owner’s current address, POST /profile/email/request)',
+    message: emailChangeApprovalEmail({ code: '615204', expiresInMinutes: 10, newEmail: 'zachary.m@example.com' }),
   },
   {
     file: 'escaping-check',

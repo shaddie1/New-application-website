@@ -63,6 +63,8 @@ export interface AdminStaffDto {
   email: string | null;
   role: StaffRole;
   isOwner: boolean;
+  /** The one owner who can change other owners (the majority shareholder). Implies isOwner. */
+  isPrimaryOwner: boolean;
   createdAt: string;
 }
 
@@ -75,6 +77,11 @@ export interface CreateStaffInput {
 
 export interface UpdateStaffInput {
   email: string;
+}
+
+/** PATCH /admin/staff/:id/role — the primary owner moves an owner to a staff role. */
+export interface ChangeOwnerRoleInput {
+  role: StaffRole;
 }
 
 export interface AdminBookingsResult {
@@ -686,4 +693,13 @@ export interface EquityOverview {
   fromDate: string;
   toDate: string;
   allTime: AllTimeTotals;
+}
+
+/** GET /admin/financials/my-stake — the signed-in person's own cap-table line. */
+export interface MyStakeResult {
+  /** Null when the signed-in person holds no shares. */
+  stake: ShareholderAllocation | null;
+  periodNetCents: number;
+  fromDate: string;
+  toDate: string;
 }

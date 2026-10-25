@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
+import type { SignInMethod } from '@prisma/client';
 import { env } from '../env.js';
 
 const secret = new TextEncoder().encode(env.JWT_SECRET);
@@ -7,6 +8,8 @@ const ISSUER = 'onyxhawk-api';
 export type AccessClaims = JWTPayload & {
   sub: string;
   role: string;
+  /** How the session began. Absent on tokens signed before it was recorded: treat as SMS. */
+  signInMethod?: SignInMethod;
 };
 
 export type RegistrationClaims = JWTPayload & {
@@ -14,9 +17,13 @@ export type RegistrationClaims = JWTPayload & {
   purpose: 'REGISTER';
 };
 
-export async function signAccessToken(userId: string, role: string): Promise<{ token: string; expiresAt: Date }> {
+export async function signAccessToken(
+  userId: string,
+  role: string,
+  signInMethod: SignInMethod,
+): Promise<{ token: string; expiresAt: Date }> {
   const expiresAt = new Date(Date.now() + parseDurationMs(env.JWT_ACCESS_TTL));
-  const token = await new SignJWT({ role })
+  const token = await new SignJWT({ role, signInMethod })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuer(ISSUER)
     .setSubject(userId)

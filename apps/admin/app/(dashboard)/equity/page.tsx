@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { EquityOverview, ShareholderDto, ShareholderKind } from '@onyxhawk/types';
+import type { EquityOverview, MyStakeResult, ShareholderDto, ShareholderKind } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
-import { useRequireAdmin } from '../../../src/lib/auth';
+import { isReadOnlyShareholder, useRequireAdmin } from '../../../src/lib/auth';
 import { CATEGORICAL, OTHER_GREY } from '../../../src/components/charts';
 
 const BASIS_POINTS_TOTAL = 10_000;
@@ -58,6 +58,7 @@ export default function EquityPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
 
   const [overview, setOverview] = useState<EquityOverview | null>(null);
+  const [myStake, setMyStake] = useState<MyStakeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,8 +75,9 @@ export default function EquityPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.equity(from, to);
+      const [res, mine] = await Promise.all([api.equity(from, to), api.myStake(from, to)]);
       setOverview(res.overview);
+      setMyStake(mine);
     } catch (err) {
       setError(err instanceof ApiError ? `Could not load ownership (${err.status}).` : 'Could not load ownership.');
     } finally {
@@ -164,8 +166,10 @@ export default function EquityPage() {
 
   if (session === undefined) return <div className="text-text-muted">Loading…</div>;
   if (!session) return null;
-  if (!session.user.isOwner) {
-    return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Owner access required.</div>;
+  // Owners manage the cap table; shareholders see it read-only.
+  const canEdit = !!session.user.isOwner;
+  if (!canEdit && !isReadOnlyShareholder(session.user)) {
+    return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Ownership is visible to owners and shareholders.</div>;
   }
 
   const allTime = overview?.allTime;
@@ -186,6 +190,31 @@ export default function EquityPage() {
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>}
+
+      {/* ── The signed-in person's own stake ─────────────────────────────────── */}
+      {!loading && myStake?.stake && (
+        <section className="mb-6">
+          <h2 className="text-xs text-text-muted uppercase tracking-widest mb-3">Your stake</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <StatCard label="Your share" value={pct(myStake.stake.shareholder.basisPoints)} accent />
+            <StatCard
+              label={`Your share of ${monthLabel}`}
+              value={fmt(myStake.stake.periodShareCents)}
+              color={myStake.stake.periodShareCents >= 0 ? 'text-success' : 'text-danger'}
+            />
+            <StatCard
+              label="Your share all-time"
+              value={fmt(myStake.stake.allTimeShareCents)}
+              color={myStake.stake.allTimeShareCents >= 0 ? 'text-success' : 'text-danger'}
+            />
+          </div>
+        </section>
+      )}
+      {!loading && myStake && !myStake.stake && !canEdit && (
+        <div className="mb-6 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-muted">
+          You aren’t on the cap table yet. Ask an owner to link your account to your shareholding.
+        </div>
+      )}
 
       {/* ── All-time totals ──────────────────────────────────────────────────── */}
       <section className="mb-6">
@@ -257,15 +286,17 @@ export default function EquityPage() {
         <span className="text-sm text-text-muted">
           {allocations.length} shareholder{allocations.length !== 1 ? 's' : ''}
         </span>
-        <button
-          onClick={() => { setShowAddForm((v) => !v); setError(null); }}
-          className="rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
-        >
-          {showAddForm ? 'Cancel' : '+ Add shareholder'}
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => { setShowAddForm((v) => !v); setError(null); }}
+            className="rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
+          >
+            {showAddForm ? 'Cancel' : '+ Add shareholder'}
+          </button>
+        )}
       </div>
 
-      {showAddForm && (
+      {canEdit && showAddForm && (
         <form
           onSubmit={(e) => void handleAdd(e)}
           className="mb-4 rounded-xl border border-aqua/40 bg-white p-5 grid grid-cols-1 md:grid-cols-4 gap-3"
@@ -332,7 +363,7 @@ export default function EquityPage() {
         <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
       ) : allocations.length === 0 ? (
         <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
-          No shareholders yet. Click <strong>+ Add shareholder</strong> to build the cap table.
+          No shareholders yet.{canEdit && <> Click <strong>+ Add shareholder</strong> to build the cap table.</>}
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-surface overflow-hidden">
@@ -442,21 +473,23 @@ export default function EquityPage() {
                       {fmt(a.allTimeShareCents)}
                     </td>
                     <td className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          onClick={() => { setEditingId(s.id); setEditForm(formFor(s)); setError(null); }}
-                          className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-muted"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => void handleRemove(s)}
-                          disabled={removingId === s.id}
-                          className="text-danger text-xs hover:underline disabled:opacity-40"
-                        >
-                          {removingId === s.id ? '…' : 'Remove'}
-                        </button>
-                      </div>
+                      {canEdit && (
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            onClick={() => { setEditingId(s.id); setEditForm(formFor(s)); setError(null); }}
+                            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-muted"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => void handleRemove(s)}
+                            disabled={removingId === s.id}
+                            className="text-danger text-xs hover:underline disabled:opacity-40"
+                          >
+                            {removingId === s.id ? '…' : 'Remove'}
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

@@ -7,18 +7,22 @@ import { sendEmail } from '../email/service.js';
 import { adminSignInCodeEmail } from '../email/templates.js';
 import { env } from '../env.js';
 
-const OTP_TTL_MS = 10 * 60 * 1000;        // 10 minutes
-const MAX_ATTEMPTS = 5;
+export const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
+export const MAX_ATTEMPTS = 5;
 const MIN_RESEND_INTERVAL_MS = 30 * 1000; // anti-spam: 30s between OTP sends to same number
 
-/** Customer codes travel by SMS; staff codes by email. Same generation, expiry and one-time use. */
-type Purpose = 'SIGN_IN' | 'ADMIN_SIGN_IN';
+/**
+ * Customer codes travel by SMS; staff codes by email. Same generation, expiry
+ * and one-time use. The EMAIL_CHANGE_* codes confirm a staff member's new
+ * sign-in email (auth/emailChange.ts).
+ */
+type Purpose = 'SIGN_IN' | 'ADMIN_SIGN_IN' | 'EMAIL_CHANGE_NEW' | 'EMAIL_CHANGE_CURRENT';
 
 /**
  * Generate and store a code for the phone + purpose. Invalidates any prior
  * unused codes for the pair, so only the latest one works.
  */
-async function createOtp(phone: string, purpose: Purpose, email: string | null): Promise<string> {
+export async function createOtp(phone: string, purpose: Purpose, email: string | null): Promise<string> {
   // Anti-spam: refuse if a code was issued within the last 30s and isn't yet consumed.
   const recent = await prisma.otpCode.findFirst({
     where: { phone, purpose, consumedAt: null, createdAt: { gt: new Date(Date.now() - MIN_RESEND_INTERVAL_MS) } },

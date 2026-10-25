@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CompanyDocumentDto, DocumentCategory } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
-import { useRequireAdmin } from '../../../src/lib/auth';
+import { isReadOnlyShareholder, useRequireAdmin } from '../../../src/lib/auth';
 
 const CATEGORY_LABELS: Record<DocumentCategory, string> = {
   INCORPORATION: 'Incorporation',
@@ -152,6 +152,8 @@ export default function DocumentsPage() {
     );
   }
 
+  const canEdit = !isReadOnlyShareholder(session.user);
+
   // Group by category so the register reads like a filing cabinet.
   const grouped = new Map<DocumentCategory, CompanyDocumentDto[]>();
   for (const d of docs) grouped.set(d.category, [...(grouped.get(d.category) ?? []), d]);
@@ -167,9 +169,11 @@ export default function DocumentsPage() {
             Incorporation, tax, licences, insurance and contracts — visible to shareholders only.
           </p>
         </div>
-        <button className={btn} onClick={() => { setShowForm((v) => !v); setError(null); }}>
-          {showForm ? 'Cancel' : '+ Add document'}
-        </button>
+        {canEdit && (
+          <button className={btn} onClick={() => { setShowForm((v) => !v); setError(null); }}>
+            {showForm ? 'Cancel' : '+ Add document'}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -188,7 +192,7 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {showForm && (
+      {canEdit && showForm && (
         <form onSubmit={(e) => void submit(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs text-charcoal-muted">Title</label>
@@ -253,7 +257,7 @@ export default function DocumentsPage() {
         <div className="rounded-xl border border-line bg-white py-10 text-center text-sm text-charcoal-muted">Loading…</div>
       ) : docs.length === 0 ? (
         <div className="rounded-xl border border-line bg-white py-10 text-center text-sm text-charcoal-muted">
-          No documents yet. Click <strong>+ Add document</strong> to store your first one.
+          No documents yet.{canEdit && <> Click <strong>+ Add document</strong> to store your first one.</>}
         </div>
       ) : (
         <div className="space-y-6">
@@ -290,14 +294,16 @@ export default function DocumentsPage() {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <a href={d.fileUrl} target="_blank" rel="noopener noreferrer" className={btnGhost}>Open</a>
-                        <button
-                          className="text-xs text-danger hover:underline"
-                          onClick={async () => {
-                            if (!confirm(`Delete "${d.title}"?`)) return;
-                            try { await api.deleteDocument(d.id); await load(); }
-                            catch { setError('Could not delete document.'); }
-                          }}
-                        >Delete</button>
+                        {canEdit && (
+                          <button
+                            className="text-xs text-danger hover:underline"
+                            onClick={async () => {
+                              if (!confirm(`Delete "${d.title}"?`)) return;
+                              try { await api.deleteDocument(d.id); await load(); }
+                              catch { setError('Could not delete document.'); }
+                            }}
+                          >Delete</button>
+                        )}
                       </div>
                     </li>
                   ))}

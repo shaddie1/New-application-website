@@ -118,7 +118,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       await prisma.user.update({ where: { id: user.id }, data: { phoneVerified: true } });
     }
 
-    const tokens = await issueSession({ id: user.id, role: user.role }, { device: req.headers['user-agent'] ?? undefined });
+    const tokens = await issueSession({ id: user.id, role: user.role }, 'SMS', { device: req.headers['user-agent'] ?? undefined });
     return reply.send({
       kind: 'AUTHENTICATED',
       session: {
@@ -175,7 +175,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!ok) return reply.code(401).send({ error: 'invalid or expired code' });
 
-    const tokens = await issueSession({ id: user!.id, role: user!.role }, { device: req.headers['user-agent'] ?? undefined });
+    // The only EMAIL sessions, and so the only ones /admin accepts.
+    const tokens = await issueSession({ id: user!.id, role: user!.role }, 'EMAIL', { device: req.headers['user-agent'] ?? undefined });
     return reply.send({
       kind: 'AUTHENTICATED',
       session: {
@@ -245,7 +246,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    const tokens = await issueSession({ id: user.id, role: user.role }, { device: req.headers['user-agent'] ?? undefined });
+    const tokens = await issueSession({ id: user.id, role: user.role }, 'SMS', { device: req.headers['user-agent'] ?? undefined });
     return reply.code(201).send({
       kind: 'AUTHENTICATED',
       session: {

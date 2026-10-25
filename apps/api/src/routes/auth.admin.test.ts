@@ -2,25 +2,28 @@ import Fastify from 'fastify';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const findFirst = vi.fn();
-vi.mock('../db.js', () => ({ prisma: { user: { findFirst } } }));
+const findUnique = vi.fn();
+vi.mock('../db.js', () => ({ prisma: { user: { findFirst, findUnique } } }));
 
 const issueAdminSignInOtp = vi.fn();
 const verifyAdminSignInOtp = vi.fn();
+const verifySignInOtp = vi.fn();
 vi.mock('../auth/otp.js', () => ({
   issueSignInOtp: vi.fn(),
-  verifySignInOtp: vi.fn(),
+  verifySignInOtp,
   issueAdminSignInOtp,
   verifyAdminSignInOtp,
   OtpError: class OtpError extends Error {},
 }));
 
+const issueSession = vi.fn(async () => ({
+  accessToken: 'access',
+  accessExpiresAt: new Date('2026-01-01T00:00:00Z'),
+  refreshToken: 'refresh',
+  refreshExpiresAt: new Date('2026-02-01T00:00:00Z'),
+}));
 vi.mock('../auth/tokens.js', () => ({
-  issueSession: vi.fn(async () => ({
-    accessToken: 'access',
-    accessExpiresAt: new Date('2026-01-01T00:00:00Z'),
-    refreshToken: 'refresh',
-    refreshExpiresAt: new Date('2026-02-01T00:00:00Z'),
-  })),
+  issueSession,
   toPublicUser: (u: { id: string; role: string }) => ({ id: u.id, role: u.role }),
   rotateRefreshToken: vi.fn(),
   revokeRefreshToken: vi.fn(),
@@ -113,6 +116,22 @@ describe('POST /auth/admin/verify-otp', () => {
     expect(res.statusCode).toBe(200);
     expect(verifyAdminSignInOtp).toHaveBeenCalledWith(staff.phone, '123456');
     expect(res.json()).toMatchObject({ kind: 'AUTHENTICATED', session: { user: { id: 'u1' }, accessToken: 'access' } });
+    // The only route that starts an EMAIL session, the kind /admin accepts.
+    expect(issueSession).toHaveBeenCalledWith({ id: 'u1', role: 'ADMIN' }, 'EMAIL', expect.anything());
+  });
+
+  it('starts an SMS session from the customer phone sign-in, even for a staff account', async () => {
+    verifySignInOtp.mockResolvedValue(true);
+    findUnique.mockResolvedValue({ ...staff, phoneVerified: true });
+
+    const res = await (await app()).inject({
+      method: 'POST',
+      url: '/auth/verify-otp',
+      payload: { phone: staff.phone, code: '123456' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(issueSession).toHaveBeenCalledWith({ id: 'u1', role: 'ADMIN' }, 'SMS', expect.anything());
   });
 
   it('returns 401 for a wrong code', async () => {

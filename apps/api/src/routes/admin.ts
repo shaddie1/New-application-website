@@ -21,6 +21,7 @@ import type {
   RespondQuoteInput,
   AssignCrewInput,
   AdminStaffDto,
+  ChangeOwnerRoleInput,
   CreateStaffInput,
   UpdateStaffInput,
 } from '@onyxhawk/types';
@@ -28,9 +29,9 @@ import type {
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
-import { STAFF_ROLES, staffRoleLabel } from '../auth/staff.js';
+import { PRIMARY_OWNER_LOCKED, STAFF_ROLES, staffRoleLabel } from '../auth/staff.js';
 import { trySendEmail } from '../email/service.js';
-import { signInEmailChangedEmail, staffWelcomeEmail } from '../email/templates.js';
+import { signInEmailChangedEmail, staffRoleChangedEmail, staffWelcomeEmail } from '../email/templates.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
 
 const BookingsQuerySchema = z.object({
@@ -58,16 +59,21 @@ const RespondSchema = z.object({
   quotedAmountCents: z.number().int().nonnegative().optional(),
 }) satisfies z.ZodType<RespondQuoteInput>;
 
+const StaffRoleSchema = z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER']);
+
 const CreateStaffSchema = z.object({
   phone: z.string().trim().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +254712480392)'),
   fullName: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().email().max(200),
-  role: z.enum(['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER']),
+  role: StaffRoleSchema,
 }) satisfies z.ZodType<CreateStaffInput>;
 
 const UpdateStaffSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(200),
 }) satisfies z.ZodType<UpdateStaffInput>;
+
+// A staff role only: no route makes anyone an owner.
+const ChangeOwnerRoleSchema = z.object({ role: StaffRoleSchema }) satisfies z.ZodType<ChangeOwnerRoleInput>;
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
@@ -221,18 +227,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { phone, fullName, role, email } = parsed.data;
 
     const existing = await prisma.user.findUnique({ where: { phone }, select: { id: true, role: true, isOwner: true, email: true } });
+    // Owners change only through Change role and the email route, which hold
+    // the primary-owner rules; re-adding one would rewrite their role and email.
+    if (existing?.isOwner) {
+      return reply.code(403).send({ error: 'Owners can’t be changed with Add member.' });
+    }
     const emailOwner = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (emailOwner && emailOwner.id !== existing?.id) {
       return reply.code(409).send({ error: 'That email is already on another account.' });
     }
     // A new account or a promoted customer is welcomed; re-adding an existing member just updates them.
-    const joiningTeam = !existing || !(existing.isOwner || STAFF_ROLES.has(existing.role));
-    // A member's email changes only through PATCH, which guards owners, signs
-    // them out everywhere and tells both addresses.
+    const joiningTeam = !existing || !STAFF_ROLES.has(existing.role);
+    // A member's email changes only through PATCH, which signs them out
+    // everywhere and tells both addresses.
     if (existing && !joiningTeam && existing.email?.toLowerCase() !== email) {
       return reply.code(409).send({ error: 'This person is already on the team. Use Change next to their email instead.' });
     }
-    const addedBy = joiningTeam ? await actorName(req, existing?.id) : null;
+    const addedBy = joiningTeam ? addedByName(await loadActor(req), existing?.id) : null;
 
     const user = existing
       ? await prisma.user.update({ where: { phone }, data: { role: role as UserRole, fullName, email }, select: staffSelect })
@@ -256,8 +267,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(existing ? 200 : 201).send({ staff: toStaffDto(user) });
   });
 
-  // Set (or correct) a member's email, or the signed-in owner's own — also the
-  // backfill path for accounts provisioned before sign-in codes went by email.
+  // Set (or correct) a member's email — also the backfill path for accounts
+  // provisioned before sign-in codes went by email. Any owner may change a
+  // non-owner's; only the primary owner may change another owner's; nobody
+  // changes the primary owner's here.
   app.patch<{ Params: { id: string } }>('/staff/:id', { preHandler: requireOwner }, async (req, reply) => {
     const parsed = UpdateStaffSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -265,14 +278,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     const target = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { id: true, role: true, isOwner: true, deletedAt: true, email: true },
+      select: { id: true, role: true, isOwner: true, isPrimaryOwner: true, deletedAt: true, email: true },
     });
     if (!target || target.deletedAt || !(target.isOwner || STAFF_ROLES.has(target.role))) {
       return reply.code(404).send({ error: 'staff member not found' });
     }
-    // The sign-in email is the key to an account, so one owner cannot redirect another's.
-    if (target.isOwner && target.id !== req.auth!.sub) {
-      return reply.code(403).send({ error: 'You can’t change another owner’s email.' });
+    // The sign-in email is the key to an account, so changing an owner's is a primary-owner call.
+    const actor = await loadActor(req);
+    if (target.isPrimaryOwner) return reply.code(403).send({ error: PRIMARY_OWNER_LOCKED });
+    if (target.isOwner && !actor.isPrimaryOwner) {
+      return reply.code(403).send({ error: 'Only the primary owner can change an owner’s email.' });
     }
     const emailOwner = await prisma.user.findUnique({ where: { email: newEmail }, select: { id: true } });
     if (emailOwner && emailOwner.id !== target.id) {
@@ -282,7 +297,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     // typed), so only a real change notifies anyone.
     const previousEmail = target.email;
     const changed = previousEmail?.toLowerCase() !== newEmail;
-    const addedBy = changed ? await actorName(req, target.id) : null;
+    const addedBy = addedByName(actor, target.id);
 
     // A new sign-in email signs the account out everywhere: its refresh tokens
     // are revoked with the change, so no session outlives the address it began
@@ -308,7 +323,51 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ staff: toStaffDto(user) });
   });
 
-  // Revoke a staff member (demote back to customer). Can't remove the owner or yourself.
+  // Change role: the primary owner moves another owner to a staff role. Losing
+  // ownership, the new role, the sign-out and the audit row commit together;
+  // the email to the person follows the commit and cannot undo it.
+  app.patch<{ Params: { id: string } }>('/staff/:id/role', { preHandler: requireOwner }, async (req, reply) => {
+    const parsed = ChangeOwnerRoleSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const newRole = parsed.data.role;
+
+    const actor = await loadActor(req);
+    if (!actor.isPrimaryOwner) {
+      return reply.code(403).send({ error: 'Only the primary owner can change an owner’s role.' });
+    }
+    const target = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, isOwner: true, isPrimaryOwner: true, deletedAt: true },
+    });
+    if (!target || target.deletedAt) return reply.code(404).send({ error: 'staff member not found' });
+    // Covers the primary owner demoting themselves, which would leave nobody able to change owners.
+    if (target.isPrimaryOwner) return reply.code(403).send({ error: PRIMARY_OWNER_LOCKED });
+    if (!target.isOwner) return reply.code(400).send({ error: 'Change role is only for owners.' });
+
+    const user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: target.id },
+        data: { isOwner: false, role: newRole as UserRole },
+        select: staffSelect,
+      });
+      await tx.refreshToken.updateMany({ where: { userId: target.id, revokedAt: null }, data: { revokedAt: new Date() } });
+      await tx.staffRoleChange.create({ data: { actorId: actor.id, targetId: target.id, oldRole: 'OWNER', newRole } });
+      return updated;
+    });
+
+    if (user.email) {
+      await trySendEmail(
+        user.email,
+        staffRoleChangedEmail({ fullName: user.fullName, oldRoleLabel: 'Owner', newRoleLabel: staffRoleLabel(user), changedBy: actor.fullName }),
+        req.log,
+        { staffId: user.id },
+      );
+    }
+    return reply.send({ staff: toStaffDto(user) });
+  });
+
+  // Revoke a staff member (demote back to customer). Can't remove an owner (the
+  // primary owner included) or yourself; owners are moved with Change role.
   app.delete<{ Params: { id: string } }>('/staff/:id', { preHandler: requireOwner }, async (req, reply) => {
     const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, isOwner: true } });
     if (!target) return reply.code(404).send({ error: 'user not found' });
@@ -357,14 +416,21 @@ async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<v
 }
 
 /**
- * The signed-in owner's name, for "added by" in staff emails. Null when they
- * are acting on their own account. Looked up before the change is saved, so a
- * failure here stops the request rather than leaving a saved change unannounced.
+ * The signed-in owner (requireOwner has already found them), for the
+ * primary-owner checks and the "added by" line in staff emails. Loaded before
+ * any change is saved, so a failure here stops the request rather than leaving
+ * a saved change unannounced.
  */
-async function actorName(req: FastifyRequest, subjectId?: string): Promise<string | null> {
-  if (req.auth!.sub === subjectId) return null;
-  const actor = await prisma.user.findUnique({ where: { id: req.auth!.sub }, select: { fullName: true } });
-  return actor?.fullName ?? null;
+function loadActor(req: FastifyRequest) {
+  return prisma.user.findUniqueOrThrow({
+    where: { id: req.auth!.sub },
+    select: { id: true, fullName: true, isPrimaryOwner: true },
+  });
+}
+
+/** The actor's name for "added by", or null when they are acting on their own account. */
+function addedByName(actor: { id: string; fullName: string }, subjectId?: string): string | null {
+  return actor.id === subjectId ? null : actor.fullName;
 }
 
 const staffSelect = {
@@ -374,6 +440,7 @@ const staffSelect = {
   email: true,
   role: true,
   isOwner: true,
+  isPrimaryOwner: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;
 
@@ -385,6 +452,7 @@ function toStaffDto(u: Prisma.UserGetPayload<{ select: typeof staffSelect }>): A
     email: u.email,
     role: u.role as AdminStaffDto['role'],
     isOwner: u.isOwner,
+    isPrimaryOwner: u.isPrimaryOwner,
     createdAt: u.createdAt.toISOString(),
   };
 }

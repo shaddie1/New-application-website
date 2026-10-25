@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { ADMIN_LOGIN_URL, COMPANY_NAME, CONTACT_EMAIL, LOGO_URL } from './layout.js';
-import { adminSignInCodeEmail, signInEmailChangedEmail, staffWelcomeEmail, type EmailMessage } from './templates.js';
+import {
+  adminSignInCodeEmail,
+  emailChangeApprovalEmail,
+  emailChangeCodeEmail,
+  signInEmailChangedEmail,
+  staffRoleChangedEmail,
+  staffWelcomeEmail,
+  type EmailMessage,
+} from './templates.js';
 
 const HOSTILE = '<script>alert("x")</script> & Co';
 const HOSTILE_ESCAPED = '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; Co';
@@ -15,6 +23,9 @@ const everyTemplate: [string, EmailMessage][] = [
   ['sign-in code', adminSignInCodeEmail({ code: '482913', expiresInMinutes: 10 })],
   ['welcome', staffWelcomeEmail({ fullName: 'Wanjiku Kamau', roleLabel: 'Admin', addedBy: 'Shadrack Amihanda' })],
   ['email changed', signInEmailChangedEmail({ fullName: 'Wanjiku Kamau', newEmail: 'wanjiku@example.com' })],
+  ['role changed', staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: 'Shadrack Amihanda' })],
+  ['email change code', emailChangeCodeEmail({ code: '482913', expiresInMinutes: 10 })],
+  ['email change approval', emailChangeApprovalEmail({ code: '482913', expiresInMinutes: 10, newEmail: 'zachary.m@example.com' })],
 ];
 
 describe.each(everyTemplate)('%s email layout', (_name, message) => {
@@ -134,5 +145,53 @@ describe('signInEmailChangedEmail', () => {
     const hostile = signInEmailChangedEmail({ fullName: HOSTILE, newEmail: 'a@example.com' });
     expect(hostile.html).not.toContain('<script>');
     expect(hostile.html).toContain(`Hi ${HOSTILE_ESCAPED},`);
+  });
+});
+
+describe('staffRoleChangedEmail', () => {
+  const message = staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: 'Shadrack Amihanda' });
+
+  it('names the new role in the subject and says who changed it and that they were signed out', () => {
+    expect(message.template).toBe('staff-role-changed');
+    expect(message.subject).toBe('Your role on the OnyxHawk platform changed to Shareholder');
+    expect(message.html).toContain('Hi Zachary Mwangi,');
+    expect(message.html).toContain('Shadrack Amihanda changed your role on the OnyxHawk platform from Owner to <strong style="font-weight:700;">Shareholder</strong>.');
+    for (const body of [message.html, message.text]) expect(body).toContain('You’ve been signed out everywhere.');
+    expect(message.html).toContain(`href="${ADMIN_LOGIN_URL}"`);
+  });
+
+  it('leaves out who changed it when unknown', () => {
+    const anonymous = staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: null });
+    expect(anonymous.text).toContain('Your role on the OnyxHawk platform changed from Owner to Shareholder.');
+  });
+
+  it('escapes every name and label in the HTML', () => {
+    const hostile = staffRoleChangedEmail({ fullName: HOSTILE, oldRoleLabel: HOSTILE, newRoleLabel: HOSTILE, changedBy: HOSTILE });
+    expect(hostile.html).not.toContain('<script>');
+    expect(hostile.html).toContain(`Hi ${HOSTILE_ESCAPED},`);
+  });
+});
+
+describe('the email-change codes', () => {
+  const code = emailChangeCodeEmail({ code: '482913', expiresInMinutes: 10 });
+  const approval = emailChangeApprovalEmail({ code: '615204', expiresInMinutes: 10, newEmail: 'zachary.m@example.com' });
+
+  it('show the code in the body, never in the subject or the preview line', () => {
+    for (const [message, digits] of [[code, '482913'], [approval, '615204']] as const) {
+      expect(/<span class="oh-code" style="[^"]*">([^<]*)<\/span>/.exec(message.html)?.[1]).toBe(digits);
+      expect(message.text).toContain(`\n${digits}\n`);
+      expect(message.subject).not.toContain(digits);
+      expect(preheader(message)).not.toContain(digits);
+    }
+    expect(code.subject).toBe('Confirm your new OnyxHawk sign-in email');
+    expect(approval.subject).toBe('Approve changing your OnyxHawk sign-in email');
+  });
+
+  it("tell the owner's current address where the change is going, masked", () => {
+    for (const body of [approval.html, approval.text]) {
+      expect(body).toContain('z*******m@example.com');
+      expect(body).not.toContain('zachary.m@example.com');
+      expect(body).toContain('together with the code sent to the new address');
+    }
   });
 });

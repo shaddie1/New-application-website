@@ -39,6 +39,10 @@ export default function TeamPage() {
   const [fixBusy, setFixBusy] = useState(false);
   const [role, setRole] = useState<StaffRole>('ADMIN');
   const [busy, setBusy] = useState(false);
+  // Change role (primary owner only): moving an owner to a staff role.
+  const [roleChangingId, setRoleChangingId] = useState<string | null>(null);
+  const [newRole, setNewRole] = useState<StaffRole>('SHAREHOLDER');
+  const [roleBusy, setRoleBusy] = useState(false);
 
   async function load() {
     try {
@@ -61,6 +65,13 @@ export default function TeamPage() {
       </div>
     );
   }
+
+  // What the signed-in owner may change, mirroring the API: nobody changes the
+  // primary owner, and only the primary owner changes other owners.
+  const iAmPrimary = !!staff?.find((m) => m.id === session.user.id)?.isPrimaryOwner;
+  const canEditEmail = (m: AdminStaffDto) => !m.isPrimaryOwner && (!m.isOwner || iAmPrimary);
+  const canChangeRole = (m: AdminStaffDto) => iAmPrimary && m.isOwner && !m.isPrimaryOwner;
+  const canRemove = (m: AdminStaffDto) => !m.isOwner && m.id !== session.user.id;
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +115,22 @@ export default function TeamPage() {
       setError(msg(err, 'Could not save the email.'));
     } finally {
       setFixBusy(false);
+    }
+  }
+
+  async function saveRole(member: AdminStaffDto) {
+    const label = ROLE_LABELS[newRole] ?? newRole;
+    if (!confirm(`Change ${member.fullName} from Owner to ${label}? They’ll lose owner access and be signed out everywhere.`)) return;
+    setRoleBusy(true);
+    setError(null);
+    try {
+      const r = await api.changeOwnerRole(member.id, { role: newRole });
+      setStaff((prev) => prev?.map((m) => (m.id === member.id ? r.staff : m)) ?? null);
+      setRoleChangingId(null);
+    } catch (err) {
+      setError(msg(err, 'Could not change the role.'));
+    } finally {
+      setRoleBusy(false);
     }
   }
 
@@ -222,29 +249,63 @@ export default function TeamPage() {
                   ) : m.email ? (
                     <span className="text-text-muted">
                       {m.email}
-                      <button onClick={() => { setFixingId(m.id); setFixEmail(m.email ?? ''); }} className="ml-2 text-xs text-text-muted underline">Change</button>
+                      {canEditEmail(m) && (
+                        <button onClick={() => { setFixingId(m.id); setFixEmail(m.email ?? ''); }} className="ml-2 text-xs text-text-muted underline">Change</button>
+                      )}
                     </span>
                   ) : (
                     <span className="inline-flex flex-wrap items-center gap-2">
                       <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">Missing email — cannot sign in</span>
-                      <button onClick={() => { setFixingId(m.id); setFixEmail(''); }} className="text-xs text-aqua-deep underline">Add email</button>
+                      {canEditEmail(m) && (
+                        <button onClick={() => { setFixingId(m.id); setFixEmail(''); }} className="text-xs text-aqua-deep underline">Add email</button>
+                      )}
                     </span>
                   )}
                 </td>
                 <td className="px-5 py-3">
-                  {m.isOwner ? (
-                    <span className="rounded-full bg-navy-soft px-2 py-0.5 text-xs text-navy">Owner</span>
+                  {roleChangingId === m.id ? (
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); void saveRole(m); }}
+                      className="flex items-center gap-2"
+                    >
+                      <select
+                        autoFocus
+                        value={newRole}
+                        onChange={(e) => setNewRole(e.target.value as StaffRole)}
+                        aria-label={`New role for ${m.fullName}`}
+                        className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-text outline-none focus:border-aqua"
+                      >
+                        {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                      <button type="submit" disabled={roleBusy} className="rounded-lg bg-navy px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+                        {roleBusy ? 'Saving…' : 'Save'}
+                      </button>
+                      <button type="button" onClick={() => setRoleChangingId(null)} className="text-xs text-text-muted underline">Cancel</button>
+                    </form>
+                  ) : m.isPrimaryOwner ? (
+                    <span className="rounded-full bg-navy px-2 py-0.5 text-xs font-medium text-white">Primary owner</span>
+                  ) : m.isOwner ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="rounded-full bg-navy-soft px-2 py-0.5 text-xs text-navy">Owner</span>
+                      {canChangeRole(m) && (
+                        <button onClick={() => { setRoleChangingId(m.id); setNewRole('SHAREHOLDER'); }} className="text-xs text-aqua-deep underline">
+                          Change role
+                        </button>
+                      )}
+                    </span>
                   ) : (
                     <span className="text-text-muted">{ROLE_LABELS[m.role] ?? m.role}</span>
                   )}
                 </td>
                 <td className="px-5 py-3 text-right">
-                  {m.isOwner || m.id === session.user.id ? (
-                    <span className="text-text-muted text-xs">—</span>
-                  ) : (
+                  {canRemove(m) ? (
                     <button onClick={() => remove(m)} className="text-danger text-sm hover:underline">
                       Remove
                     </button>
+                  ) : (
+                    <span className="text-text-muted text-xs">—</span>
                   )}
                 </td>
               </tr>

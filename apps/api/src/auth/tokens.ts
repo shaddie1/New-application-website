@@ -1,4 +1,5 @@
 import type { Session } from '@onyxhawk/types';
+import type { SignInMethod } from '@prisma/client';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
 import { sha256, randomToken } from './hash.js';
@@ -17,12 +18,17 @@ function parseRefreshTtlMs(): number {
   }
 }
 
-/** Mint a fresh access + refresh pair for a user and persist the refresh row. */
+/**
+ * Mint a fresh access + refresh pair for a user and persist the refresh row.
+ * `signInMethod` is how they proved who they are (an SMS or an email code); it
+ * rides on every token of the session, and only EMAIL sessions may use /admin.
+ */
 export async function issueSession(
   user: { id: string; role: string },
+  signInMethod: SignInMethod,
   opts: { device?: string } = {},
 ): Promise<{ accessToken: string; accessExpiresAt: Date; refreshToken: string; refreshExpiresAt: Date }> {
-  const { token: accessToken, expiresAt: accessExpiresAt } = await signAccessToken(user.id, user.role);
+  const { token: accessToken, expiresAt: accessExpiresAt } = await signAccessToken(user.id, user.role, signInMethod);
 
   const refreshToken = randomToken();
   const refreshExpiresAt = new Date(Date.now() + parseRefreshTtlMs());
@@ -32,6 +38,7 @@ export async function issueSession(
       tokenHash: sha256(refreshToken),
       device: opts.device,
       expiresAt: refreshExpiresAt,
+      signInMethod,
     },
   });
 
@@ -64,14 +71,21 @@ export async function rotateRefreshToken(
   const user = await prisma.user.findUniqueOrThrow({ where: { id: row.userId } });
   if (user.deletedAt) throw new RefreshError('USER_DISABLED', 'user is deactivated');
 
-  // Revoke the old refresh row and mint a new pair atomically.
+  // Revoke the old refresh row and mint a new pair atomically. The new pair keeps
+  // the session's sign-in method: refreshing never turns an SMS session into an email one.
   const result = await prisma.$transaction(async (tx) => {
     await tx.refreshToken.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
-    const { token: accessToken, expiresAt: accessExpiresAt } = await signAccessToken(user.id, user.role);
+    const { token: accessToken, expiresAt: accessExpiresAt } = await signAccessToken(user.id, user.role, row.signInMethod);
     const newRefresh = randomToken();
     const newRefreshExpiresAt = new Date(Date.now() + parseRefreshTtlMs());
     await tx.refreshToken.create({
-      data: { userId: user.id, tokenHash: sha256(newRefresh), device: opts.device, expiresAt: newRefreshExpiresAt },
+      data: {
+        userId: user.id,
+        tokenHash: sha256(newRefresh),
+        device: opts.device,
+        expiresAt: newRefreshExpiresAt,
+        signInMethod: row.signInMethod,
+      },
     });
     return { accessToken, accessExpiresAt, refreshToken: newRefresh, refreshExpiresAt: newRefreshExpiresAt };
   });
@@ -102,6 +116,7 @@ export function toPublicUser(user: {
   fullName: string;
   role: string;
   isOwner?: boolean;
+  isPrimaryOwner?: boolean;
   avatarUrl: string | null;
 }): Session['user'] {
   return {
@@ -111,6 +126,7 @@ export function toPublicUser(user: {
     fullName: user.fullName,
     role: user.role as Session['user']['role'],
     isOwner: user.isOwner ?? false,
+    isPrimaryOwner: user.isPrimaryOwner ?? false,
     avatarUrl: user.avatarUrl,
   };
 }

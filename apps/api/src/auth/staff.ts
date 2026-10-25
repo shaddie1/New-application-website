@@ -30,3 +30,10 @@ export function staffRoleLabel(user: { role: string; isOwner: boolean }): string
   if (user.isOwner) return 'Owner';
   return STAFF_ROLE_LABELS[user.role as StaffRole] ?? user.role;
 }
+
+/**
+ * The answer whenever someone tries to change the primary owner's account
+ * through the API, the primary owner included. Only a database script
+ * (scripts/set-primary-owner.ts and its kind) changes that account.
+ */
+export const PRIMARY_OWNER_LOCKED = 'The primary owner’s account can’t be changed in the app.';
