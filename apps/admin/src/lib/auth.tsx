@@ -73,6 +73,15 @@ export function useAuth(): AuthState {
   return ctx;
 }
 
+/**
+ * A shareholder who is not an owner. The API lets them read the dashboard,
+ * insights, ownership and documents and nothing else, so pages hide every
+ * action that writes.
+ */
+export function isReadOnlyShareholder(user: { role: string; isOwner?: boolean }): boolean {
+  return !user.isOwner && user.role === 'SHAREHOLDER';
+}
+
 /** Redirect to /login unless a signed-in admin/support session exists. */
 export function useRequireAdmin(): Session | null | undefined {
   const { session } = useAuth();

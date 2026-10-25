@@ -23,6 +23,7 @@ import type {
   CreateShareholderInput,
   UpdateShareholderInput,
   EquityOverview,
+  MyStakeResult,
   AllTimeTotals,
   MarketingSpendDto,
   CreateMarketingSpendInput,
@@ -258,6 +259,13 @@ export const api = {
   equity: (from: string, to: string) =>
     request<{ overview: EquityOverview }>(
       `/admin/financials/equity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  /** The signed-in person's own cap-table line (null stake when they hold no shares). */
+  myStake: (from: string, to: string) =>
+    request<MyStakeResult>(
+      `/admin/financials/my-stake?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       { method: 'GET', auth: true },
     ),
 

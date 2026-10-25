@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { useAuth, useRequireAdmin } from '../../src/lib/auth';
+import { isReadOnlyShareholder, useAuth, useRequireAdmin } from '../../src/lib/auth';
 
 /** Grouped so the rail reads as sections rather than one long list. */
 const OPERATIONS = [
@@ -30,6 +30,17 @@ const OWNER_GOVERNANCE = [
 // Owner, admins and marketing; the API refuses everyone else regardless.
 const WEBSITE = [{ href: '/website-jobs', label: 'Website jobs' }];
 
+// Shareholders who are not owners: read-only figures and ownership. The API
+// refuses them everything else, writes included.
+const SHAREHOLDER_OVERVIEW = [
+  { href: '/', label: 'Dashboard' },
+  { href: '/insights', label: 'Insights' },
+];
+const SHAREHOLDER_OWNERSHIP = [
+  { href: '/equity', label: 'Ownership' },
+  { href: '/documents', label: 'Documents' },
+];
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = useRequireAdmin();
   const { signOut } = useAuth();
@@ -51,7 +62,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { title: 'Finance', items: OWNER_FINANCE },
           { title: 'Governance', items: OWNER_GOVERNANCE },
         ]
-      : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }]),
+      : isReadOnlyShareholder(session.user)
+        ? [
+            { title: 'Overview', items: SHAREHOLDER_OVERVIEW },
+            { title: 'Ownership', items: SHAREHOLDER_OWNERSHIP },
+          ]
+        : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }]),
     ...(canPublishWebsite ? [{ title: 'Website', items: WEBSITE }] : []),
   ];
 

@@ -11,7 +11,7 @@ import type {
 } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
-import { useRequireAdmin } from '../../../src/lib/auth';
+import { isReadOnlyShareholder, useRequireAdmin } from '../../../src/lib/auth';
 import { DonutChart, StatTile, TargetMeter, TrendChart, money, moneyShort } from '../../../src/components/charts';
 
 const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
@@ -132,6 +132,7 @@ export default function InsightsPage() {
 
   if (session === undefined) return <div className="text-charcoal-muted">Loading…</div>;
   if (!session) return null;
+  const canSetTargets = !isReadOnlyShareholder(session.user);
 
   const trendData = trends.map((t) => ({
     label: t.label.replace(/ \d{4}$/, ''),
@@ -150,18 +151,20 @@ export default function InsightsPage() {
           <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-mist">←</button>
           <span className="w-36 text-center text-sm font-medium">{overview?.monthLabel ?? '…'}</span>
           <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-mist">→</button>
-          <button
-            onClick={() => setShowTargets((v) => !v)}
-            className="rounded-lg bg-navy px-4 py-2 text-sm text-white hover:opacity-90"
-          >
-            {showTargets ? 'Cancel' : 'Set targets'}
-          </button>
+          {canSetTargets && (
+            <button
+              onClick={() => setShowTargets((v) => !v)}
+              className="rounded-lg bg-navy px-4 py-2 text-sm text-white hover:opacity-90"
+            >
+              {showTargets ? 'Cancel' : 'Set targets'}
+            </button>
+          )}
         </div>
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
-      {showTargets && (
+      {canSetTargets && showTargets && (
         <form onSubmit={(e) => void saveTargets(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/45 bg-white p-5 sm:grid-cols-4">
           <div>
             <label className="mb-1 block text-xs text-charcoal-muted">Revenue target (KSh)</label>

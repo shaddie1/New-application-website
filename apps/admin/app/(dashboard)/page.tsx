@@ -235,7 +235,7 @@ function FinanceSnapshot() {
       api.overview(y, m),
       api.revenueBreakdown(from, to).catch(() => null),
       api.financialSummary(from, to).catch(() => null),
-      api.equity(from, to).catch(() => null), // cap-table holders only
+      api.equity(from, to).catch(() => null), // owners and shareholders only
     ])
       .then(([o, b, sm, eq]) => {
         setOverview(o.overview);
