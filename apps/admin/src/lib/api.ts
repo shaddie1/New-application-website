@@ -7,6 +7,7 @@ import type {
   AssignCrewInput,
   RespondQuoteInput,
   AdminStaffDto,
+  ChangeOwnerRoleInput,
   CreateStaffInput,
   UpdateStaffInput,
   AdminRequestOtpResult,
@@ -185,6 +186,14 @@ export const api = {
 
   updateStaff: (id: string, input: UpdateStaffInput) =>
     request<{ staff: AdminStaffDto }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'PATCH', auth: true, body: JSON.stringify(input) }),
+
+  /** Primary owner only: move another owner to a staff role. */
+  changeOwnerRole: (id: string, input: ChangeOwnerRoleInput) =>
+    request<{ staff: AdminStaffDto }>(`/admin/staff/${encodeURIComponent(id)}/role`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
 
   removeStaff: (id: string) =>
     request<{ ok: true }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
