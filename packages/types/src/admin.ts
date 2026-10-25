@@ -63,6 +63,8 @@ export interface AdminStaffDto {
   email: string | null;
   role: StaffRole;
   isOwner: boolean;
+  /** The one owner who can change other owners (the majority shareholder). Implies isOwner. */
+  isPrimaryOwner: boolean;
   createdAt: string;
 }
 
@@ -75,6 +77,11 @@ export interface CreateStaffInput {
 
 export interface UpdateStaffInput {
   email: string;
+}
+
+/** PATCH /admin/staff/:id/role — the primary owner moves an owner to a staff role. */
+export interface ChangeOwnerRoleInput {
+  role: StaffRole;
 }
 
 export interface AdminBookingsResult {

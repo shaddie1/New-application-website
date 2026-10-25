@@ -1,7 +1,7 @@
 import { html, maskEmail } from './format.js';
 import { ADMIN_LOGIN_URL, button, codeBlock, finePrint, link, paragraph, renderLayout, strong } from './layout.js';
 
-export type EmailTemplate = 'admin-sign-in-code' | 'staff-welcome' | 'sign-in-email-changed';
+export type EmailTemplate = 'admin-sign-in-code' | 'staff-welcome' | 'sign-in-email-changed' | 'staff-role-changed';
 
 export interface EmailMessage {
   /** Names the email in logs, which never include the subject or body (the body carries sign-in codes). */
@@ -95,4 +95,43 @@ ${paragraph(contactOwner)}`,
     reason: 'You received this because this address was the sign-in email for an OnyxHawk account.',
   });
   return { template: 'sign-in-email-changed', subject: 'Your OnyxHawk sign-in email was changed', html: page, text };
+}
+
+/** Sent after the primary owner moves an owner to a staff role (Change role on the Team page). */
+export function staffRoleChangedEmail({
+  fullName,
+  oldRoleLabel,
+  newRoleLabel,
+  changedBy,
+}: {
+  fullName: string;
+  oldRoleLabel: string;
+  newRoleLabel: string;
+  changedBy: string | null;
+}): EmailMessage {
+  const change = changedBy
+    ? html`${changedBy} changed your role on the OnyxHawk platform from ${oldRoleLabel} to ${strong(newRoleLabel)}.`
+    : html`Your role on the OnyxHawk platform changed from ${oldRoleLabel} to ${strong(newRoleLabel)}.`;
+  const changeText = changedBy
+    ? `${changedBy} changed your role on the OnyxHawk platform from ${oldRoleLabel} to ${newRoleLabel}.`
+    : `Your role on the OnyxHawk platform changed from ${oldRoleLabel} to ${newRoleLabel}.`;
+  const signedOut = 'You’ve been signed out everywhere. Sign in again with this email address, and the back-office will show what your new role allows.';
+
+  const { html: page, text } = renderLayout({
+    preheader: `You are now ${newRoleLabel} on the OnyxHawk platform.`,
+    heading: 'Your role changed',
+    body: html`${paragraph(`Hi ${fullName},`)}
+${paragraph(change)}
+${paragraph(signedOut)}
+${button('Sign in to OnyxHawk', ADMIN_LOGIN_URL)}
+${finePrint(html`Button not working? Open ${link(ADMIN_LOGIN_URL, ADMIN_LOGIN_URL)}`)}`,
+    bodyText: [`Hi ${fullName},`, '', changeText, '', signedOut, '', `Sign in: ${ADMIN_LOGIN_URL}`].join('\n'),
+    reason: 'You received this because your role on an OnyxHawk team account changed.',
+  });
+  return {
+    template: 'staff-role-changed',
+    subject: `Your role on the OnyxHawk platform changed to ${newRoleLabel}`,
+    html: page,
+    text,
+  };
 }

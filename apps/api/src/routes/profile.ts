@@ -12,6 +12,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { PRIMARY_OWNER_LOCKED, STAFF_ROLES } from '../auth/staff.js';
 import { toPublicUser } from '../auth/tokens.js';
 
 const UpdateProfileSchema = z.object({
@@ -65,6 +66,20 @@ export const profileRoutes: FastifyPluginAsync = async (app) => {
   app.patch('/', async (req, reply) => {
     const parsed = UpdateProfileSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    // A staff email is the sign-in key, so it changes only on the Team page,
+    // which applies the owner rules, signs the account out and tells both
+    // addresses. The primary owner's account cannot be edited here at all.
+    const me = await prisma.user.findUniqueOrThrow({
+      where: { id: req.auth!.sub },
+      select: { email: true, role: true, isOwner: true, isPrimaryOwner: true },
+    });
+    if (me.isPrimaryOwner) return reply.code(403).send({ error: PRIMARY_OWNER_LOCKED });
+    const isStaff = me.isOwner || STAFF_ROLES.has(me.role);
+    const emailChanges = parsed.data.email !== undefined && parsed.data.email?.trim().toLowerCase() !== me.email?.toLowerCase();
+    if (isStaff && emailChanges) {
+      return reply.code(403).send({ error: 'Staff sign-in emails are changed on the Team page.' });
+    }
 
     // Reject an email already taken by another account.
     if (parsed.data.email) {

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { ADMIN_LOGIN_URL, COMPANY_NAME, CONTACT_EMAIL, LOGO_URL } from './layout.js';
-import { adminSignInCodeEmail, signInEmailChangedEmail, staffWelcomeEmail, type EmailMessage } from './templates.js';
+import {
+  adminSignInCodeEmail,
+  signInEmailChangedEmail,
+  staffRoleChangedEmail,
+  staffWelcomeEmail,
+  type EmailMessage,
+} from './templates.js';
 
 const HOSTILE = '<script>alert("x")</script> & Co';
 const HOSTILE_ESCAPED = '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; Co';
@@ -15,6 +21,7 @@ const everyTemplate: [string, EmailMessage][] = [
   ['sign-in code', adminSignInCodeEmail({ code: '482913', expiresInMinutes: 10 })],
   ['welcome', staffWelcomeEmail({ fullName: 'Wanjiku Kamau', roleLabel: 'Admin', addedBy: 'Shadrack Amihanda' })],
   ['email changed', signInEmailChangedEmail({ fullName: 'Wanjiku Kamau', newEmail: 'wanjiku@example.com' })],
+  ['role changed', staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: 'Shadrack Amihanda' })],
 ];
 
 describe.each(everyTemplate)('%s email layout', (_name, message) => {
@@ -132,6 +139,30 @@ describe('signInEmailChangedEmail', () => {
 
   it('escapes the name in the HTML', () => {
     const hostile = signInEmailChangedEmail({ fullName: HOSTILE, newEmail: 'a@example.com' });
+    expect(hostile.html).not.toContain('<script>');
+    expect(hostile.html).toContain(`Hi ${HOSTILE_ESCAPED},`);
+  });
+});
+
+describe('staffRoleChangedEmail', () => {
+  const message = staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: 'Shadrack Amihanda' });
+
+  it('names the new role in the subject and says who changed it and that they were signed out', () => {
+    expect(message.template).toBe('staff-role-changed');
+    expect(message.subject).toBe('Your role on the OnyxHawk platform changed to Shareholder');
+    expect(message.html).toContain('Hi Zachary Mwangi,');
+    expect(message.html).toContain('Shadrack Amihanda changed your role on the OnyxHawk platform from Owner to <strong style="font-weight:700;">Shareholder</strong>.');
+    for (const body of [message.html, message.text]) expect(body).toContain('You’ve been signed out everywhere.');
+    expect(message.html).toContain(`href="${ADMIN_LOGIN_URL}"`);
+  });
+
+  it('leaves out who changed it when unknown', () => {
+    const anonymous = staffRoleChangedEmail({ fullName: 'Zachary Mwangi', oldRoleLabel: 'Owner', newRoleLabel: 'Shareholder', changedBy: null });
+    expect(anonymous.text).toContain('Your role on the OnyxHawk platform changed from Owner to Shareholder.');
+  });
+
+  it('escapes every name and label in the HTML', () => {
+    const hostile = staffRoleChangedEmail({ fullName: HOSTILE, oldRoleLabel: HOSTILE, newRoleLabel: HOSTILE, changedBy: HOSTILE });
     expect(hostile.html).not.toContain('<script>');
     expect(hostile.html).toContain(`Hi ${HOSTILE_ESCAPED},`);
   });
