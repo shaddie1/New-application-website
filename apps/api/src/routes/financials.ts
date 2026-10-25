@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ClientSegment, ExpenseCategory, JobStatus, ShareholderKind } from '@prisma/client';
+import { ClientSegment, ExpenseCategory, JobStatus, ShareholderKind, UserRole } from '@prisma/client';
 import type {
   ExpenseDto,
   FinancialSummary,
@@ -15,6 +15,7 @@ import type {
   ShareholderAllocation,
   AllTimeTotals,
   EquityOverview,
+  MyStakeResult,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
@@ -87,7 +88,7 @@ const UpdateShareholderSchema = z.object({
 
 export const financialsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
-  app.addHook('preHandler', requireOwner);
+  app.addHook('preHandler', requireOwnerOrShareholderRead);
 
   // ── Summary ────────────────────────────────────────────────────────────────
 
@@ -411,50 +412,68 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/equity', async (req, reply) => {
     const parsed = DateRangeSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    return reply.send({ overview: await equityOverview(parsed.data.from, parsed.data.to) });
+  });
 
-    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
-
-    const [shareholders, periodJobs, periodExpenses, allTime] = await Promise.all([
-      listShareholders(),
-      prisma.job.findMany({
-        where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
-        select: { incomeCents: true, discountCents: true },
-      }),
-      prisma.expense.findMany({
-        where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
-        select: { amountCents: true },
-      }),
-      allTimeTotals(),
-    ]);
-
-    const periodIncomeCents = periodJobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-    const periodExpensesCents = periodExpenses.reduce((acc, e) => acc + e.amountCents, 0);
-    const periodNetCents = periodIncomeCents - periodExpensesCents;
-
-    const period = allocate(periodNetCents, shareholders);
-    const lifetime = allocate(allTime.totalNetCents, shareholders);
-
-    const allocations: ShareholderAllocation[] = shareholders.map((s, i) => ({
-      shareholder: s,
-      periodShareCents: period.shares[i]!,
-      allTimeShareCents: lifetime.shares[i]!,
-    }));
-
-    const overview: EquityOverview = {
-      allocations,
-      totalBasisPoints: shareholders.reduce((acc, s) => acc + s.basisPoints, 0),
-      unallocatedPeriodCents: period.unallocatedCents,
-      unallocatedAllTimeCents: lifetime.unallocatedCents,
-      periodNetCents,
-      fromDate: parsed.data.from,
-      toDate: parsed.data.to,
-      allTime,
+  // The signed-in person's own line on the cap table: their stake and its share
+  // of net profit for the period and all time. Null when they hold no shares.
+  app.get('/my-stake', async (req, reply) => {
+    const parsed = DateRangeSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const overview = await equityOverview(parsed.data.from, parsed.data.to);
+    const result: MyStakeResult = {
+      stake: overview.allocations.find((a) => a.shareholder.userId === req.auth!.sub) ?? null,
+      periodNetCents: overview.periodNetCents,
+      fromDate: overview.fromDate,
+      toDate: overview.toDate,
     };
-    return reply.send({ overview });
+    return reply.send(result);
   });
 };
 
 // ── Ownership helpers ──────────────────────────────────────────────────────
+
+/** Each shareholder's cut of net profit for the period and all time, beside the company totals. */
+async function equityOverview(fromDate: string, toDate: string): Promise<EquityOverview> {
+  const { from, to } = dateRange(fromDate, toDate);
+
+  const [shareholders, periodJobs, periodExpenses, allTime] = await Promise.all([
+    listShareholders(),
+    prisma.job.findMany({
+      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+      select: { incomeCents: true, discountCents: true },
+    }),
+    prisma.expense.findMany({
+      where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
+      select: { amountCents: true },
+    }),
+    allTimeTotals(),
+  ]);
+
+  const periodIncomeCents = periodJobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
+  const periodExpensesCents = periodExpenses.reduce((acc, e) => acc + e.amountCents, 0);
+  const periodNetCents = periodIncomeCents - periodExpensesCents;
+
+  const period = allocate(periodNetCents, shareholders);
+  const lifetime = allocate(allTime.totalNetCents, shareholders);
+
+  const allocations: ShareholderAllocation[] = shareholders.map((s, i) => ({
+    shareholder: s,
+    periodShareCents: period.shares[i]!,
+    allTimeShareCents: lifetime.shares[i]!,
+  }));
+
+  return {
+    allocations,
+    totalBasisPoints: shareholders.reduce((acc, s) => acc + s.basisPoints, 0),
+    unallocatedPeriodCents: period.unallocatedCents,
+    unallocatedAllTimeCents: lifetime.unallocatedCents,
+    periodNetCents,
+    fromDate,
+    toDate,
+    allTime,
+  };
+}
 
 async function listShareholders(): Promise<ShareholderDto[]> {
   const rows = await prisma.shareholder.findMany({
@@ -561,10 +580,17 @@ async function allTimeTotals(): Promise<AllTimeTotals> {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+/**
+ * Owners, plus shareholders for reads. Which reads is decided centrally by
+ * adminAccess (summaries, the cap table and their own stake, not job lists with
+ * client details); every write here stays owner-only either way.
+ */
+async function requireOwnerOrShareholderRead(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
-  const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
-  if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+  const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true, role: true } });
+  if (u?.isOwner) return;
+  if (u?.role === UserRole.SHAREHOLDER && (req.method === 'GET' || req.method === 'HEAD')) return;
+  return reply.code(403).send({ error: 'owner access required' });
 }
 
 function dateRange(from: string, to: string) {

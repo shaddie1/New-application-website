@@ -579,7 +579,10 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
 
 // ── Access control ──────────────────────────────────────────────────────────
 
-/** Finance data: the owner, admins, the financial manager, and shareholders. */
+/**
+ * Finance data: the owner, admins and the financial manager; shareholders may
+ * only read (adminAccess narrows which reads to the summaries).
+ */
 async function requireFinanceAccess(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const user = await prisma.user.findUnique({
@@ -588,7 +591,8 @@ async function requireFinanceAccess(req: FastifyRequest, reply: FastifyReply): P
   });
   if (!user) return reply.code(401).send({ error: 'unauthorized' });
 
-  const allowed = user.isOwner || ['ADMIN', 'FINANCIAL_MANAGER', 'SHAREHOLDER'].includes(user.role);
+  const shareholderRead = user.role === 'SHAREHOLDER' && (req.method === 'GET' || req.method === 'HEAD');
+  const allowed = user.isOwner || ['ADMIN', 'FINANCIAL_MANAGER'].includes(user.role) || shareholderRead;
   if (!allowed) return reply.code(403).send({ error: 'finance access required' });
 }
 

@@ -694,3 +694,12 @@ export interface EquityOverview {
   toDate: string;
   allTime: AllTimeTotals;
 }
+
+/** GET /admin/financials/my-stake — the signed-in person's own cap-table line. */
+export interface MyStakeResult {
+  /** Null when the signed-in person holds no shares. */
+  stake: ShareholderAllocation | null;
+  periodNetCents: number;
+  fromDate: string;
+  toDate: string;
+}

@@ -1,9 +1,10 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 
 import { env } from './env.js';
+import { adminAccess, shareholderRedaction } from './auth/adminAccess.js';
 import { healthRoutes } from './routes/health.js';
 import { mpesaRoutes } from './routes/mpesa.js';
 import { authRoutes } from './routes/auth.js';
@@ -24,7 +25,8 @@ import { jobReportsRoutes } from './routes/jobReports.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { websiteJobRoutes, publicWebsiteJobRoutes } from './routes/websiteJobs.js';
 
-export async function buildServer(): Promise<FastifyInstance> {
+/** `onRoute` sees every route as it registers, so tests can check rules that must hold for all of them. */
+export async function buildServer(opts: { onRoute?: (route: RouteOptions) => void } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger:
       env.NODE_ENV === 'development'
@@ -43,6 +45,12 @@ export async function buildServer(): Promise<FastifyInstance> {
     : true;
   await app.register(cors, { origin: corsOrigin, credentials: true });
   await app.register(sensible);
+
+  // Before every /admin route's own guards: staff only, shareholders read-only
+  // and without customer contact details (see auth/adminAccess.ts).
+  app.addHook('preHandler', adminAccess);
+  app.addHook('preSerialization', shareholderRedaction);
+  if (opts.onRoute) app.addHook('onRoute', opts.onRoute);
 
   await app.register(healthRoutes, { prefix: '/health' });
   await app.register(authRoutes, { prefix: '/auth' });
