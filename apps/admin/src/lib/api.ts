@@ -69,9 +69,11 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
   const { auth, headers, ...rest } = init;
   const session = loadSession();
 
+  // Claim a JSON body only when there is one: Fastify rejects an empty body
+  // sent as application/json (FST_ERR_CTP_EMPTY_JSON_BODY), e.g. on DELETE.
   const finalHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
     Accept: 'application/json',
+    ...(rest.body != null ? { 'Content-Type': 'application/json' } : {}),
     ...(headers as Record<string, string> | undefined),
   };
   if (auth && session) finalHeaders.Authorization = `Bearer ${session.accessToken}`;
@@ -486,20 +488,16 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  // request() always sends a JSON content type, and the API refuses an empty
-  // body under that header, so these send an empty object.
   publishWebsiteJob: (id: string) =>
     request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/publish`, {
       method: 'POST',
       auth: true,
-      body: '{}',
     }),
 
   unpublishWebsiteJob: (id: string) =>
     request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/unpublish`, {
       method: 'POST',
       auth: true,
-      body: '{}',
     }),
 
   // ── Pending report submissions (owner only) ──────────────────────────────
