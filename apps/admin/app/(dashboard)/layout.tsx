@@ -143,9 +143,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className="border-t border-line px-5 py-4">
           <p className="truncate text-sm text-charcoal">{session.user.fullName}</p>
-          <button onClick={signOut} className="mt-1 text-xs text-danger hover:underline">
-            Sign out
-          </button>
+          <div className="mt-1 flex items-center gap-3">
+            <Link href="/profile" onClick={() => setOpen(false)} className="text-xs text-charcoal-muted hover:underline">
+              Profile
+            </Link>
+            <button onClick={signOut} className="text-xs text-danger hover:underline">
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 

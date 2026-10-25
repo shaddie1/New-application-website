@@ -11,6 +11,9 @@ import type {
   CreateStaffInput,
   UpdateStaffInput,
   AdminRequestOtpResult,
+  RequestEmailChangeResult,
+  ConfirmEmailChangeInput,
+  ConfirmEmailChangeResult,
   ExpenseDto,
   CreateExpenseInput,
   FinancialSummary,
@@ -97,10 +100,25 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
     } catch {
       payload = await res.text().catch(() => null);
     }
+    if (res.status === 403 && isEmailSignInRequired(payload)) signOutToEmailLogin();
     throw new ApiError(res.status, payload);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/**
+ * The API refuses sessions that did not begin with an email code. That covers
+ * every session from before it recorded how they began, so after that deploy
+ * each staff member is sent to the login page once.
+ */
+function isEmailSignInRequired(payload: unknown): boolean {
+  return typeof payload === 'object' && payload !== null && (payload as { code?: unknown }).code === 'EMAIL_SIGN_IN_REQUIRED';
+}
+
+function signOutToEmailLogin(): void {
+  clearSession();
+  if (typeof window !== 'undefined') window.location.assign('/login?signin=email');
 }
 
 async function tryRefresh(refreshToken: string): Promise<Session | null> {
@@ -135,6 +153,14 @@ export const api = {
 
   logout: (refreshToken: string) =>
     request<{ ok: true }>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
+
+  /** Profile page: a code goes to the new address (owners also get one at their current address). */
+  requestEmailChange: (email: string) =>
+    request<RequestEmailChangeResult>('/profile/email/request', { method: 'POST', auth: true, body: JSON.stringify({ email }) }),
+
+  /** On success every session, this one included, is signed out. */
+  confirmEmailChange: (input: ConfirmEmailChangeInput) =>
+    request<ConfirmEmailChangeResult>('/profile/email/confirm', { method: 'POST', auth: true, body: JSON.stringify(input) }),
 
   /** Public service catalog — used to classify a job by its real service line. */
   serviceLines: () =>

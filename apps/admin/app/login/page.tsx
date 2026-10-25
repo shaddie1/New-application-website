@@ -18,6 +18,14 @@ export default function LoginPage() {
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Why the visitor was sent here, if they were: `email` when the API refused a
+  // session that did not begin with an email code, `changed` after they changed
+  // their sign-in email on the Profile page.
+  const [arrivedBecause, setArrivedBecause] = useState<string | null>(null);
+
+  useEffect(() => {
+    setArrivedBecause(new URLSearchParams(window.location.search).get('signin'));
+  }, []);
 
   // Already signed in as staff → go to dashboard.
   useEffect(() => {
@@ -86,6 +94,16 @@ export default function LoginPage() {
           Back-office<span className="text-aqua-deep italic">.</span>
         </h1>
         <p className="text-text-muted text-sm mt-2">Sign in with your staff email — we’ll send you a 6-digit code.</p>
+        {arrivedBecause === 'email' && (
+          <p className="mt-4 rounded-lg border border-aqua/40 bg-white px-4 py-3 text-sm text-text" role="status">
+            Please sign in again with your email code. The back-office no longer accepts sessions started any other way.
+          </p>
+        )}
+        {arrivedBecause === 'changed' && (
+          <p className="mt-4 rounded-lg border border-aqua/40 bg-white px-4 py-3 text-sm text-text" role="status">
+            Your sign-in email has changed. Sign in with the new address.
+          </p>
+        )}
 
         {error && (
           <div className="mt-5 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>
