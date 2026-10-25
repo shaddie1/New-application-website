@@ -168,6 +168,16 @@ The script refuses an email or phone that another account already uses.
 **His name** can still be changed through his own profile (`PATCH /profile`). His email and phone
 cannot.
 
+**Other staff change their own sign-in email** on the admin Profile page. A code goes to the new
+address, and owners also get an approval code at their current address. Confirming signs them out
+everywhere.
+
+**Back-office sign-in is email-only.** `/admin` accepts only sessions that began with an email code.
+Sessions started with an SMS code in the website or mobile app are refused, so a staff member's
+phone alone cannot open it. The deploy that added this counts every older session as SMS, so after
+it each staff member signs in to the admin portal once more with their email code. The portal sends
+them to the login page with a note.
+
 **Hand the role to someone else.** This is not scripted. In the Neon SQL editor run
 `UPDATE "User" SET "isPrimaryOwner" = false WHERE "isPrimaryOwner";`, then run `set-primary-owner`
 with the new person's phone. Until that second step, nobody can change an owner.
