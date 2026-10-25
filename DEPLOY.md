@@ -129,6 +129,51 @@ within about five minutes.
 
 ---
 
+## 5b. Primary owner
+
+The primary owner (Shadrack Amihanda, the majority shareholder) is the only person who can change
+another owner's role or email. In the app nobody, him included, can change his sign-in email or
+phone, change his role or remove him. Those changes are made with the scripts below, by someone with
+production database access.
+
+Run them from a checkout of the repo with dependencies installed, using the production
+`DATABASE_URL` (Render → `onyxhawk-api` → Environment). Never commit it or paste it anywhere else.
+
+**Set the primary owner.** Once, after the deploy that adds the `isPrimaryOwner` column. The account
+must already be an owner.
+
+```bash
+DATABASE_URL="<production>" pnpm --filter @onyxhawk/api set-primary-owner +254115247988
+```
+
+It refuses when someone else is already the primary owner. Running it again for the same person
+changes nothing.
+
+**Change the primary owner's sign-in email or phone.**
+
+1. Check that the new mailbox exists and receives mail, since sign-in codes go there.
+2. Preview the change. This prints the current and new values and writes nothing:
+
+   ```bash
+   DATABASE_URL="<production>" pnpm --filter @onyxhawk/api change-primary-owner-contact --email new@onyxhawkcleaningservice.com
+   ```
+
+   Use `--phone +2547XXXXXXXX` for the phone, or pass both flags.
+3. Run the same command again with `--apply`. The new details, signing him out everywhere and
+   voiding any unused sign-in codes are written in one transaction.
+4. He signs in at `admin.onyxhawkcleaningservice.com` with the new email.
+
+The script refuses an email or phone that another account already uses.
+
+**His name** can still be changed through his own profile (`PATCH /profile`). His email and phone
+cannot.
+
+**Hand the role to someone else.** This is not scripted. In the Neon SQL editor run
+`UPDATE "User" SET "isPrimaryOwner" = false WHERE "isPrimaryOwner";`, then run `set-primary-owner`
+with the new person's phone. Until that second step, nobody can change an owner.
+
+---
+
 ## 6. Mobile (Expo) — when ready
 
 1. Set the production API URL in [`apps/mobile/app.json`](apps/mobile/app.json) under `extra.apiUrl`

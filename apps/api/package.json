@@ -21,7 +21,8 @@
     "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
     "issue-otp": "tsx --env-file-if-exists=.env scripts/issue-otp.ts",
     "preview-emails": "tsx scripts/preview-emails.ts",
-    "set-primary-owner": "tsx --env-file-if-exists=.env scripts/set-primary-owner.ts"
+    "set-primary-owner": "tsx --env-file-if-exists=.env scripts/set-primary-owner.ts",
+    "change-primary-owner-contact": "tsx --env-file-if-exists=.env scripts/change-primary-owner-contact.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.717.0",

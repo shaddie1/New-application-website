@@ -62,11 +62,18 @@ beforeEach(() => {
 });
 
 describe('PATCH /profile', () => {
+  it('lets the primary owner edit his own name', async () => {
+    const res = await patchProfile('primary', { fullName: 'Shadrack O. Amihanda' });
+
+    expect(res.statusCode).toBe(200);
+    expect(byId('primary')!.fullName).toBe('Shadrack O. Amihanda');
+  });
+
   it.each([
-    ['their email', { email: 'shadrack@example.com' }],
-    ['their name', { fullName: 'S. Amihanda' }],
-  ])('refuses the primary owner editing %s: nobody edits the primary owner through the API', async (_case, payload) => {
-    const res = await patchProfile('primary', payload);
+    ['changing', 'shadrack@example.com'],
+    ['clearing', null],
+  ])('refuses the primary owner %s his email: that is done by script', async (_case, email) => {
+    const res = await patchProfile('primary', { fullName: 'Shadrack Amihanda', email });
 
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: PRIMARY_OWNER_LOCKED });

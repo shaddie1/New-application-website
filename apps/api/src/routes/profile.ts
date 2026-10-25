@@ -69,15 +69,15 @@ export const profileRoutes: FastifyPluginAsync = async (app) => {
 
     // A staff email is the sign-in key, so it changes only on the Team page,
     // which applies the owner rules, signs the account out and tells both
-    // addresses. The primary owner's account cannot be edited here at all.
+    // addresses. The primary owner's email changes only by script (see
+    // DEPLOY.md, "Primary owner"); his name and avatar he may edit here.
     const me = await prisma.user.findUniqueOrThrow({
       where: { id: req.auth!.sub },
       select: { email: true, role: true, isOwner: true, isPrimaryOwner: true },
     });
-    if (me.isPrimaryOwner) return reply.code(403).send({ error: PRIMARY_OWNER_LOCKED });
-    const isStaff = me.isOwner || STAFF_ROLES.has(me.role);
     const emailChanges = parsed.data.email !== undefined && parsed.data.email?.trim().toLowerCase() !== me.email?.toLowerCase();
-    if (isStaff && emailChanges) {
+    if (emailChanges && me.isPrimaryOwner) return reply.code(403).send({ error: PRIMARY_OWNER_LOCKED });
+    if (emailChanges && (me.isOwner || STAFF_ROLES.has(me.role))) {
       return reply.code(403).send({ error: 'Staff sign-in emails are changed on the Team page.' });
     }
 
