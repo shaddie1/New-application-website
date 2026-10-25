@@ -28,6 +28,7 @@ vi.mock('../auth/tokens.js', () => ({
 }));
 
 const { authRoutes } = await import('./auth.js');
+const { EmailDeliveryError } = await import('../email/service.js');
 
 const staff = { id: 'u1', phone: '+254712480392', email: 'jane@onyxhawk.co.ke', role: 'ADMIN', isOwner: false, deletedAt: null };
 
@@ -83,6 +84,18 @@ describe('POST /auth/admin/request-otp', () => {
       expect(res.json().code).toBe('NOT_STAFF');
     }
     expect(issueAdminSignInOtp).not.toHaveBeenCalled();
+  });
+
+  it('reports an undelivered code in the message the login page looks for', async () => {
+    findFirst.mockResolvedValue(staff);
+    issueAdminSignInOtp.mockRejectedValue(new EmailDeliveryError('admin-sign-in-code', 'The domain is not verified.'));
+
+    const res = await (await app()).inject({ method: 'POST', url: '/auth/admin/request-otp', payload: { email: staff.email } });
+
+    // apps/admin/app/login/page.tsx keeps the code box open when the message
+    // starts with "Email", because the code was saved before sending failed.
+    expect(res.statusCode).toBe(500);
+    expect(res.json().message).toBe('Email not delivered: The domain is not verified.');
   });
 });
 
