@@ -7,14 +7,16 @@ import type { Prisma } from '@prisma/client';
 import type {
   AdminQuoteRequestDto,
   EstimateStatus,
+  QuoteCosting,
+  QuoteCostingDto,
   QuoteEstimateDto,
-  QuoteEstimateOutput,
   QuoteFrequency,
   QuoteStatus,
   QuoteSurveyAreaInput,
   QuoteSurveyDto,
   QuoteSurveyItemInput,
   ServiceLineCode,
+  StoredQuoteEstimateOutput,
 } from '@onyxhawk/types';
 
 const person = { select: { fullName: true } } as const;
@@ -27,6 +29,7 @@ export const adminQuoteInclude = {
   serviceLine: true,
   user: { select: { fullName: true, phone: true } },
   survey: { include: { updatedBy: person } },
+  costing: { include: { updatedBy: person } },
   estimates: {
     where: { status: { not: 'SUPERSEDED' } },
     orderBy: { computedAt: 'desc' },
@@ -53,11 +56,19 @@ export function toSurveyDto(s: NonNullable<AdminQuoteRow['survey']>): QuoteSurve
   };
 }
 
+export function toCostingDto(c: NonNullable<AdminQuoteRow['costing']>): QuoteCostingDto {
+  return {
+    ...(c.data as unknown as QuoteCosting),
+    updatedByName: c.updatedBy?.fullName ?? null,
+    updatedAt: c.updatedAt.toISOString(),
+  };
+}
+
 export function toEstimateDto(e: AdminQuoteRow['estimates'][number]): QuoteEstimateDto {
   return {
     id: e.id,
     status: e.status as EstimateStatus,
-    output: e.output as unknown as QuoteEstimateOutput,
+    output: e.output as unknown as StoredQuoteEstimateOutput,
     ratesUpdatedAt: e.ratesUpdatedAt?.toISOString() ?? null,
     computedAt: e.computedAt.toISOString(),
     computedByName: e.computedBy?.fullName ?? null,
@@ -75,7 +86,7 @@ export function toEstimateDto(e: AdminQuoteRow['estimates'][number]): QuoteEstim
  */
 export function toAdminQuoteDto(row: AdminQuoteRow, includeEstimate: boolean): AdminQuoteRequestDto {
   const current = row.estimates[0] ?? null;
-  const output = current ? (current.output as unknown as QuoteEstimateOutput) : null;
+  const output = current ? (current.output as unknown as StoredQuoteEstimateOutput) : null;
   const approved = current?.status === 'APPROVED';
 
   return {
@@ -94,12 +105,16 @@ export function toAdminQuoteDto(row: AdminQuoteRow, includeEstimate: boolean): A
     customerName: row.user.fullName,
     customerPhone: row.user.phone,
     survey: row.survey ? toSurveyDto(row.survey) : null,
+    costing: row.costing && includeEstimate ? toCostingDto(row.costing) : null,
     estimate: current && includeEstimate ? toEstimateDto(current) : null,
     approvedPricePerVisitCents: approved && output ? output.pricing.pricePerVisitCents : null,
+    approvedPriceBasis: approved && output ? output.pricing.clientPriceBasis ?? 'VISIT' : null,
+    approvedMonthlyValueCents: approved && output ? output.pricing.monthlyValueCents : null,
     submittedForApprovalAt: current?.submittedAt?.toISOString() ?? null,
     submittedForApprovalByName: current?.submittedBy?.fullName ?? null,
     approvedAt: approved ? current.decidedAt?.toISOString() ?? null : null,
     approvedByName: approved ? current.decidedBy?.fullName ?? null : null,
-    approvalNote: current?.decisionNote ?? null,
+    // The approver's reasoning is about costs and margin.
+    approvalNote: includeEstimate ? current?.decisionNote ?? null : null,
   };
 }

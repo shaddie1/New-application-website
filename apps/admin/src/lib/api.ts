@@ -53,6 +53,9 @@ import type {
   QuoteSurveyInput,
   ClientQuotationDto,
   QuoteBuilderOptions,
+  QuoteCostingInput,
+  QuoteBuilderAssetDto,
+  CreateBuilderQuoteInput,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -190,6 +193,26 @@ export const api = {
   saveQuoteSurvey: (quoteId: string, input: QuoteSurveyInput) =>
     request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/survey`, {
       method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  /** Saves the cost questionnaire and the client's price, then re-runs the estimate. */
+  saveQuoteCosting: (quoteId: string, input: QuoteCostingInput) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/costing`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  /** Machines in the asset register that are not retired, for the owned-machine picker. */
+  quoteBuilderAssets: () =>
+    request<{ assets: QuoteBuilderAssetDto[] }>('/admin/quote-builder/assets', { method: 'GET', auth: true }),
+
+  /** Starts a quote for a client who came by phone, referral or tender. */
+  createBuilderQuote: (input: CreateBuilderQuoteInput) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>('/admin/quote-builder/quotes', {
+      method: 'POST',
       auth: true,
       body: JSON.stringify(input),
     }),
