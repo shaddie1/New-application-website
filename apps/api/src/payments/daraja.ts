@@ -1,5 +1,5 @@
 /**
- * Daraja (Safaricom M-Pesa) STK Push client.
+ * Daraja (Safaricom M-Pesa) STK Push and STK query client.
  *
  * Docs: https://developer.safaricom.co.ke/docs#m-pesa-express
  *
@@ -7,7 +7,12 @@
  * expiry. STK push timestamps and the password are derived per request from
  * the configured shortcode + passkey.
  */
-import type { MpesaStkRequest, MpesaStkResponse } from '@onyxhawk/types';
+import type {
+  MpesaStkQueryRequest,
+  MpesaStkQueryResponse,
+  MpesaStkRequest,
+  MpesaStkResponse,
+} from '@onyxhawk/types';
 
 import { env } from '../env.js';
 
@@ -68,14 +73,10 @@ export async function stkPush(input: {
 }): Promise<MpesaStkResponse> {
   const token = await getAccessToken();
 
-  const timestamp = formatDarajaTimestamp(new Date());
-  const password = Buffer.from(`${env.MPESA_SHORTCODE}${env.MPESA_PASSKEY}${timestamp}`).toString('base64');
   const partyA = input.msisdn.replace(/^\+/, '');
 
   const body: MpesaStkRequest = {
-    BusinessShortCode: env.MPESA_SHORTCODE,
-    Password: password,
-    Timestamp: timestamp,
+    ...stkCredentials(),
     TransactionType: 'CustomerPayBillOnline',
     Amount: input.amountKes,
     PartyA: partyA,
@@ -108,6 +109,50 @@ export async function stkPush(input: {
     throw new DarajaError(`stk push failed`, res.status, payload);
   }
   return payload as MpesaStkResponse;
+}
+
+/**
+ * Ask Daraja for the result of an STK push. This, not the callback, is
+ * Safaricom's word on whether the customer paid. Before the result is final
+ * Daraja answers 500 with errorCode "500.001.1001", which arrives here as a
+ * DarajaError carrying that payload.
+ */
+export async function stkQuery(checkoutRequestId: string): Promise<MpesaStkQueryResponse> {
+  const token = await getAccessToken();
+
+  const body: MpesaStkQueryRequest = { ...stkCredentials(), CheckoutRequestID: checkoutRequestId };
+
+  const res = await fetch(`${env.MPESA_BASE_URL}/mpesa/stkpushquery/v1/query`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    // The callback waits on this answer; a hung Daraja must not hold it.
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (res.status === 401) _invalidateToken();
+
+  let payload: unknown = null;
+  try {
+    payload = await res.json();
+  } catch {
+    payload = await res.text().catch(() => null);
+  }
+
+  if (!res.ok) {
+    throw new DarajaError(`stk query failed`, res.status, payload);
+  }
+  return payload as MpesaStkQueryResponse;
+}
+
+/** Shortcode, timestamp and password, as both STK push and STK query send them. */
+function stkCredentials(): Pick<MpesaStkRequest, 'BusinessShortCode' | 'Password' | 'Timestamp'> {
+  const timestamp = formatDarajaTimestamp(new Date());
+  return {
+    BusinessShortCode: env.MPESA_SHORTCODE,
+    Password: Buffer.from(`${env.MPESA_SHORTCODE}${env.MPESA_PASSKEY}${timestamp}`).toString('base64'),
+    Timestamp: timestamp,
+  };
 }
 
 /** "YYYYMMDDHHmmss" in Africa/Nairobi (the timezone Daraja expects). */

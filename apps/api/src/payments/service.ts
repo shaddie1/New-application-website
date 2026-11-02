@@ -6,7 +6,8 @@
  * can find the row later.
  *
  * `handleStkCallback` is invoked by /webhooks/mpesa/stk. It transitions the
- * Payment + Booking states atomically so a duplicate callback is safe.
+ * Payment + Booking states atomically so a duplicate callback is safe. A
+ * callback that claims success counts only once Daraja's STK query agrees.
  */
 import type { FastifyBaseLogger } from 'fastify';
 import {
@@ -18,7 +19,7 @@ import {
 import type { MpesaStkCallback, PaymentDto } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
-import { stkPush, DarajaError } from './daraja.js';
+import { stkPush, stkQuery, DarajaError } from './daraja.js';
 import { notifyBookingConfirmed } from '../notifications/service.js';
 
 export class PaymentError extends Error {
@@ -156,6 +157,12 @@ export async function handleStkCallback(
 
   const succeeded = cb.ResultCode === 0;
 
+  // Anyone can POST to the callback URL, and a customer is shown their own
+  // CheckoutRequestID, so a claimed success proves nothing until Safaricom
+  // confirms it. Unconfirmed, the payment is left as it is: nothing is
+  // recorded, so the genuine callback can still settle it.
+  if (succeeded && !(await confirmStkSuccess(checkoutRequestId, log))) return;
+
   // Extract receipt + amount from CallbackMetadata on success.
   let receipt: string | null = null;
   if (succeeded && cb.CallbackMetadata) {
@@ -217,6 +224,39 @@ export async function handleStkCallback(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+/** Daraja's errorCode for a query made before the STK push has a final result. */
+const STILL_PROCESSING = '500.001.1001';
+const CONFIRM_ATTEMPTS = 3;
+const CONFIRM_RETRY_MS = 2000;
+
+/**
+ * True only when Daraja's STK query reports ResultCode 0 for this request.
+ * Retries briefly while Daraja says the result is not final yet; any other
+ * answer or error is logged and counts as unconfirmed.
+ */
+async function confirmStkSuccess(checkoutRequestId: string, log: FastifyBaseLogger): Promise<boolean> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await stkQuery(checkoutRequestId);
+      if (String(res.ResultCode) === '0') return true;
+      log.warn(
+        { checkoutRequestId, resultCode: res.ResultCode, resultDesc: res.ResultDesc },
+        'STK callback claimed success, but Daraja reports otherwise — ignoring',
+      );
+      return false;
+    } catch (err) {
+      const stillProcessing =
+        err instanceof DarajaError && (err.payload as { errorCode?: unknown } | null)?.errorCode === STILL_PROCESSING;
+      if (!stillProcessing || attempt >= CONFIRM_ATTEMPTS) {
+        // A genuine payment can land here if Daraja is down: reconcile it by hand.
+        log.error({ err, checkoutRequestId, attempt }, 'could not confirm STK success with Daraja — payment left pending');
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, CONFIRM_RETRY_MS));
+    }
+  }
+}
 
 type PaymentWithMpesa = Prisma.PaymentGetPayload<{ include: { mpesaTransaction: true } }>;
 

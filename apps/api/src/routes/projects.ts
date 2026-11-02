@@ -13,6 +13,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { requireStaff } from '../auth/roles.js';
 
 const STAGES = ['ENQUIRY', 'SURVEY', 'SCHEDULED', 'IN_PROGRESS', 'SNAGGING', 'COMPLETE', 'CANCELLED'] as const;
 const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
@@ -142,8 +143,10 @@ function shown(field: string, value: unknown): string {
 
 export const projectRoutes: FastifyPluginAsync = async (app) => {
   // Projects are day-to-day operations, so any signed-in staff member can use
-  // them — the same bar as bookings and quotes.
+  // them — the same bar as bookings and quotes. Customers cannot: projects
+  // carry client names, phones, sites and contract values.
   app.addHook('preHandler', requireAuth);
+  app.addHook('preHandler', requireStaff);
 
   app.get('/', async (_req, reply) => {
     const rows = await prisma.project.findMany({
