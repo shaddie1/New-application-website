@@ -233,8 +233,11 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
     if (!estimate || estimate.status === EstimateStatus.REJECTED) {
       return reply.code(409).send({ error: 'compute an estimate before sending it for approval' });
     }
-    const blocked = belowMinimumReason(estimate.output as unknown as QuoteEstimateOutput);
-    if (blocked) return reply.code(409).send({ error: blocked });
+    // A thin or losing margin goes forward for the approver to judge; only a
+    // price of nothing is refused.
+    if (!((estimate.output as unknown as QuoteEstimateOutput).pricing.pricePerVisitCents > 0)) {
+      return reply.code(409).send({ error: 'the quoted price is KSh 0 — enter the client’s price or survey the site first' });
+    }
 
     await prisma.$transaction([
       prisma.quoteEstimate.update({
@@ -275,10 +278,6 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
     if (quote.status !== QuoteStatus.AWAITING_APPROVAL || estimate?.status !== EstimateStatus.SUBMITTED) {
       return reply.code(409).send({ error: `the quote is ${label(quote.status)}, not awaiting approval` });
     }
-    // Belt and braces: the block is enforced on submit, but the rule is the
-    // approver's, so it is checked again here against the frozen figures.
-    const blocked = belowMinimumReason(estimate.output as unknown as QuoteEstimateOutput);
-    if (blocked) return reply.code(409).send({ error: blocked });
 
     await prisma.$transaction([
       prisma.quoteEstimate.update({
@@ -330,7 +329,23 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
     const survey = estimate.surveySnapshot as unknown as QuoteSurveyInput;
     const rates = estimate.ratesSnapshot as unknown as QuoteRates;
     const output = estimate.output as unknown as QuoteEstimateOutput;
+    const costing = estimate.costingSnapshot as unknown as QuoteCosting | null;
 
+    const surveyed = [
+      ...survey.areas.map((a) => {
+        const m2 = a.sizePreset === 'MEASURED' ? a.measuredM2 ?? 0 : rates.roomSizePresetsM2[a.sizePreset];
+        return {
+          label: a.areaType,
+          detail: `${a.roomCount} × approx. ${m2} m² · ${cleanLevelLabel(a.cleanLevel)}`,
+          description: rates.workDescriptions[a.cleanLevel],
+        };
+      }),
+      ...survey.items.map((i) => ({
+        label: i.itemType,
+        detail: `${i.quantity} unit${i.quantity === 1 ? '' : 's'}`,
+        description: rates.workDescriptions.ITEM,
+      })),
+    ];
     const quotation: ClientQuotationDto = {
       quoteRequestId: row.id,
       customerName: row.user.fullName,
@@ -338,23 +353,15 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
       serviceLineName: row.serviceLine.name,
       frequencyLabel: output.pricing.frequencyLabel,
       visitsPerMonth: output.pricing.visitsPerMonth,
+      priceBasis: output.pricing.clientPriceBasis ?? 'VISIT',
       pricePerVisitCents: output.pricing.pricePerVisitCents,
       monthlyValueCents: output.pricing.monthlyValueCents,
-      scope: [
-        ...survey.areas.map((a) => {
-          const m2 = a.sizePreset === 'MEASURED' ? a.measuredM2 ?? 0 : rates.roomSizePresetsM2[a.sizePreset];
-          return {
-            label: a.areaType,
-            detail: `${a.roomCount} × approx. ${m2} m² · ${cleanLevelLabel(a.cleanLevel)}`,
-            description: rates.workDescriptions[a.cleanLevel],
-          };
-        }),
-        ...survey.items.map((i) => ({
-          label: i.itemType,
-          detail: `${i.quantity} unit${i.quantity === 1 ? '' : 's'}`,
-          description: rates.workDescriptions.ITEM,
-        })),
-      ],
+      // Nothing surveyed: one line for the whole job, described by the scope
+      // text written for the client — never the request's notes, which on a
+      // pipeline quote are the lead's internal notes.
+      scope: surveyed.length > 0
+        ? surveyed
+        : [{ label: row.serviceLine.name, detail: row.siteType, description: costing?.clientScope ?? '' }],
       contactPhone: rates.quoteContactPhone,
       contactEmail: rates.quoteContactEmail,
       approvedAt: estimate.decidedAt?.toISOString() ?? estimate.computedAt.toISOString(),
@@ -414,15 +421,6 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
     return { quote, estimate };
   }
 };
-
-/** Why an estimate cannot go forward, or null when it can. */
-export function belowMinimumReason(output: QuoteEstimateOutput): string | null {
-  if (output.pricing.marginCheck !== 'BELOW MINIMUM') return null;
-  const price = (output.pricing.pricePerVisitCents / 100).toLocaleString('en-KE');
-  const min = (output.pricing.minimumPriceCents / 100).toLocaleString('en-KE');
-  return `Blocked: price per visit KSh ${price} is below the minimum price KSh ${min} (BELOW MINIMUM). ` +
-    'Change the scope, frequency or rates so the margin clears the minimum before sending for approval.';
-}
 
 function editBlockedReason(status: QuoteStatus): string {
   if (status === QuoteStatus.AWAITING_APPROVAL || status === QuoteStatus.APPROVED) {

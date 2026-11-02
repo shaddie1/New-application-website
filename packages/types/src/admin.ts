@@ -1,7 +1,7 @@
 /** Admin/back-office DTOs (apps/admin). */
 import type { BookingDto } from './booking.js';
 import type { QuoteRequestDto, QuoteStatus } from './quote.js';
-import type { QuoteCostingDto, QuoteEstimateDto, QuoteSurveyDto } from './quoteBuilder.js';
+import type { ClientPriceBasis, QuoteCostingDto, QuoteEstimateDto, QuoteSurveyDto } from './quoteBuilder.js';
 import type { UserRole } from './auth.js';
 
 export interface CrewMemberSummary {
@@ -43,11 +43,15 @@ export interface AdminQuoteRequestDto extends QuoteRequestDto {
   estimate: QuoteEstimateDto | null;
   /** Client-facing price once an estimate is approved. Safe for every staff role. */
   approvedPricePerVisitCents: number | null;
+  /** MONTH when the client agreed a monthly price, which is then approvedMonthlyValueCents exactly. */
+  approvedPriceBasis: ClientPriceBasis | null;
+  approvedMonthlyValueCents: number | null;
   /** Approval trail. */
   submittedForApprovalAt: string | null;
   submittedForApprovalByName: string | null;
   approvedAt: string | null;
   approvedByName: string | null;
+  /** Approval or rejection note; null for roles without estimate access. */
   approvalNote: string | null;
 }
 

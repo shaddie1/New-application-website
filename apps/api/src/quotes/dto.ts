@@ -108,10 +108,13 @@ export function toAdminQuoteDto(row: AdminQuoteRow, includeEstimate: boolean): A
     costing: row.costing && includeEstimate ? toCostingDto(row.costing) : null,
     estimate: current && includeEstimate ? toEstimateDto(current) : null,
     approvedPricePerVisitCents: approved && output ? output.pricing.pricePerVisitCents : null,
+    approvedPriceBasis: approved && output ? output.pricing.clientPriceBasis ?? 'VISIT' : null,
+    approvedMonthlyValueCents: approved && output ? output.pricing.monthlyValueCents : null,
     submittedForApprovalAt: current?.submittedAt?.toISOString() ?? null,
     submittedForApprovalByName: current?.submittedBy?.fullName ?? null,
     approvedAt: approved ? current.decidedAt?.toISOString() ?? null : null,
     approvedByName: approved ? current.decidedBy?.fullName ?? null : null,
-    approvalNote: current?.decisionNote ?? null,
+    // The approver's reasoning is about costs and margin.
+    approvalNote: includeEstimate ? current?.decisionNote ?? null : null,
   };
 }

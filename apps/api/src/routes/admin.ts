@@ -194,6 +194,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
 
     let quotedAmountCents = existing.quotedAmountCents;
+    let monthlyPriceCents: number | null = null;
     if (target === QuoteStatus.QUOTED) {
       const approved = await prisma.quoteEstimate.findFirst({
         where: { quoteRequestId: existing.id, status: EstimateStatus.APPROVED },
@@ -206,7 +207,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           error: 'an approved estimate is required before quoting — complete the survey and send it for COO approval',
         });
       }
-      quotedAmountCents = (approved.output as unknown as QuoteEstimateOutput).pricing.pricePerVisitCents;
+      // quotedAmountCents stays per visit, as the customer app reads it; a
+      // price agreed per month is texted as that monthly figure.
+      const { pricing } = approved.output as unknown as QuoteEstimateOutput;
+      quotedAmountCents = pricing.pricePerVisitCents;
+      if (pricing.clientPriceBasis === 'MONTH') monthlyPriceCents = pricing.monthlyValueCents;
     }
 
     const row = await prisma.quoteRequest.update({
@@ -219,7 +224,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       include: adminQuoteInclude,
     });
 
-    void notifyQuoteResponded(row.id, parsed.data.status, row.quotedAmountCents, req.log);
+    void notifyQuoteResponded(row.id, parsed.data.status, row.quotedAmountCents, req.log, monthlyPriceCents);
 
     const actor = await loadActor(req);
     return reply.send({ quoteRequest: toAdminQuoteDto(row, !!actor && canViewEstimate(actor)) });

@@ -404,6 +404,8 @@ export interface ClientQuotationDto {
   serviceLineName: string;
   frequencyLabel: string;
   visitsPerMonth: number;
+  /** MONTH: the monthly value is the agreed price and leads; the price per visit follows from it. */
+  priceBasis: ClientPriceBasis;
   pricePerVisitCents: number;
   monthlyValueCents: number;
   scope: ClientQuotationScopeLine[];
