@@ -89,8 +89,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen lg:flex">
-      {/* Mobile bar: the rail collapses rather than disappearing. */}
-      <div className="flex items-center justify-between border-b border-line bg-white px-4 py-3 lg:hidden">
+      {/* Mobile bar: the rail collapses rather than disappearing. The menu
+          never prints: a printed page is a report, not the app. */}
+      <div className="flex items-center justify-between border-b border-line bg-white px-4 py-3 lg:hidden print:hidden">
         <span className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-8 w-auto" />
@@ -110,10 +111,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       </div>
 
-      {open && <div className="border-b border-line bg-white px-4 py-4 lg:hidden">{railLinks}</div>}
+      {open && <div className="border-b border-line bg-white px-4 py-4 lg:hidden print:hidden">{railLinks}</div>}
 
       {/* Desktop rail */}
-      <aside className="hidden w-60 shrink-0 border-r border-line bg-white lg:flex lg:flex-col">
+      <aside className="hidden w-60 shrink-0 border-r border-line bg-white lg:flex lg:flex-col print:hidden">
         <div className="px-5 py-5">
           <Link href="/" className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -134,7 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 px-5 py-8 sm:px-8">
+      <main className="min-w-0 flex-1 px-5 py-8 sm:px-8 print:p-0">
         <div className="mx-auto max-w-6xl">{children}</div>
       </main>
     </div>
