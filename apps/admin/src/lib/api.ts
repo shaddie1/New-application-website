@@ -30,6 +30,7 @@ import type {
   CreateAssetMaintenanceInput,
   InvestmentDto,
   CreateInvestmentInput,
+  UpdateInvestmentInput,
   ProfitDistributionDto,
   DeclareDistributionInput,
   MarkDistributionPaidInput,
@@ -410,6 +411,14 @@ export const api = {
   addInvestment: (input: CreateInvestmentInput) =>
     request<{ investment: InvestmentDto }>('/admin/finance/investments', {
       method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  /** Owner only: link an investment to a shareholder, or unlink it with null. */
+  updateInvestment: (id: string, input: UpdateInvestmentInput) =>
+    request<{ investment: InvestmentDto }>(`/admin/finance/investments/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
       auth: true,
       body: JSON.stringify(input),
     }),

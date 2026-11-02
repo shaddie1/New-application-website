@@ -12,6 +12,7 @@ import type {
   ProfitDistributionDto,
   RevenueBreakdown,
   RevenueBreakdownItem,
+  ShareholderDto,
   UnreconciledItem,
 } from '@onyxhawk/types';
 
@@ -127,7 +128,7 @@ export default function FinancePage() {
       {tab === 'revenue' && <RevenueTab from={from} to={to} onError={fail} />}
       {tab === 'marketing' && <MarketingTab from={from} to={to} onError={fail} />}
       {tab === 'assets' && <AssetsTab onError={fail} />}
-      {tab === 'investments' && <InvestmentsTab onError={fail} />}
+      {tab === 'investments' && <InvestmentsTab onError={fail} isOwner={session.user.isOwner === true} />}
       {tab === 'sharing' && <SharingTab onError={fail} />}
       {tab === 'receipts' && <ReceiptsTab from={from} to={to} onError={fail} />}
     </div>
@@ -618,14 +619,16 @@ function AssetsTab({ onError }: TabProps) {
 
 // ── Investments ─────────────────────────────────────────────────────────────
 
-function InvestmentsTab({ onError }: TabProps) {
+function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
   const [rows, setRows] = useState<InvestmentDto[]>([]);
+  const [holders, setHolders] = useState<ShareholderDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [linkingId, setLinkingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     source: '', kind: 'CAPITAL_INJECTION' as InvestmentKind, amountKes: '', date: todayIso(),
-    purpose: '', reference: '',
+    purpose: '', reference: '', shareholderId: '',
   });
 
   const load = useCallback(async () => {
@@ -640,6 +643,27 @@ function InvestmentsTab({ onError }: TabProps) {
   }, [onError]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Only the owner links investments to holders, and only the owner may read the cap table.
+  useEffect(() => {
+    if (!isOwner) return;
+    api.shareholders()
+      .then((res) => setHolders(res.shareholders))
+      .catch((err) => onError(err, 'Could not load shareholders'));
+  }, [isOwner, onError]);
+
+  // Saves on pick. The row takes the server's answer, so a failed save leaves the old holder showing.
+  const linkHolder = async (r: InvestmentDto, shareholderId: string | null) => {
+    setLinkingId(r.id);
+    try {
+      const { investment } = await api.updateInvestment(r.id, { shareholderId });
+      setRows((prev) => prev.map((x) => (x.id === investment.id ? investment : x)));
+    } catch (err) {
+      onError(err, 'Could not link the investment');
+    } finally {
+      setLinkingId(null);
+    }
+  };
 
   const total = rows.reduce((a, r) => a + r.amountCents, 0);
 
@@ -678,8 +702,9 @@ function InvestmentsTab({ onError }: TabProps) {
                 date: form.date,
                 purpose: form.purpose.trim(),
                 reference: form.reference.trim() || undefined,
+                shareholderId: form.shareholderId || null,
               });
-              setForm({ ...form, source: '', amountKes: '', purpose: '', reference: '' });
+              setForm({ ...form, source: '', amountKes: '', purpose: '', reference: '', shareholderId: '' });
               setShowForm(false);
               await load();
             } catch (err) { onError(err, 'Could not save investment'); }
@@ -715,6 +740,15 @@ function InvestmentsTab({ onError }: TabProps) {
             <input className={input} value={form.reference} placeholder="M-Pesa / bank ref"
               onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
           </Labelled>
+          {isOwner && (
+            <Labelled label="Shareholder" hint="That shareholder will be able to see this record.">
+              <select className={input} value={form.shareholderId}
+                onChange={(e) => setForm((f) => ({ ...f, shareholderId: e.target.value }))}>
+                <option value="">Not linked</option>
+                {holders.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </Labelled>
+          )}
           <div className="sm:col-span-3 flex justify-end">
             <button type="submit" disabled={saving} className={btn}>{saving ? 'Saving…' : 'Add investment'}</button>
           </div>
@@ -728,7 +762,7 @@ function InvestmentsTab({ onError }: TabProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">
-                <Th>Date</Th><Th>Source</Th><Th>Type</Th><Th>Purpose</Th><Th right>Amount</Th><Th />
+                <Th>Date</Th><Th>Source</Th><Th>Shareholder</Th><Th>Type</Th><Th>Purpose</Th><Th right>Amount</Th><Th />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -738,6 +772,26 @@ function InvestmentsTab({ onError }: TabProps) {
                   <Td>
                     <div>{r.source}</div>
                     <Provenance by={r.createdByName} at={r.createdAt} />
+                  </Td>
+                  <Td>
+                    {isOwner ? (
+                      <select
+                        aria-label={`Shareholder for ${r.source}, ${r.date}`}
+                        className="rounded-lg border border-border bg-bg px-2 py-1.5 text-sm disabled:opacity-50"
+                        value={r.shareholderId ?? ''}
+                        disabled={linkingId === r.id}
+                        onChange={(e) => void linkHolder(r, e.target.value || null)}
+                      >
+                        <option value="">Not linked</option>
+                        {/* Keeps a holder the list could not supply visible rather than reading as unlinked. */}
+                        {r.shareholderId && !holders.some((h) => h.id === r.shareholderId) && (
+                          <option value={r.shareholderId}>{r.shareholderName ?? 'Unknown shareholder'}</option>
+                        )}
+                        {holders.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                      </select>
+                    ) : (
+                      r.shareholderName ?? '—'
+                    )}
                   </Td>
                   <Td>{label(r.kind)}</Td>
                   <Td>

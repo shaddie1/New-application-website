@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { EquityOverview, ShareholderDto, ShareholderKind } from '@onyxhawk/types';
+import type { AdminStaffDto, EquityOverview, ShareholderDto, ShareholderKind } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { CATEGORICAL, OTHER_GREY } from '../../../src/components/charts';
@@ -51,6 +51,11 @@ function toBasisPoints(percent: string): number | null {
   return Math.round(value * 100);
 }
 
+// "Jane Mwangi (jane@example.com)", or the name alone when no email is on file.
+function accountLabel(u: AdminStaffDto) {
+  return u.email ? `${u.fullName} (${u.email})` : u.fullName;
+}
+
 export default function EquityPage() {
   const session = useRequireAdmin();
   const now = new Date();
@@ -63,6 +68,8 @@ export default function EquityPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Form>(blankForm());
+  const [editUserId, setEditUserId] = useState('');
+  const [staff, setStaff] = useState<AdminStaffDto[] | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState<Form>(blankForm());
   const [saving, setSaving] = useState(false);
@@ -84,6 +91,27 @@ export default function EquityPage() {
   }, [from, to]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // The team list feeds the Linked account select; it does not change with the month.
+  useEffect(() => {
+    api.staff()
+      .then((res) => setStaff(res.staff))
+      .catch((err) => setError(
+        err instanceof ApiError ? `Could not load the team list (${err.status}).` : 'Could not load the team list.',
+      ));
+  }, []);
+
+  const staffById = new Map((staff ?? []).map((u) => [u.id, u]));
+
+  // The account a holder is linked to. One missing from the team list (removed,
+  // or its staff access revoked) keeps its name, marked, rather than reading as
+  // a different account or as no link at all.
+  const linkedLabel = (s: ShareholderDto) => {
+    const user = s.userId ? staffById.get(s.userId) : undefined;
+    if (user) return accountLabel(user);
+    const name = s.userName ?? 'Unknown account';
+    return staff ? `${name} (no longer on the team)` : name;
+  };
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear((y) => y - 1); }
@@ -124,20 +152,34 @@ export default function EquityPage() {
     }
   };
 
-  const handleSaveEdit = async (id: string) => {
+  const handleSaveEdit = async (s: ShareholderDto) => {
     const basisPoints = toBasisPoints(editForm.percent);
-    if (!editForm.name.trim() || basisPoints === null) {
+    const name = editForm.name.trim();
+    if (!name || basisPoints === null) {
       setError('Enter a name and a stake between 0 and 100%.');
       return;
+    }
+    // The link is sent only when it changed, so editing a name or a stake never
+    // touches it — not even when the linked account has since left the team.
+    const userId = editUserId || null;
+    const linkChanged = userId !== s.userId;
+    if (linkChanged && userId && s.userId) {
+      const next = staffById.get(userId);
+      const ok = confirm(
+        `${next ? accountLabel(next) : 'The new account'} will see ${name}'s figures. `
+          + `${linkedLabel(s)} will no longer see them.`,
+      );
+      if (!ok) return;
     }
     setSaving(true);
     setError(null);
     try {
-      await api.updateShareholder(id, {
-        name: editForm.name.trim(),
+      await api.updateShareholder(s.id, {
+        name,
         title: editForm.title.trim() || null,
         kind: editForm.kind,
         basisPoints,
+        ...(linkChanged && { userId }),
       });
       setEditingId(null);
       await load();
@@ -172,6 +214,11 @@ export default function EquityPage() {
   const allocations = overview?.allocations ?? [];
   const totalBasisPoints = overview?.totalBasisPoints ?? 0;
   const capTableBalanced = totalBasisPoints === BASIS_POINTS_TOTAL;
+
+  // An account can be linked to one holder only, so the select greys out the rest.
+  const holderByUserId = new Map(
+    allocations.flatMap((a) => (a.shareholder.userId ? [[a.shareholder.userId, a.shareholder] as const] : [])),
+  );
 
   return (
     <div>
@@ -352,6 +399,7 @@ export default function EquityPage() {
                 const isEditing = editingId === s.id;
 
                 if (isEditing) {
+                  const selected = editUserId ? staffById.get(editUserId) : undefined;
                   return (
                     <tr key={s.id} className="bg-mist">
                       <td className="px-5 py-3">
@@ -379,6 +427,36 @@ export default function EquityPage() {
                             <option value="COMPANY">Company</option>
                           </select>
                         </div>
+                        <div className="mt-2">
+                          <label htmlFor={`linked-account-${s.id}`} className="block text-xs text-text-muted mb-1">
+                            Linked account
+                          </label>
+                          <select
+                            id={`linked-account-${s.id}`}
+                            className="w-full rounded-lg border border-border bg-bg px-2 py-1.5 text-sm"
+                            value={editUserId}
+                            onChange={(e) => setEditUserId(e.target.value)}
+                          >
+                            <option value="">Not linked</option>
+                            {s.userId && !staffById.has(s.userId) && (
+                              <option value={s.userId}>{linkedLabel(s)}</option>
+                            )}
+                            {(staff ?? []).map((u) => {
+                              const other = holderByUserId.get(u.id);
+                              const takenElsewhere = other !== undefined && other.id !== s.id;
+                              return (
+                                <option key={u.id} value={u.id} disabled={takenElsewhere}>
+                                  {accountLabel(u)}{takenElsewhere ? ` · linked to ${other.name}` : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          {selected && (
+                            <p className="text-text-muted text-xs mt-1">
+                              {accountLabel(selected)} will see {editForm.name.trim() || 'this holder'}&apos;s figures.
+                            </p>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3 text-right">
                         <input
@@ -396,7 +474,7 @@ export default function EquityPage() {
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-3">
                           <button
-                            onClick={() => void handleSaveEdit(s.id)}
+                            onClick={() => void handleSaveEdit(s)}
                             disabled={saving}
                             className="rounded-lg bg-navy text-white px-3 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
                           >
@@ -426,10 +504,9 @@ export default function EquityPage() {
                               <span className="rounded-full bg-bg-muted text-text-muted text-xs px-2 py-0.5">Company</span>
                             )}
                           </div>
-                          {(s.title || s.userName) && (
-                            <p className="text-text-muted text-xs mt-0.5">
-                              {[s.title, s.userName].filter(Boolean).join(' · ')}
-                            </p>
+                          {s.title && <p className="text-text-muted text-xs mt-0.5">{s.title}</p>}
+                          {s.userId && (
+                            <p className="text-text-muted text-xs mt-0.5">Linked account: {linkedLabel(s)}</p>
                           )}
                         </div>
                       </div>
@@ -444,7 +521,12 @@ export default function EquityPage() {
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-3">
                         <button
-                          onClick={() => { setEditingId(s.id); setEditForm(formFor(s)); setError(null); }}
+                          onClick={() => {
+                            setEditingId(s.id);
+                            setEditForm(formFor(s));
+                            setEditUserId(s.userId ?? '');
+                            setError(null);
+                          }}
                           className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-muted"
                         >
                           Edit
