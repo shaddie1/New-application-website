@@ -124,9 +124,33 @@ describe('PUT /admin/quote-builder/:id/costing', () => {
     expect(res.statusCode).toBe(400);
     expect(t.costings).toHaveLength(0);
   });
+
+  it('refuses a client price above what a quote can carry', async () => {
+    const res = await as('admin', 'PUT', '/admin/quote-builder/q1/costing', body({ clientPriceCents: 2_147_483_648, clientPriceBasis: 'VISIT' }));
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('21,474,836.47');
+    expect(t.costings).toHaveLength(0);
+  });
 });
 
 describe('recomputing with a costing', () => {
+  it('keeps the visits a monthly price was entered at until the price changes, and warns when the survey moves', async () => {
+    const monthly = { contractMonths: 12, clientPriceCents: 8_800_000, clientPriceBasis: 'MONTH' };
+    await as('admin', 'PUT', '/admin/quote-builder/q1/costing', body(monthly));
+    await as('supervisor', 'PUT', '/admin/quote-builder/q1/survey', { ...weeklySurvey, frequencyLabel: 'Twice weekly (8 visits)' });
+
+    const same = await as('admin', 'PUT', '/admin/quote-builder/q1/costing', body(monthly));
+    expect(same.statusCode).toBe(200);
+    expect(t.costings[0]!.data.clientPriceVisitsPerMonth).toBe(4);
+    expect(newest('q1').output.warnings).toEqual(expect.arrayContaining([expect.stringContaining('entered at 4 visits')]));
+
+    const repriced = await as('admin', 'PUT', '/admin/quote-builder/q1/costing', body({ ...monthly, clientPriceCents: 16_000_000 }));
+    expect(repriced.statusCode).toBe(200);
+    expect(t.costings[0]!.data.clientPriceVisitsPerMonth).toBe(8);
+    expect(newest('q1').output.warnings.join(' ')).not.toContain('entered at');
+  });
+
   it('keeps the hand-set figures and the client price when a supervisor saves the survey', async () => {
     await as('admin', 'PUT', '/admin/quote-builder/q1/costing', body({ crewSize: 3, clientPriceCents: 500_000, clientPriceBasis: 'VISIT' }));
 

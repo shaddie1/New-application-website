@@ -382,10 +382,25 @@ export interface QuoteEstimateOutput {
   warnings: string[];
 }
 
+type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+/**
+ * An estimate as stored. One computed before costing existed lacks every
+ * figure costing added, so code reading a stored estimate must allow for it.
+ */
+export type StoredQuoteEstimateOutput = Omit<QuoteEstimateOutput, 'hours' | 'dayRates' | 'machines' | 'costs' | 'pricing' | 'profit'> & {
+  hours: PartialBy<EstimateHours, 'surveyJobDays' | 'surveyCrewSize' | 'surveySupervisorDays'>;
+  dayRates?: EstimateDayRates;
+  machines?: EstimateMachineLine[];
+  costs: PartialBy<EstimateCosts, 'extraMaterialsCents' | 'lunchCents' | 'machineWearCents' | 'machineHireCents' | 'upfrontCents'>;
+  pricing: PartialBy<EstimatePricing, 'recommendedPerVisitCents' | 'clientPriceCents' | 'clientPriceBasis'>;
+  profit?: EstimateProfit;
+};
+
 export interface QuoteEstimateDto {
   id: string;
   status: EstimateStatus;
-  output: QuoteEstimateOutput;
+  output: StoredQuoteEstimateOutput;
   /** When the rates used were last edited — flags a stale estimate. */
   ratesUpdatedAt: string | null;
   computedAt: string;

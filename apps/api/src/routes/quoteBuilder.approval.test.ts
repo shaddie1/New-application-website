@@ -57,6 +57,18 @@ describe('submit and approve', () => {
     expect(res.statusCode).toBe(409);
     expect(t.quotes[0]!.status).toBe('SITE_VISIT_SCHEDULED');
   });
+
+  it('refuses to send a price per visit above what a quote can carry', async () => {
+    // 100 cleaners at KSh 10,000 a day for 31 days is KSh 31M of pay per visit.
+    const costed = await as('admin', 'PUT', '/admin/quote-builder/q1/costing', body({ crewSize: 100, jobDays: 31, cleanerPayPerDayCents: 1_000_000 }));
+    expect(costed.statusCode).toBe(200);
+
+    const res = await as('admin', 'POST', '/admin/quote-builder/q1/submit');
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('21,474,836.47');
+    expect(t.quotes[0]!.status).toBe('SITE_VISIT_SCHEDULED');
+  });
 });
 
 describe('what the client is quoted', () => {

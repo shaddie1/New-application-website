@@ -14,7 +14,7 @@ import type {
   AdminStats,
   CleanTypeCode,
   CrewUserDto,
-  QuoteEstimateOutput,
+  StoredQuoteEstimateOutput,
   ServiceLineCode,
   BookingStatus as BookingStatusDto,
   RespondQuoteInput,
@@ -209,7 +209,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       }
       // quotedAmountCents stays per visit, as the customer app reads it; a
       // price agreed per month is texted as that monthly figure.
-      const { pricing } = approved.output as unknown as QuoteEstimateOutput;
+      const { pricing } = approved.output as unknown as StoredQuoteEstimateOutput;
       quotedAmountCents = pricing.pricePerVisitCents;
       if (pricing.clientPriceBasis === 'MONTH') monthlyPriceCents = pricing.monthlyValueCents;
     }

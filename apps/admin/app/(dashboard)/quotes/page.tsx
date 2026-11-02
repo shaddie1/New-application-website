@@ -17,7 +17,6 @@ import type {
   QuoteBuilderOptions,
   QuoteCostingDto,
   QuoteCostingInput,
-  QuoteEstimateOutput,
   QuoteFrequency,
   QuoteRatesDto,
   QuoteStatus,
@@ -27,6 +26,7 @@ import type {
   RoomSizePreset,
   ServiceLineCode,
   SoilLevel,
+  StoredQuoteEstimateOutput,
 } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
@@ -561,7 +561,7 @@ function costingForm(c: QuoteCostingDto | null): QuoteCostingInput {
 }
 
 /** The price an estimate quotes, the way the client agreed it. */
-function quotedPrice(o: QuoteEstimateOutput) {
+function quotedPrice(o: StoredQuoteEstimateOutput) {
   return o.pricing.clientPriceBasis === 'MONTH'
     ? `${money(o.pricing.monthlyValueCents)} per month`
     : `${money(o.pricing.pricePerVisitCents)} per visit`;
@@ -580,9 +580,8 @@ function EstimatePanel({ quote: q, approver, rates, assets, onChange, onError }:
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [formError, setFormError] = useState<string | null>(null);
   const est = q.estimate;
+  // An estimate computed before costing existed has no profit or costing lines.
   const o = est?.output;
-  // Estimates computed before costing existed carry no profit, day rates or machine lines.
-  const hasCosting = !!o?.profit;
   const editable = EDITABLE.includes(q.status);
   const stale = !!est && !!rates?.updatedAt && (!est.ratesUpdatedAt || new Date(rates.updatedAt) > new Date(est.ratesUpdatedAt));
   const dirty = JSON.stringify(form) !== JSON.stringify(costingForm(q.costing));
@@ -724,12 +723,12 @@ function EstimatePanel({ quote: q, approver, rates, assets, onChange, onError }:
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {hasCosting ? (
+          {o.profit ? (
             <>
               <Stat label="Expected profit / visit" value={money(o.profit.perVisitCents)} accent tone={profitTone(o.profit.perVisitCents)}
                 hint={`at ${money(o.pricing.pricePerVisitCents)} per visit${o.pricing.clientPriceCents == null ? ' (recommended)' : ''}`} />
               <Stat label="Per month" value={o.profit.perMonthCents == null ? '—' : money(o.profit.perMonthCents)} tone={profitTone(o.profit.perMonthCents)}
-                hint={o.profit.perMonthCents == null ? 'One-off: the visit is the whole job' : `${o.pricing.visitsPerMonth} visit${o.pricing.visitsPerMonth === 1 ? '' : 's'} / month`} />
+                hint={o.profit.perMonthCents == null ? 'One-off: the visit is the whole job' : visitsText(o.pricing.visitsPerMonth)} />
               <Stat label="Per contract" value={o.profit.perContractCents == null ? '—' : money(o.profit.perContractCents)} tone={profitTone(o.profit.perContractCents)}
                 hint={months ? `${months} month${months === 1 ? '' : 's'} · before tax and overheads` : 'Before tax and overheads'} />
             </>
@@ -996,17 +995,15 @@ function EstimatePanel({ quote: q, approver, rates, assets, onChange, onError }:
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
               <Row k="Cleaner pay" v={money(o.costs.labourCents)} />
               <Row k="Supervisor pay" v={money(o.costs.supervisorCents)} />
-              {hasCosting && <Row k="Lunch" v={money(o.costs.lunchCents)} />}
+              {o.costs.lunchCents != null && <Row k="Lunch" v={money(o.costs.lunchCents)} />}
               <Row k="Consumables" v={money(o.costs.consumablesCents)} />
-              {hasCosting && <Row k="Extra materials" v={money(o.costs.extraMaterialsCents)} />}
+              {o.costs.extraMaterialsCents != null && <Row k="Extra materials" v={money(o.costs.extraMaterialsCents)} />}
               <Row k="Transport" v={money(o.costs.transportCents)} />
               <Row k="Equipment allowance" v={money(o.costs.equipmentWearCents)} />
-              {hasCosting && (
-                <>
-                  <Row k="Machine wear (owned and bought)" v={money(o.costs.machineWearCents)} />
-                  <Row k="Machine hire" v={money(o.costs.machineHireCents)} />
-                  <Row k={months ? 'Upfront purchases (spread)' : 'Upfront purchases'} v={money(o.costs.upfrontCents)} />
-                </>
+              {o.costs.machineWearCents != null && <Row k="Machine wear (owned and bought)" v={money(o.costs.machineWearCents)} />}
+              {o.costs.machineHireCents != null && <Row k="Machine hire" v={money(o.costs.machineHireCents)} />}
+              {o.costs.upfrontCents != null && (
+                <Row k={months ? 'Upfront purchases (spread)' : 'Upfront purchases'} v={money(o.costs.upfrontCents)} />
               )}
               <Row k="Direct cost" v={money(o.costs.directCostCents)} strong />
               <Row k="Contingency" v={money(o.costs.contingencyCents)} />

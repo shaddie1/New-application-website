@@ -10,13 +10,13 @@ import type {
   QuoteCosting,
   QuoteCostingDto,
   QuoteEstimateDto,
-  QuoteEstimateOutput,
   QuoteFrequency,
   QuoteStatus,
   QuoteSurveyAreaInput,
   QuoteSurveyDto,
   QuoteSurveyItemInput,
   ServiceLineCode,
+  StoredQuoteEstimateOutput,
 } from '@onyxhawk/types';
 
 const person = { select: { fullName: true } } as const;
@@ -68,7 +68,7 @@ export function toEstimateDto(e: AdminQuoteRow['estimates'][number]): QuoteEstim
   return {
     id: e.id,
     status: e.status as EstimateStatus,
-    output: e.output as unknown as QuoteEstimateOutput,
+    output: e.output as unknown as StoredQuoteEstimateOutput,
     ratesUpdatedAt: e.ratesUpdatedAt?.toISOString() ?? null,
     computedAt: e.computedAt.toISOString(),
     computedByName: e.computedBy?.fullName ?? null,
@@ -86,7 +86,7 @@ export function toEstimateDto(e: AdminQuoteRow['estimates'][number]): QuoteEstim
  */
 export function toAdminQuoteDto(row: AdminQuoteRow, includeEstimate: boolean): AdminQuoteRequestDto {
   const current = row.estimates[0] ?? null;
-  const output = current ? (current.output as unknown as QuoteEstimateOutput) : null;
+  const output = current ? (current.output as unknown as StoredQuoteEstimateOutput) : null;
   const approved = current?.status === 'APPROVED';
 
   return {

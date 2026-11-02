@@ -19,6 +19,9 @@ import type {
 import { prisma } from '../db.js';
 
 const cents = z.number().int().min(0).max(100_000_000_000);
+
+/** The most a quote's price per visit can be: quotedAmountCents is a 32-bit integer column. */
+export const MAX_PRICE_CENTS = 2_147_483_647;
 const name = z.string().trim().min(1).max(80);
 const daysUsed = z.number().int().min(1).max(31).nullish();
 const amount = z.object({ name, amountCents: cents });
@@ -42,7 +45,8 @@ export const CostingSchema = z
     hiredMachines: z.array(z.object({ name, hirePerVisitCents: cents })).max(30),
     upfrontPurchases: z.array(amount).max(50),
     contractMonths: z.number().int().min(1).max(120).nullish(),
-    clientPriceCents: cents.nullish(),
+    // A monthly price split over one or more visits is no larger per visit, so this caps the price per visit too.
+    clientPriceCents: cents.max(MAX_PRICE_CENTS, 'the price can be at most KSh 21,474,836.47').nullish(),
     clientPriceBasis: z.enum(['VISIT', 'MONTH']).nullish(),
     clientScope: z.string().trim().max(2000).nullish(),
   })

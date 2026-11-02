@@ -23,9 +23,9 @@ import type {
   QuoteBuilderAssetDto,
   QuoteBuilderOptions,
   QuoteCosting,
-  QuoteEstimateOutput,
   QuoteRates,
   QuoteSurveyInput,
+  StoredQuoteEstimateOutput,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
@@ -33,7 +33,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { e164 } from '../auth/phone.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
 import { attachActor, canViewEstimate, requireApprover, requireEstimateAccess } from '../quotes/access.js';
-import { CostingSchema, EMPTY_COSTING, copyOwnedMachines, defaultSurvey } from '../quotes/costing.js';
+import { CostingSchema, EMPTY_COSTING, MAX_PRICE_CENTS, copyOwnedMachines, defaultSurvey } from '../quotes/costing.js';
 import { adminQuoteInclude, toAdminQuoteDto } from '../quotes/dto.js';
 import { computeEstimate } from '../quotes/estimate.js';
 import {
@@ -301,9 +301,13 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send({ error: 'compute an estimate before sending it for approval' });
     }
     // A thin or losing margin goes forward for the approver to judge; only a
-    // price of nothing is refused.
-    if (!((estimate.output as unknown as QuoteEstimateOutput).pricing.pricePerVisitCents > 0)) {
+    // price of nothing, or more than a quote can carry, is refused.
+    const price = (estimate.output as unknown as StoredQuoteEstimateOutput).pricing.pricePerVisitCents;
+    if (!(price > 0)) {
       return reply.code(409).send({ error: 'the quoted price is KSh 0 — enter the client’s price or survey the site first' });
+    }
+    if (price > MAX_PRICE_CENTS) {
+      return reply.code(409).send({ error: 'the price per visit is above KSh 21,474,836.47, the most a quote can carry — check the crew, days and day rates' });
     }
 
     await prisma.$transaction([
@@ -395,7 +399,7 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
 
     const survey = estimate.surveySnapshot as unknown as QuoteSurveyInput;
     const rates = estimate.ratesSnapshot as unknown as QuoteRates;
-    const output = estimate.output as unknown as QuoteEstimateOutput;
+    const output = estimate.output as unknown as StoredQuoteEstimateOutput;
     const costing = estimate.costingSnapshot as unknown as QuoteCosting | null;
 
     const surveyed = [
