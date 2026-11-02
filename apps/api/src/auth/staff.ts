@@ -12,4 +12,5 @@ export const STAFF_ROLES = new Set<UserRole>([
   UserRole.MARKETING,
   UserRole.CLEANING_SUPERVISOR,
   UserRole.SHAREHOLDER,
+  UserRole.COO,
 ]);

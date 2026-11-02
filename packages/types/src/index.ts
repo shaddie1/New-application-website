@@ -5,6 +5,7 @@ export * from './loyalty.js';
 export * from './photos.js';
 export * from './profile.js';
 export * from './quote.js';
+export * from './quoteBuilder.js';
 export * from './admin.js';
 export * from './notification.js';
 export * from './websiteJobs.js';

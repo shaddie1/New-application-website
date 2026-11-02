@@ -129,6 +129,9 @@ function badge(status: QuoteStatus): { label: string; color: string; bg: string 
   switch (status) {
     case 'PENDING':              return { label: 'Pending', color: '#A78445', bg: '#E6CFA033' };
     case 'SITE_VISIT_SCHEDULED': return { label: 'Visit scheduled', color: '#3A5E7A', bg: '#3A5E7A22' };
+    // Internal approval steps — to the customer the quote is simply in preparation.
+    case 'AWAITING_APPROVAL':
+    case 'APPROVED':             return { label: 'Preparing quote', color: '#3A5E7A', bg: '#3A5E7A22' };
     case 'QUOTED':               return { label: 'Quoted', color: '#4F7B5C', bg: '#4F7B5C22' };
     case 'WON':                  return { label: 'Booked', color: '#4F7B5C', bg: '#4F7B5C22' };
     case 'LOST':                 return { label: 'Closed', color: '#5C544A', bg: '#E2DCC9' };
