@@ -10,6 +10,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { requireStaff } from '../auth/roles.js';
 
 const CreateReportSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -30,7 +31,9 @@ const CreateExpenseSchema = z.object({
 }) satisfies z.ZodType<CreateExpenseInput>;
 
 export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
+  // Staff report the jobs they did; reports feed the owner's financials.
   app.addHook('preHandler', requireAuth);
+  app.addHook('preHandler', requireStaff);
 
   // List own submitted reports.
   app.get('/', async (req, reply) => {
