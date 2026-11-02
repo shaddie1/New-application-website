@@ -714,3 +714,89 @@ export interface EquityOverview {
   toDate: string;
   allTime: AllTimeTotals;
 }
+
+// ── Shareholder page (the owner, or the shareholder it belongs to) ──────────
+// One holder's figures beside company-wide totals. Nothing about any other
+// holder is ever sent, and the holder's own notes and linked account stay out.
+
+/** The one holder a page is about. */
+export interface MySharesHolder {
+  id: string;
+  name: string;
+  title: string | null;
+  kind: ShareholderKind;
+  basisPoints: number;
+}
+
+/** Company figures over a span of time, counted as Financials counts them. */
+export interface CompanyFigures {
+  revenueCents: number; // income less discounts, by job date
+  netCents: number; // revenue less the expenses of counted jobs, by expense date
+  jobs: number;
+}
+
+export interface ServiceLineFigures {
+  code: string | null; // null: jobs with no service line ("Unclassified")
+  name: string; // from the catalog, else the humanised code
+  revenueCents: number;
+  jobs: number;
+}
+
+export interface MySharesMonth extends CompanyFigures {
+  key: string; // YYYY-MM on the Nairobi calendar
+  label: string; // "Apr 2026"
+  inProgress: boolean; // the current month
+  hasRecords: boolean; // on or after the month of the first counted job
+  byServiceLine: ServiceLineFigures[]; // highest revenue first
+  ownShareCents: number; // the month's net at the holder's current stake
+}
+
+/** The same days of an earlier month as the month in progress has had so far. */
+export interface MySharesComparison extends CompanyFigures {
+  key: string; // YYYY-MM
+  from: string; // YYYY-MM-DD
+  to: string; // YYYY-MM-DD
+  hasRecords: boolean;
+}
+
+export interface MySharesPeriod extends CompanyFigures {
+  from: string | null; // YYYY-MM-DD; all time: the first counted job's date, null when none
+  to: string; // YYYY-MM-DD; all time: today
+  byServiceLine: ServiceLineFigures[];
+  ownShareCents: number; // net at the holder's current stake
+}
+
+export interface MySharesPayout {
+  label: string;
+  periodStart: string; // YYYY-MM-DD
+  periodEnd: string; // YYYY-MM-DD
+  amountCents: number;
+  status: DistributionStatus; // never CANCELLED: cancelled payouts are left out
+  paidAt: string | null;
+}
+
+export interface MyShares {
+  holder: MySharesHolder;
+  asOf: string; // ISO time the figures were read
+  currentMonth: string; // YYYY-MM on the Nairobi calendar
+  // The month in progress and the 24 before it, oldest first.
+  months: MySharesMonth[];
+  // For the month in progress, which is compared like with like.
+  comparisons: { previousMonth: MySharesComparison; sameMonthLastYear: MySharesComparison };
+  periods: { quarter: MySharesPeriod; year: MySharesPeriod; allTime: MySharesPeriod };
+  invested: {
+    capitalCents: number; // linked capital injections
+    lentCents: number; // linked loans
+  };
+  // To date, whatever the period.
+  payouts: { paidCents: number; pendingCents: number; rows: MySharesPayout[] };
+}
+
+/** GET /admin/my-shares. `holder` is null only for an owner with an empty list. */
+export type MySharesResult = MyShares | { holder: null };
+
+/** GET /admin/my-shares/access: whether the menu shows a shareholder page. */
+export interface MySharesAccess {
+  shareholderId: string | null; // the caller's own holding
+  canViewAll: boolean; // the owner, who may open every holder's page
+}
