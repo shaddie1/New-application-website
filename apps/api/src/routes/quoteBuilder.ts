@@ -1,23 +1,27 @@
 /**
- * Quote Builder: the rates card, the site survey on a quote request, the
- * internal estimate and its approval, and the client-facing quotation.
+ * Quote Builder: the rates card, the site survey and costing on a quote
+ * request, the internal estimate and its approval, and the client-facing
+ * quotation.
  *
  * State machine on QuoteRequest.status:
  *
- *   PENDING / SITE_VISIT_SCHEDULED ──(survey saved → estimate DRAFT)
+ *   PENDING / SITE_VISIT_SCHEDULED ──(survey or costing saved → estimate DRAFT)
  *     └─ submit ──► AWAITING_APPROVAL ──approve──► APPROVED ──respond QUOTED──► QUOTED
  *                        │  └─ reject ──► SITE_VISIT_SCHEDULED (estimate REJECTED)
  *                        └─ withdraw ──► SITE_VISIT_SCHEDULED (estimate DRAFT)
  *
- * Editing the survey or recomputing supersedes the current estimate, and is
- * refused once the quote is awaiting approval or approved — withdraw first.
+ * Editing the survey or costing, or recomputing, supersedes the current
+ * estimate, and is refused once the quote is awaiting approval or approved —
+ * withdraw first.
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { EstimateStatus, Prisma, QuoteStatus } from '@prisma/client';
 import type {
   ClientQuotationDto,
+  QuoteBuilderAssetDto,
   QuoteBuilderOptions,
+  QuoteCosting,
   QuoteEstimateOutput,
   QuoteRates,
   QuoteSurveyInput,
@@ -26,6 +30,7 @@ import type {
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { attachActor, canViewEstimate, requireApprover, requireEstimateAccess } from '../quotes/access.js';
+import { CostingSchema, EMPTY_COSTING, copyOwnedMachines, defaultSurvey } from '../quotes/costing.js';
 import { adminQuoteInclude, toAdminQuoteDto } from '../quotes/dto.js';
 import { computeEstimate } from '../quotes/estimate.js';
 import {
@@ -113,28 +118,87 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send({ error: editBlockedReason(quote.status) });
     }
 
-    const { areas, items, notes, ...scalars } = parsed.data;
+    const data = surveyData(parsed.data, req.actor!.id);
     await prisma.quoteSurvey.upsert({
       where: { quoteRequestId: quote.id },
-      create: {
-        quoteRequestId: quote.id,
-        ...scalars,
-        notes: notes ?? null,
-        areas: areas as unknown as Prisma.InputJsonValue,
-        items: items as unknown as Prisma.InputJsonValue,
-        updatedById: req.actor!.id,
-      },
-      update: {
-        ...scalars,
-        notes: notes ?? null,
-        areas: areas as unknown as Prisma.InputJsonValue,
-        items: items as unknown as Prisma.InputJsonValue,
-        updatedById: req.actor!.id,
-      },
+      create: { quoteRequestId: quote.id, ...data },
+      update: data,
     });
 
     await recompute(quote.id, parsed.data, req.actor!.id);
     return reply.send({ quoteRequest: await dto(quote.id, req) });
+  });
+
+  // ── Costing ───────────────────────────────────────────────────────────────
+
+  // Save (replace) the costing and recompute. A quote with no survey gets a
+  // blank one, so a contract priced by phone can be costed straight away.
+  app.put<{ Params: { id: string } }>('/:id/costing', { preHandler: requireEstimateAccess }, async (req, reply) => {
+    const parsed = CostingSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const quote = await prisma.quoteRequest.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, status: true, frequency: true, survey: true, costing: true },
+    });
+    if (!quote) return reply.code(404).send({ error: 'quote request not found' });
+    if (!EDITABLE.includes(quote.status)) {
+      return reply.code(409).send({ error: editBlockedReason(quote.status) });
+    }
+
+    const previous = (quote.costing?.data ?? null) as unknown as QuoteCosting | null;
+    const copied = await copyOwnedMachines(parsed.data.ownedMachines, previous?.ownedMachines ?? []);
+    if ('error' in copied) {
+      return reply.code(400).send({ error: { formErrors: [], fieldErrors: { ownedMachines: [copied.error] } } });
+    }
+
+    const { rates } = await loadRates();
+    const survey = quote.survey
+      ? SurveySchema.parse(quote.survey)
+      : defaultSurvey(quote.frequency, rates.frequencyTable.map((f) => f.label));
+    if (!quote.survey) {
+      await prisma.quoteSurvey.create({ data: { quoteRequestId: quote.id, ...surveyData(survey, req.actor!.id) } });
+    }
+
+    // The visits a client's price was entered at, kept until the price or its
+    // basis changes, so the estimate can warn when the survey's visits move.
+    const price = parsed.data.clientPriceCents ?? null;
+    const basis = parsed.data.clientPriceBasis ?? null;
+    const unchanged = previous && (previous.clientPriceCents ?? null) === price && (previous.clientPriceBasis ?? null) === basis;
+    const visitsNow = rates.frequencyTable.find((f) => f.label === survey.frequencyLabel)?.visitsPerMonth ?? 1;
+    const costing: QuoteCosting = {
+      ...parsed.data,
+      ownedMachines: copied.machines,
+      clientPriceVisitsPerMonth: price == null ? null : unchanged ? previous.clientPriceVisitsPerMonth ?? visitsNow : visitsNow,
+    };
+    const stored = { data: costing as unknown as Prisma.InputJsonValue, updatedById: req.actor!.id };
+    await prisma.quoteCosting.upsert({
+      where: { quoteRequestId: quote.id },
+      create: { quoteRequestId: quote.id, ...stored },
+      update: stored,
+    });
+
+    await recompute(quote.id, survey, req.actor!.id);
+    return reply.send({ quoteRequest: await dto(quote.id, req) });
+  });
+
+  // Owned machines a costing can pick. Only the figures it copies — the COO
+  // has no finance access, so nothing else from the asset register.
+  app.get('/assets', { preHandler: requireEstimateAccess }, async (_req, reply) => {
+    const rows = await prisma.asset.findMany({
+      where: { retiredAt: null },
+      select: { id: true, name: true, category: true, costCents: true, salvageValueCents: true, usefulLifeMonths: true },
+      orderBy: { name: 'asc' },
+    });
+    const assets: QuoteBuilderAssetDto[] = rows.map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      costCents: a.costCents,
+      salvageValueCents: a.salvageValueCents,
+      usefulLifeMonths: a.usefulLifeMonths,
+    }));
+    return reply.send({ assets });
   });
 
   // Recompute with the current rates card (e.g. after the rates were edited).
@@ -306,10 +370,20 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
     return toAdminQuoteDto(row, !!req.actor && canViewEstimate(req.actor as Parameters<typeof canViewEstimate>[0]));
   }
 
-  /** Compute a fresh DRAFT estimate from the survey and today's rates, superseding any other. */
+  /**
+   * Compute a fresh DRAFT estimate from the survey, the stored costing and
+   * today's rates, superseding any other. Owned machines are costed from the
+   * register figures copied at the last costing save.
+   */
   async function recompute(quoteId: string, survey: QuoteSurveyInput, actorId: string) {
     const { rates, updatedAt } = await loadRates();
-    const output = computeEstimate(survey, rates);
+    const quote = await prisma.quoteRequest.findUnique({
+      where: { id: quoteId },
+      select: { frequency: true, costing: { select: { data: true } } },
+    });
+    // A quote nobody has costed still gets lunch and the contract warnings.
+    const costing = (quote?.costing?.data as unknown as QuoteCosting | undefined) ?? EMPTY_COSTING;
+    const output = computeEstimate(survey, rates, { ...costing, requestFrequency: quote?.frequency });
     await prisma.$transaction([
       prisma.quoteEstimate.updateMany({
         where: { quoteRequestId: quoteId, status: { not: EstimateStatus.SUPERSEDED } },
@@ -321,6 +395,7 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
           status: EstimateStatus.DRAFT,
           surveySnapshot: survey as unknown as Prisma.InputJsonValue,
           ratesSnapshot: rates as unknown as Prisma.InputJsonValue,
+          costingSnapshot: costing as unknown as Prisma.InputJsonValue,
           ratesUpdatedAt: updatedAt ? new Date(updatedAt) : null,
           output: output as unknown as Prisma.InputJsonValue,
           computedById: actorId,
@@ -351,9 +426,21 @@ export function belowMinimumReason(output: QuoteEstimateOutput): string | null {
 
 function editBlockedReason(status: QuoteStatus): string {
   if (status === QuoteStatus.AWAITING_APPROVAL || status === QuoteStatus.APPROVED) {
-    return `the estimate is ${label(status)} — withdraw it before changing the survey or recomputing`;
+    return `the estimate is ${label(status)} — withdraw it before changing the survey or costing, or recomputing`;
   }
-  return `the quote is ${label(status)}; the survey can no longer change`;
+  return `the quote is ${label(status)}; the survey and costing can no longer change`;
+}
+
+/** A survey as the QuoteSurvey row stores it. */
+function surveyData(survey: QuoteSurveyInput, actorId: string) {
+  const { areas, items, notes, ...scalars } = survey;
+  return {
+    ...scalars,
+    notes: notes ?? null,
+    areas: areas as unknown as Prisma.InputJsonValue,
+    items: items as unknown as Prisma.InputJsonValue,
+    updatedById: actorId,
+  };
 }
 
 function label(status: QuoteStatus): string {

@@ -209,6 +209,21 @@ export interface EstimateCostingInput extends QuoteCosting {
   requestFrequency?: QuoteFrequency;
 }
 
+export interface QuoteCostingDto extends QuoteCosting {
+  updatedByName: string | null;
+  updatedAt: string;
+}
+
+/** An asset the costing can pick as an owned machine: the figures it copies, nothing else from finance. */
+export interface QuoteBuilderAssetDto {
+  id: string;
+  name: string;
+  category: string;
+  costCents: number;
+  salvageValueCents: number;
+  usefulLifeMonths: number | null;
+}
+
 // ── Estimate ────────────────────────────────────────────────────────────────
 
 /** One area or item, with its share of the hours and money. */

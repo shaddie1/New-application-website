@@ -96,6 +96,7 @@ model User {
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
   quoteSurveysUpdated  QuoteSurvey[]        @relation("QuoteSurveyUpdatedBy")
+  quoteCostingsUpdated QuoteCosting[]       @relation("QuoteCostingUpdatedBy")
   quoteEstimatesComputed  QuoteEstimate[]   @relation("QuoteEstimateComputedBy")
   quoteEstimatesSubmitted QuoteEstimate[]   @relation("QuoteEstimateSubmittedBy")
   quoteEstimatesDecided   QuoteEstimate[]   @relation("QuoteEstimateDecidedBy")
@@ -428,6 +429,7 @@ model QuoteRequest {
 
   photos          QuoteRequestPhoto[]
   survey          QuoteSurvey?
+  costing         QuoteCosting?
   estimates       QuoteEstimate[]
 
   @@index([userId, status])
@@ -482,8 +484,25 @@ model QuoteSurvey {
 }
 
 /**
- * A priced estimate, frozen with the survey and rates it was computed from so
- * a later rates edit never silently changes an approved figure. The newest
+ * What a quote costs to deliver beyond the survey, and the client's price.
+ * Kept apart from the survey, which every staff role reads, so only the
+ * owner, admin, finance and the COO see it. One per quote; the JSON is
+ * validated by the API and only ever read back whole to compute the estimate.
+ */
+model QuoteCosting {
+  id             String       @id @default(cuid())
+  quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  quoteRequestId String       @unique
+  data           Json         // QuoteCosting
+  updatedBy      User?        @relation("QuoteCostingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+/**
+ * A priced estimate, frozen with the survey, rates and costing it was computed
+ * from so a later edit never silently changes an approved figure. The newest
  * non-superseded row is the quote's current estimate.
  */
 model QuoteEstimate {
@@ -493,6 +512,7 @@ model QuoteEstimate {
   status          EstimateStatus @default(DRAFT)
   surveySnapshot  Json
   ratesSnapshot   Json
+  costingSnapshot Json?          // null on estimates computed before costing existed
   ratesUpdatedAt  DateTime?
   output          Json           // QuoteEstimateOutput
   computedBy      User?          @relation("QuoteEstimateComputedBy", fields: [computedById], references: [id], onDelete: SetNull)

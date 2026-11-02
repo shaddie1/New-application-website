@@ -7,6 +7,8 @@ import type { Prisma } from '@prisma/client';
 import type {
   AdminQuoteRequestDto,
   EstimateStatus,
+  QuoteCosting,
+  QuoteCostingDto,
   QuoteEstimateDto,
   QuoteEstimateOutput,
   QuoteFrequency,
@@ -27,6 +29,7 @@ export const adminQuoteInclude = {
   serviceLine: true,
   user: { select: { fullName: true, phone: true } },
   survey: { include: { updatedBy: person } },
+  costing: { include: { updatedBy: person } },
   estimates: {
     where: { status: { not: 'SUPERSEDED' } },
     orderBy: { computedAt: 'desc' },
@@ -50,6 +53,14 @@ export function toSurveyDto(s: NonNullable<AdminQuoteRow['survey']>): QuoteSurve
     items: s.items as unknown as QuoteSurveyItemInput[],
     updatedByName: s.updatedBy?.fullName ?? null,
     updatedAt: s.updatedAt.toISOString(),
+  };
+}
+
+export function toCostingDto(c: NonNullable<AdminQuoteRow['costing']>): QuoteCostingDto {
+  return {
+    ...(c.data as unknown as QuoteCosting),
+    updatedByName: c.updatedBy?.fullName ?? null,
+    updatedAt: c.updatedAt.toISOString(),
   };
 }
 
@@ -94,6 +105,7 @@ export function toAdminQuoteDto(row: AdminQuoteRow, includeEstimate: boolean): A
     customerName: row.user.fullName,
     customerPhone: row.user.phone,
     survey: row.survey ? toSurveyDto(row.survey) : null,
+    costing: row.costing && includeEstimate ? toCostingDto(row.costing) : null,
     estimate: current && includeEstimate ? toEstimateDto(current) : null,
     approvedPricePerVisitCents: approved && output ? output.pricing.pricePerVisitCents : null,
     submittedForApprovalAt: current?.submittedAt?.toISOString() ?? null,
