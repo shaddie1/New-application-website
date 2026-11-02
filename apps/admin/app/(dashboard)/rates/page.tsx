@@ -144,15 +144,17 @@ export default function RatesPage() {
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
               <Money label="Cleaner pay per day" value={draft.cleanerPayPerDayCents} onChange={(v) => set('cleanerPayPerDayCents', v)} />
               <Money label="Supervisor pay per day" value={draft.supervisorPayPerDayCents} onChange={(v) => set('supervisorPayPerDayCents', v)} />
+              <Money label="Lunch per person per day" hint="Cleaners and supervisor on site" value={draft.lunchPerPersonPerDayCents} onChange={(v) => set('lunchPerPersonPerDayCents', v)} />
               <Money label="Legal minimum wage per day" hint="Compliant-pay check only" value={draft.legalMinWagePerDayCents} onChange={(v) => set('legalMinWagePerDayCents', v)} />
               <Num label="Productive hours per person per day" value={draft.productiveHoursPerPersonPerDay} step={0.5} onChange={(v) => set('productiveHoursPerPersonPerDay', v)} />
               <Num label="Largest crew per job day" value={draft.largestCrewPerJobDay} step={1} onChange={(v) => set('largestCrewPerJobDay', Math.round(v))} />
               <Num label="Set-up and close-out hours" value={draft.setupCloseOutHours} step={0.25} onChange={(v) => set('setupCloseOutHours', v)} />
+              <Num label="Working days per month" hint="Spreads a machine's monthly wear" value={draft.workingDaysPerMonth} step={1} onChange={(v) => set('workingDaysPerMonth', Math.max(1, Math.round(v)))} />
               <Pct label="Movement allowance" value={draft.movementAllowancePct} onChange={(v) => set('movementAllowancePct', v)} />
               <Pct label="Equipment wear" value={draft.equipmentWearPct} onChange={(v) => set('equipmentWearPct', v)} />
               <Pct label="Contingency" value={draft.contingencyPct} onChange={(v) => set('contingencyPct', v)} />
               <Pct label="Target margin" value={draft.targetMarginPct} onChange={(v) => set('targetMarginPct', v)} />
-              <Pct label="Minimum margin" hint="Quotes below this are blocked" value={draft.minimumMarginPct} onChange={(v) => set('minimumMarginPct', v)} />
+              <Pct label="Minimum margin" hint="Margins are graded against this" value={draft.minimumMarginPct} onChange={(v) => set('minimumMarginPct', v)} />
               <Pct label="Commission (trainee-sourced)" hint="On net profit per visit" value={draft.commissionPct} onChange={(v) => set('commissionPct', v)} />
               <Num label="Round prices to (KSh)" value={draft.roundToKes} step={50} onChange={(v) => set('roundToKes', Math.max(1, Math.round(v)))} />
               <Text label="Quotation contact phone" value={draft.quoteContactPhone} onChange={(v) => set('quoteContactPhone', v)} />

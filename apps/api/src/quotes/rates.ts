@@ -52,10 +52,12 @@ export const DEFAULT_RATES: QuoteRates = {
   // A. Pay, time and pricing policy
   cleanerPayPerDayCents: kes(800), // now-pay phase; compliant-phase floor is the legal minimum
   supervisorPayPerDayCents: kes(800), // 0 once the supervisor is salaried under compliant pay
+  lunchPerPersonPerDayCents: kes(100), // owner's figure, Nov 2026
   legalMinWagePerDayCents: kes(868.44), // Nairobi general labourer, Wages Order 2026
   productiveHoursPerPersonPerDay: 7,
   largestCrewPerJobDay: 6,
   setupCloseOutHours: 1,
+  workingDaysPerMonth: 26,
   movementAllowancePct: 0.15,
   equipmentWearPct: 0.05,
   contingencyPct: 0.1,
@@ -131,10 +133,12 @@ const positive = z.number().positive();
 export const RatesSchema = z.object({
   cleanerPayPerDayCents: cents,
   supervisorPayPerDayCents: cents,
+  lunchPerPersonPerDayCents: cents,
   legalMinWagePerDayCents: cents,
   productiveHoursPerPersonPerDay: positive.max(24),
   largestCrewPerJobDay: z.number().int().min(1).max(100),
   setupCloseOutHours: z.number().min(0).max(24),
+  workingDaysPerMonth: z.number().int().min(1).max(31),
   movementAllowancePct: pct,
   equipmentWearPct: pct,
   contingencyPct: pct,
@@ -206,9 +210,11 @@ export async function loadRates(): Promise<QuoteRatesDto> {
   });
   if (!row) return { rates: DEFAULT_RATES, updatedAt: null, updatedByName: null };
 
-  // A stored card that fails validation (e.g. after a schema change) must not
-  // take quoting down with it — fall back to the defaults and say so in the log.
-  const parsed = RatesSchema.safeParse(row.data);
+  // Merged over the defaults, so a card saved before a field existed keeps its
+  // own figures and takes the default for the new one. A stored card that
+  // still fails validation must not take quoting down with it — fall back.
+  const stored = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? row.data : null;
+  const parsed = RatesSchema.safeParse(stored && { ...DEFAULT_RATES, ...stored });
   if (!parsed.success) return { rates: DEFAULT_RATES, updatedAt: null, updatedByName: null };
 
   return {

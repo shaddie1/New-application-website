@@ -50,11 +50,15 @@ export interface FrequencyOption {
 export interface QuoteRates {
   cleanerPayPerDayCents: number;
   supervisorPayPerDayCents: number;
+  /** Per person on site (cleaners and supervisor) per job day. */
+  lunchPerPersonPerDayCents: number;
   /** Compliant-pay check only — never used in the price. */
   legalMinWagePerDayCents: number;
   productiveHoursPerPersonPerDay: number;
   largestCrewPerJobDay: number;
   setupCloseOutHours: number;
+  /** Spreads an owned machine's monthly wear over the days it works. */
+  workingDaysPerMonth: number;
   movementAllowancePct: number;
   equipmentWearPct: number;
   contingencyPct: number;
