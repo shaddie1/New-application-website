@@ -11,18 +11,21 @@ import type {
   CostingBoughtMachine,
   CostingHiredMachine,
   CostingOwnedMachineInput,
+  CreateBuilderQuoteInput,
   DistanceZone,
   QuoteBuilderAssetDto,
   QuoteBuilderOptions,
   QuoteCostingDto,
   QuoteCostingInput,
   QuoteEstimateOutput,
+  QuoteFrequency,
   QuoteRatesDto,
   QuoteStatus,
   QuoteSurveyAreaInput,
   QuoteSurveyInput,
   QuoteSurveyItemInput,
   RoomSizePreset,
+  ServiceLineCode,
   SoilLevel,
 } from '@onyxhawk/types';
 
@@ -107,6 +110,9 @@ export default function QuotesPage() {
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<AdminQuoteRequestDto | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  /** A quote just started here: its card opens on the Estimate tab. */
+  const [started, setStarted] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -133,6 +139,16 @@ export default function QuotesPage() {
   const patchQuote = (updated: AdminQuoteRequestDto) =>
     setQuotes((prev) => prev?.map((q) => (q.id === updated.id ? updated : q)) ?? null);
 
+  const openStarted = (created: AdminQuoteRequestDto) => {
+    setCreating(false);
+    setStarted(created.id);
+    setExpanded(created.id);
+    setQuotes((prev) => [created, ...(prev ?? []).filter((q) => q.id !== created.id)]);
+    // Refresh the list; a filter that would hide the new quote is cleared, which reloads it.
+    if (filter && filter !== created.status) setFilter('');
+    else void load();
+  };
+
   if (session === undefined) return <div className="text-charcoal-muted">Loading…</div>;
   if (!session) return null;
 
@@ -146,7 +162,12 @@ export default function QuotesPage() {
           </p>
         </div>
         {showEstimate && (
-          <Link href="/rates" className={btnGhost}>Quote rates →</Link>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCreating(true)} className="rounded-lg bg-gold-deep px-3 py-1.5 text-sm font-semibold text-white">
+              New quote
+            </button>
+            <Link href="/rates" className={btnGhost}>Quote rates →</Link>
+          </div>
         )}
       </div>
 
@@ -182,6 +203,7 @@ export default function QuotesPage() {
             rates={rates}
             assets={assets}
             expanded={expanded === q.id}
+            initialPanel={started === q.id ? 'estimate' : 'survey'}
             onToggle={() => setExpanded(expanded === q.id ? null : q.id)}
             onRespond={() => setActive(q)}
             onChange={patchQuote}
@@ -197,6 +219,7 @@ export default function QuotesPage() {
           onDone={(updated) => { setActive(null); patchQuote(updated); void load(); }}
         />
       )}
+      {creating && <NewQuoteModal options={options} onClose={() => setCreating(false)} onCreated={openStarted} />}
     </div>
   );
 }
@@ -204,7 +227,7 @@ export default function QuotesPage() {
 // ── Card ─────────────────────────────────────────────────────────────────────
 
 function QuoteCard({
-  quote: q, options, showEstimate, approver, rates, assets, expanded, onToggle, onRespond, onChange, onError,
+  quote: q, options, showEstimate, approver, rates, assets, expanded, initialPanel, onToggle, onRespond, onChange, onError,
 }: {
   quote: AdminQuoteRequestDto;
   options: QuoteBuilderOptions | null;
@@ -213,12 +236,13 @@ function QuoteCard({
   rates: QuoteRatesDto | null;
   assets: QuoteBuilderAssetDto[] | null;
   expanded: boolean;
+  initialPanel: 'survey' | 'estimate';
   onToggle: () => void;
   onRespond: () => void;
   onChange: (q: AdminQuoteRequestDto) => void;
   onError: (msg: string | null) => void;
 }) {
-  const [panel, setPanel] = useState<'survey' | 'estimate' | 'quotation'>('survey');
+  const [panel, setPanel] = useState<'survey' | 'estimate' | 'quotation'>(initialPanel);
   const hasQuotation = q.approvedPricePerVisitCents != null;
 
   return (
@@ -1323,6 +1347,117 @@ function RespondModal({ quote, onClose, onDone }: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── New quote ────────────────────────────────────────────────────────────────
+
+/** The service lines the quote builder takes a quote for. */
+const QUOTABLE_LINES: ServiceLineCode[] = ['residential', 'office', 'hospital', 'post_build', 'fumigation'];
+
+function NewQuoteModal({ options, onClose, onCreated }: {
+  options: QuoteBuilderOptions | null;
+  onClose: () => void;
+  onCreated: (created: AdminQuoteRequestDto) => void;
+}) {
+  const [lines, setLines] = useState<{ code: string; name: string }[] | null>(null);
+  const [form, setForm] = useState<CreateBuilderQuoteInput>({
+    customerName: '',
+    customerPhone: '',
+    serviceLineCode: 'office',
+    siteType: '',
+    frequency: 'WEEKLY',
+    frequencyLabel: FREQ_TO_RATES_LABEL.WEEKLY ?? '',
+    scopeNotes: '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.serviceLines()
+      .then((r) => setLines(r.serviceLines.filter((l) => (QUOTABLE_LINES as string[]).includes(l.code))))
+      .catch((err) => setError(messageFrom(err, 'Could not load the service lines.')));
+  }, []);
+
+  // Until the lists arrive, or if the default is not on them, the first entry stands in.
+  const labels = options?.frequencies.map((f) => f.label) ?? [];
+  const frequencyLabel = labels.includes(form.frequencyLabel) ? form.frequencyLabel : labels[0] ?? form.frequencyLabel;
+  const serviceLineCode = lines?.some((l) => l.code === form.serviceLineCode) ? form.serviceLineCode : lines?.[0]?.code as ServiceLineCode | undefined;
+
+  const set = (next: Partial<CreateBuilderQuoteInput>) => setForm((f) => ({ ...f, ...next }));
+  // "How often" moves the visits to its row on the rates card; the visits can still be picked by hand.
+  const setFrequency = (frequency: QuoteFrequency) => {
+    const wanted = FREQ_TO_RATES_LABEL[frequency];
+    set({ frequency, ...(wanted && labels.includes(wanted) ? { frequencyLabel: wanted } : {}) });
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!form.customerName.trim() || !form.customerPhone.trim() || !form.siteType.trim() || !serviceLineCode) {
+      setError('Enter the client’s name, phone, service line and site.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await api.createBuilderQuote({ ...form, serviceLineCode, frequencyLabel, scopeNotes: form.scopeNotes?.trim() || null });
+      onCreated(res.quoteRequest);
+    } catch (err) {
+      setError(messageFrom(err, 'Could not start the quote.'));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 px-4" onClick={onClose}>
+      <form onSubmit={(e) => void submit(e)} className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-cream p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>New quote</h2>
+        <p className="mt-1 text-sm text-charcoal-muted">For a client who called, was referred or sent a tender. It opens with a site visit scheduled.</p>
+
+        {error && <div className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Labelled label="Client’s name">
+            <input className={input} value={form.customerName} onChange={(e) => set({ customerName: e.target.value })} />
+          </Labelled>
+          <Labelled label="Phone">
+            <input className={input} type="tel" value={form.customerPhone} placeholder="0712 345 678" onChange={(e) => set({ customerPhone: e.target.value })} />
+          </Labelled>
+          <Labelled label="Service line">
+            <select className={input} value={serviceLineCode ?? ''} disabled={!lines} onChange={(e) => set({ serviceLineCode: e.target.value as ServiceLineCode })}>
+              {!lines && <option value="">Loading…</option>}
+              {(lines ?? []).map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+            </select>
+          </Labelled>
+          <Labelled label="Site or organisation">
+            <input className={input} value={form.siteType} placeholder="e.g. Equity Bank, Ngong Road branch" onChange={(e) => set({ siteType: e.target.value })} />
+          </Labelled>
+          <Labelled label="How often">
+            <select className={input} value={form.frequency} onChange={(e) => setFrequency(e.target.value as QuoteFrequency)}>
+              {Object.entries(FREQ_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </Labelled>
+          <Labelled label="Visits per month">
+            <select className={input} value={frequencyLabel} onChange={(e) => set({ frequencyLabel: e.target.value })}>
+              {(labels.length ? labels : [frequencyLabel]).map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </Labelled>
+          <div className="sm:col-span-2">
+            <Labelled label="Scope / notes (client sees this)">
+              <textarea className={input} rows={3} value={form.scopeNotes ?? ''} placeholder="What the crew will clean"
+                onChange={(e) => set({ scopeNotes: e.target.value })} />
+            </Labelled>
+          </div>
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-line py-2.5 text-charcoal">Cancel</button>
+          <button type="submit" disabled={busy} className="flex-1 rounded-lg bg-gold-deep py-2.5 font-semibold text-white disabled:opacity-50">
+            {busy ? 'Starting…' : 'Start quote'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
