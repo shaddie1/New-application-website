@@ -206,7 +206,7 @@ export function DataTable<T>({
   /** Replaces the bordered box, for a table that already sits inside a card. */
   className?: string;
 }) {
-  const { rows, sort, toggleSort } = controls;
+  const { rows, sort, toggleSort, query } = controls;
   const columns = controls.columns.filter((c) => c.cell);
   const pad = dense ? 'px-3 py-1.5' : 'px-5 py-3';
 
@@ -251,6 +251,14 @@ export function DataTable<T>({
               ))}
             </tr>
           ))}
+          {/* A search that matches nothing says so instead of leaving bare headings. */}
+          {rows.length === 0 && query.trim() && (
+            <tr>
+              <td colSpan={columns.length} className={`${pad} text-center text-text-muted`}>
+                Nothing matches &ldquo;{query.trim()}&rdquo;.
+              </td>
+            </tr>
+          )}
         </tbody>
         {footer && <tfoot className="border-t-2 border-border bg-bg-muted/30">{footer}</tfoot>}
       </table>
