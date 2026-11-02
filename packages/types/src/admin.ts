@@ -354,6 +354,11 @@ export interface CreateInvestmentInput {
   documentUrl?: string;
 }
 
+/** Owner only: link an investment to a shareholder, or unlink it with null. */
+export interface UpdateInvestmentInput {
+  shareholderId: string | null;
+}
+
 export type DistributionStatus = 'PENDING' | 'PAID' | 'CANCELLED';
 
 export interface ProfitDistributionDto extends Provenance {
