@@ -61,7 +61,7 @@ export const EMPTY_COSTING: QuoteCosting = {
 };
 
 /** The rates card's frequency label for a request's "how often". */
-export const FREQ_TO_RATES_LABEL: Record<QuoteFrequency, string> = {
+const FREQ_TO_RATES_LABEL: Record<QuoteFrequency, string> = {
   NONE: 'One-off',
   WEEKLY: 'Weekly (4 visits)',
   BIWEEKLY: 'Fortnightly (2 visits)',
