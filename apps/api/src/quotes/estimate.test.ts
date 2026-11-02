@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { QuoteRates, QuoteSurveyInput } from '@onyxhawk/types';
+import type { EstimateCostingInput, OwnedMachineCopy, QuoteRates, QuoteSurveyInput } from '@onyxhawk/types';
 
 import { computeEstimate, roundUpToKes } from './estimate.js';
 import { DEFAULT_RATES } from './rates.js';
@@ -210,5 +210,213 @@ describe('computeEstimate', () => {
 
   it('is deterministic', () => {
     expect(computeEstimate(survey, DEFAULT_RATES)).toEqual(computeEstimate(survey, DEFAULT_RATES));
+  });
+});
+
+const costing = (c: Partial<EstimateCostingInput> = {}): EstimateCostingInput => ({
+  extraMaterials: [],
+  ownedMachines: [],
+  boughtMachines: [],
+  hiredMachines: [],
+  upfrontPurchases: [],
+  ...c,
+});
+const emptySurvey: QuoteSurveyInput = { ...survey, areas: [], items: [] };
+const scrubber: OwnedMachineCopy = {
+  name: 'Scrubber', category: 'MACHINE', costCents: 26_000_000, salvageValueCents: 2_000_000,
+  usefulLifeMonths: 48, retired: false, deleted: false,
+};
+const at25Days: QuoteRates = { ...DEFAULT_RATES, workingDaysPerMonth: 25 };
+
+describe('computeEstimate with a costing', () => {
+  it('charges lunch per person per job day once a costing is passed, even an empty one', () => {
+    const none = computeEstimate(survey, DEFAULT_RATES).costs;
+    expect(none.lunchCents).toBe(0);
+    expect(none.directCostCents).toBe(207_000);
+
+    const empty = computeEstimate(survey, DEFAULT_RATES, costing()).costs;
+    expect(empty.lunchCents).toBe(10_000); // 1 cleaner × 1 day × KSh 100
+    expect(empty.directCostCents).toBe(217_000);
+  });
+
+  it('AE1: profit and margin at the client price, graded and not floored', () => {
+    // Cost base KSh 10,000: one cleaner day at KSh 8,000 by hand, no lunch,
+    // transport or wear, 25% contingency.
+    const rates: QuoteRates = { ...DEFAULT_RATES, contingencyPct: 0.25, equipmentWearPct: 0 };
+    const out = computeEstimate(emptySurvey, rates, costing({
+      cleanerPayPerDayCents: 800_000, lunchPerPersonPerDayCents: 0, transportPerDayCents: 0,
+      clientPriceCents: 1_200_000, clientPriceBasis: 'VISIT',
+    }));
+    expect(out.costs.costBaseCents).toBe(1_000_000);
+    expect(out.pricing.recommendedPerVisitCents).toBe(1_700_000); // 1,000,000 ÷ 0.6 → KSh 17,000
+    expect(out.pricing.pricePerVisitCents).toBe(1_200_000);
+    expect(out.profit.perVisitCents).toBe(200_000);
+    expect(out.pricing.marginPct).toBe(0.1667); // 1 − 10,000 ÷ 12,000
+    expect(out.pricing.marginCheck).toBe('BELOW MINIMUM');
+  });
+
+  it('AE2: a monthly price at 4 visits gives the per-visit price and profit per visit and per month', () => {
+    const out = computeEstimate({ ...survey, frequencyLabel: 'Weekly (4 visits)' }, DEFAULT_RATES, costing({
+      contractMonths: 12, clientPriceCents: 8_800_000, clientPriceBasis: 'MONTH', clientPriceVisitsPerMonth: 4,
+    }));
+    expect(out.costs.costBaseCents).toBe(238_700); // (207,000 + 10,000 lunch) × 1.1
+    expect(out.pricing.pricePerVisitCents).toBe(2_200_000);
+    expect(out.pricing.monthlyValueCents).toBe(8_800_000);
+    expect(out.profit.perVisitCents).toBe(1_961_300); // 2,200,000 − 238,700
+    expect(out.profit.perMonthCents).toBe(7_845_200); // 8,800,000 − 4 × 238,700
+    expect(out.profit.perContractCents).toBe(94_142_400); // × 12
+  });
+
+  it('keeps a monthly price exact when it does not divide evenly into visits', () => {
+    const { pricing, warnings } = computeEstimate({ ...survey, frequencyLabel: 'Daily (22 visits)' }, DEFAULT_RATES, costing({
+      contractMonths: 12, clientPriceCents: 10_000_000, clientPriceBasis: 'MONTH', clientPriceVisitsPerMonth: 22,
+    }));
+    expect(pricing.pricePerVisitCents).toBe(454_545); // 10,000,000 ÷ 22
+    expect(pricing.monthlyValueCents).toBe(10_000_000);
+    expect(warnings.some((w) => w.includes('monthly price'))).toBe(false);
+  });
+
+  it('AE3: wears an owned machine per job day from the register figures', () => {
+    const out = computeEstimate(survey, at25Days, costing({ jobDays: 2, ownedMachines: [{ assetId: 'a1', asset: scrubber }] }));
+    // (260,000 − 20,000) ÷ 48 months ÷ 25 days = KSh 200 per job day
+    expect(out.machines).toEqual([{ kind: 'OWNED', name: 'Scrubber', perJobDayCents: 20_000, daysUsed: 2, cents: 40_000 }]);
+    expect(out.costs.machineWearCents).toBe(40_000);
+  });
+
+  it('never charges negative wear when salvage is above cost', () => {
+    const out = computeEstimate(survey, at25Days, costing({
+      ownedMachines: [{ assetId: 'a1', asset: { ...scrubber, costCents: 1_000_000, salvageValueCents: 2_000_000 } }],
+    }));
+    expect(out.machines[0]!.cents).toBe(0);
+  });
+
+  it('charges only the days a machine is used', () => {
+    const out = computeEstimate(survey, at25Days, costing({ jobDays: 2, ownedMachines: [{ assetId: 'a1', daysUsed: 1, asset: scrubber }] }));
+    expect(out.machines[0]).toMatchObject({ daysUsed: 1, cents: 20_000 });
+  });
+
+  it('spreads a machine bought for the job over its life with no salvage', () => {
+    const out = computeEstimate(survey, at25Days, costing({ jobDays: 2, boughtMachines: [{ name: 'New buffer', priceCents: 26_000_000, lifeMonths: 48 }] }));
+    // 260,000 ÷ 48 ÷ 25 = KSh 216.67 per job day
+    expect(out.machines).toEqual([{ kind: 'BOUGHT', name: 'New buffer', perJobDayCents: 21_667, daysUsed: 2, cents: 43_333 }]);
+  });
+
+  it('charges a hired machine once per visit, whatever the job days', () => {
+    const out = computeEstimate(survey, DEFAULT_RATES, costing({ jobDays: 2, hiredMachines: [{ name: 'Scaffold', hirePerVisitCents: 300_000 }] }));
+    expect(out.machines).toEqual([{ kind: 'HIRED', name: 'Scaffold', perJobDayCents: null, daysUsed: null, cents: 300_000 }]);
+    expect(out.costs.machineHireCents).toBe(300_000);
+  });
+
+  it('uses typed wear when the register has no life, and warns about retired, deleted and re-lifed machines', () => {
+    const out = computeEstimate(survey, at25Days, costing({
+      ownedMachines: [
+        { assetId: 'a1', wearPerDayCents: 15_000, asset: { ...scrubber, name: 'Old vacuum', usefulLifeMonths: null } },
+        { assetId: 'a2', wearPerDayCents: 15_000, asset: { ...scrubber, name: 'Polisher' } },
+        { assetId: 'a3', asset: { ...scrubber, name: 'Dryer', retired: true } },
+        { assetId: 'a4', asset: { ...scrubber, name: 'Steamer', deleted: true } },
+      ],
+    }));
+    expect(out.machines.map((m) => m.perJobDayCents)).toEqual([15_000, 20_000, 20_000, 20_000]);
+    expect(out.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('Polisher'),
+      expect.stringContaining('Dryer'),
+      expect.stringContaining('Steamer'),
+    ]));
+    expect(out.warnings.some((w) => w.includes('Old vacuum'))).toBe(false);
+  });
+
+  it('AE5: costs a quote with no survey from the crew and days set by hand', () => {
+    const out = computeEstimate(emptySurvey, DEFAULT_RATES, costing({
+      crewSize: 4, jobDays: 1, supervisorDays: 1, clientPriceCents: 1_000_000, clientPriceBasis: 'VISIT',
+    }));
+    expect(out.hours).toMatchObject({ crewSize: 4, jobDays: 1, supervisorDays: 1, surveyCrewSize: 1, surveyJobDays: 1, surveySupervisorDays: 0 });
+    expect(out.costs.labourCents).toBe(320_000); // 4 × 1 × KSh 800
+    expect(out.costs.supervisorCents).toBe(80_000);
+    expect(out.costs.lunchCents).toBe(50_000); // 5 people × KSh 100
+    expect(out.costs.transportCents).toBe(100_000); // 1 day, zone 1
+    expect(out.costs.equipmentWearCents).toBe(20_000); // 5% of 400,000
+    expect(out.costs.costBaseCents).toBe(627_000); // 570,000 × 1.1
+    expect(out.profit.perVisitCents).toBe(373_000);
+    expect(out.warnings.some((w) => w.startsWith('Nothing to price'))).toBe(false);
+  });
+
+  it('follows hand-set job days for the supervisor when supervisor days are left empty', () => {
+    const { hours } = computeEstimate({ ...survey, supervisorOnSite: true }, DEFAULT_RATES, costing({ jobDays: 2 }));
+    expect(hours.supervisorDays).toBe(2);
+    expect(hours.surveySupervisorDays).toBe(1);
+  });
+
+  it('pays a hand-set cleaner day rate and takes the equipment allowance from it', () => {
+    const out = computeEstimate(survey, DEFAULT_RATES, costing({ cleanerPayPerDayCents: 100_000 }));
+    expect(out.dayRates.cleanerPayPerDayCents).toBe(100_000);
+    expect(out.costs.labourCents).toBe(100_000);
+    expect(out.costs.equipmentWearCents).toBe(5_000);
+    expect(out.compliance.meetsLegalMinimum).toBe(true); // KSh 1,000 ≥ 868.44
+  });
+
+  it('applies contingency to a direct cost that includes lunch, materials, machines and upfront purchases', () => {
+    const { costs } = computeEstimate(survey, DEFAULT_RATES, costing({
+      extraMaterials: [{ name: 'Degreaser', amountCents: 20_000 }],
+      hiredMachines: [{ name: 'Scaffold', hirePerVisitCents: 300_000 }],
+      upfrontPurchases: [{ name: 'Ladder', amountCents: 500_000 }],
+    }));
+    expect(costs.extraMaterialsCents).toBe(20_000);
+    expect(costs.upfrontCents).toBe(500_000); // one-off: in full
+    expect(costs.directCostCents).toBe(1_037_000); // 207,000 + 10,000 + 20,000 + 300,000 + 500,000
+    expect(costs.contingencyCents).toBe(103_700);
+  });
+
+  it('AE7: spreads upfront purchases over a recurring contract and shows profit for its length', () => {
+    const out = computeEstimate({ ...survey, frequencyLabel: 'Weekly (4 visits)' }, DEFAULT_RATES, costing({
+      contractMonths: 12, upfrontPurchases: [{ name: 'Mops and buckets', amountCents: 2_400_000 }],
+      clientPriceCents: 500_000, clientPriceBasis: 'VISIT',
+    }));
+    expect(out.costs.upfrontCents).toBe(50_000); // 2,400,000 ÷ (12 × 4)
+    expect(out.costs.costBaseCents).toBe(293_700); // (207,000 + 10,000 + 50,000) × 1.1
+    expect(out.profit).toEqual({ perVisitCents: 206_300, contractMonths: 12, perMonthCents: 825_200, perContractCents: 9_902_400 });
+  });
+
+  it('charges upfront purchases in full to a one-off, with no monthly or contract figures', () => {
+    const out = computeEstimate(survey, DEFAULT_RATES, costing({ upfrontPurchases: [{ name: 'Mops', amountCents: 2_400_000 }] }));
+    expect(out.costs.upfrontCents).toBe(2_400_000);
+    expect(out.profit).toMatchObject({ contractMonths: null, perMonthCents: null, perContractCents: null });
+  });
+
+  it('treats a repeating quote with no contract length as a one-off, and says so', () => {
+    const weekly = computeEstimate({ ...survey, frequencyLabel: 'Weekly (4 visits)' }, DEFAULT_RATES, costing({
+      upfrontPurchases: [{ name: 'Mops', amountCents: 2_400_000 }],
+    }));
+    expect(weekly.costs.upfrontCents).toBe(2_400_000);
+    expect(weekly.profit.perMonthCents).toBeNull();
+    expect(weekly.warnings.some((w) => w.includes('no contract length'))).toBe(true);
+
+    const monthlyRequest = computeEstimate({ ...survey, frequencyLabel: 'Monthly (1 visit)' }, DEFAULT_RATES, costing({ requestFrequency: 'MONTHLY' }));
+    expect(monthlyRequest.warnings.some((w) => w.includes('no contract length'))).toBe(true);
+
+    const oneOff = computeEstimate(survey, DEFAULT_RATES, costing({ requestFrequency: 'NONE' }));
+    expect(oneOff.warnings.some((w) => w.includes('no contract length'))).toBe(false);
+  });
+
+  it('keeps a monthly price when visits change, and warns', () => {
+    const out = computeEstimate({ ...survey, frequencyLabel: 'Twice weekly (8 visits)' }, DEFAULT_RATES, costing({
+      contractMonths: 12, clientPriceCents: 8_800_000, clientPriceBasis: 'MONTH', clientPriceVisitsPerMonth: 4,
+    }));
+    expect(out.pricing.monthlyValueCents).toBe(8_800_000);
+    expect(out.pricing.pricePerVisitCents).toBe(1_100_000);
+    expect(out.warnings.some((w) => w.includes('monthly price'))).toBe(true);
+  });
+
+  it('pays no commission when the client price is below direct cost', () => {
+    const { commission } = computeEstimate({ ...survey, traineeSourced: true }, DEFAULT_RATES, costing({
+      clientPriceCents: 100_000, clientPriceBasis: 'VISIT',
+    }));
+    expect(commission.netProfitPerVisitCents).toBe(-117_000); // 100,000 − 217,000
+    expect(commission.commissionCents).toBe(0);
+  });
+
+  it('grades a client price of 0 BELOW MINIMUM', () => {
+    const { pricing } = computeEstimate(survey, DEFAULT_RATES, costing({ clientPriceCents: 0, clientPriceBasis: 'VISIT' }));
+    expect(pricing.pricePerVisitCents).toBe(0);
+    expect(pricing.marginCheck).toBe('BELOW MINIMUM');
   });
 });

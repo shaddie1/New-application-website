@@ -1,8 +1,9 @@
 /**
- * Quote Builder — rates card, site survey, internal estimate and the
+ * Quote Builder — rates card, site survey, costing, internal estimate and the
  * client-facing quotation. Money is in cents throughout (KSh × 100), the
  * same as the rest of the API; percentages are fractions (0.15 = 15%).
  */
+import type { QuoteFrequency } from './quote.js';
 
 // ── Enumerations ─────────────────────────────────────────────────────────────
 
@@ -122,6 +123,92 @@ export interface QuoteSurveyDto extends QuoteSurveyInput {
   updatedAt: string;
 }
 
+// ── Costing (owner, admin, finance and the COO only) ────────────────────────
+
+/** Whether the client's price was agreed per visit or per month. */
+export type ClientPriceBasis = 'VISIT' | 'MONTH';
+
+/** An extra material per visit, or an upfront purchase. */
+export interface CostingAmount {
+  name: string;
+  amountCents: number;
+}
+
+export interface CostingOwnedMachineInput {
+  assetId: string;
+  /** Job days per visit it works; empty means every job day. */
+  daysUsed?: number | null;
+  /** Typed by hand; needed when the asset register has no useful life. */
+  wearPerDayCents?: number | null;
+}
+
+/** Asset register figures, copied on every costing save. */
+export interface OwnedMachineCopy {
+  name: string;
+  category: string;
+  costCents: number;
+  salvageValueCents: number;
+  usefulLifeMonths: number | null;
+  retired: boolean;
+  /** Deleted from the register since; this is its last copy. */
+  deleted: boolean;
+}
+
+export interface CostingOwnedMachine extends CostingOwnedMachineInput {
+  asset: OwnedMachineCopy;
+}
+
+/** A machine bought for this contract, spread over its life like an owned one. */
+export interface CostingBoughtMachine {
+  name: string;
+  priceCents: number;
+  lifeMonths: number;
+  daysUsed?: number | null;
+}
+
+export interface CostingHiredMachine {
+  name: string;
+  hirePerVisitCents: number;
+}
+
+/**
+ * What the person costing enters. Every override left empty follows the
+ * survey or the rates card.
+ */
+export interface QuoteCostingInput {
+  crewSize?: number | null;
+  jobDays?: number | null;
+  supervisorDays?: number | null;
+  cleanerPayPerDayCents?: number | null;
+  supervisorPayPerDayCents?: number | null;
+  lunchPerPersonPerDayCents?: number | null;
+  transportPerDayCents?: number | null;
+  extraMaterials: CostingAmount[];
+  ownedMachines: CostingOwnedMachineInput[];
+  boughtMachines: CostingBoughtMachine[];
+  hiredMachines: CostingHiredMachine[];
+  upfrontPurchases: CostingAmount[];
+  /** Empty means a one-off; a number of months means recurring for that long. */
+  contractMonths?: number | null;
+  /** Exactly as typed, on its basis. */
+  clientPriceCents?: number | null;
+  clientPriceBasis?: ClientPriceBasis | null;
+  /** Scope the client quotation prints when nothing was surveyed. */
+  clientScope?: string | null;
+}
+
+/** A costing as stored: owned machines carry their register copies. */
+export interface QuoteCosting extends Omit<QuoteCostingInput, 'ownedMachines'> {
+  ownedMachines: CostingOwnedMachine[];
+  /** Visits per month when the client's price was entered. */
+  clientPriceVisitsPerMonth?: number | null;
+}
+
+/** The costing and the request's own frequency, as the engine reads them. */
+export interface EstimateCostingInput extends QuoteCosting {
+  requestFrequency?: QuoteFrequency;
+}
+
 // ── Estimate ────────────────────────────────────────────────────────────────
 
 /** One area or item, with its share of the hours and money. */
@@ -152,19 +239,50 @@ export interface EstimateHours {
   totalPersonHours: number;
   /** Working window capped by productive hours. */
   hoursPerPersonPerDay: number;
+  /** Job days, cleaners per job day and supervisor days as charged: the costing's where set, else the survey's. */
   jobDays: number;
-  /** Cleaners per job day. */
   crewSize: number;
   supervisorDays: number;
+  /** What the survey alone works out. */
+  surveyJobDays: number;
+  surveyCrewSize: number;
+  surveySupervisorDays: number;
+}
+
+/** The day rates charged: the costing's where set, else the rates card's. */
+export interface EstimateDayRates {
+  cleanerPayPerDayCents: number;
+  supervisorPayPerDayCents: number;
+  lunchPerPersonPerDayCents: number;
+  transportPerDayCents: number;
+}
+
+export interface EstimateMachineLine {
+  kind: 'OWNED' | 'BOUGHT' | 'HIRED';
+  name: string;
+  /** Null for a hired machine, which is charged per visit. */
+  perJobDayCents: number | null;
+  daysUsed: number | null;
+  /** Per visit. */
+  cents: number;
 }
 
 export interface EstimateCosts {
   labourCents: number;
   supervisorCents: number;
+  /** From the survey. */
   consumablesCents: number;
+  extraMaterialsCents: number;
   transportCents: number;
+  /** Equipment allowance: a percentage of labour and supervisor pay. */
   equipmentWearCents: number;
-  /** Labour + supervisor + consumables + transport + equipment wear. */
+  lunchCents: number;
+  /** Owned and bought machines. */
+  machineWearCents: number;
+  machineHireCents: number;
+  /** Per visit: in full on a one-off, spread over a recurring contract. */
+  upfrontCents: number;
+  /** Every line above. */
   directCostCents: number;
   contingencyCents: number;
   /** Direct cost + contingency — what the margins are applied to. */
@@ -180,11 +298,26 @@ export interface EstimatePricing {
   frequencyLabel: string;
   visitsPerMonth: number;
   discountPct: number;
+  /** The engine's price per visit after the frequency discount, never below the minimum. */
+  recommendedPerVisitCents: number;
+  /** As typed; null when none was entered. */
+  clientPriceCents: number | null;
+  clientPriceBasis: ClientPriceBasis | null;
+  /** The price this estimate quotes: the client's when entered, else the recommended. */
   pricePerVisitCents: number;
   monthlyValueCents: number;
   /** Gross margin at quote: 1 − cost base (direct cost + contingency) ÷ price per visit. */
   marginPct: number;
   marginCheck: MarginCheck;
+}
+
+/** Expected profit at the quoted price: price less cost base, before tax and overheads. */
+export interface EstimateProfit {
+  perVisitCents: number;
+  /** Null for a one-off (no contract length). */
+  contractMonths: number | null;
+  perMonthCents: number | null;
+  perContractCents: number | null;
 }
 
 export interface EstimateCommission {
@@ -207,8 +340,11 @@ export interface EstimateCompliance {
 export interface QuoteEstimateOutput {
   lines: EstimateLine[];
   hours: EstimateHours;
+  dayRates: EstimateDayRates;
+  machines: EstimateMachineLine[];
   costs: EstimateCosts;
   pricing: EstimatePricing;
+  profit: EstimateProfit;
   commission: EstimateCommission;
   compliance: EstimateCompliance;
   /** Human-readable caveats (e.g. crew capped, unknown rate for an area). */
