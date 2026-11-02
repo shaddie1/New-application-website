@@ -6,6 +6,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { UserRole } from '@prisma/client';
 
+import { STAFF_ROLES } from '../auth/staff.js';
 import { prisma } from '../db.js';
 
 export interface Actor {
@@ -47,6 +48,13 @@ export async function attachActor(req: FastifyRequest, reply: FastifyReply): Pro
   const actor = await loadActor(req);
   if (!actor) return reply.code(401).send({ error: 'unauthorized' });
   req.actor = actor;
+}
+
+/** preHandler: back-office staff only, so a customer's or crew token is refused. */
+export async function requireStaff(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!req.actor || !(req.actor.isOwner || STAFF_ROLES.has(req.actor.role))) {
+    return reply.code(403).send({ error: 'admin access required' });
+  }
 }
 
 export async function requireEstimateAccess(req: FastifyRequest, reply: FastifyReply): Promise<void> {

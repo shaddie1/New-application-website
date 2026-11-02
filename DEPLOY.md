@@ -97,8 +97,35 @@ Keep everything proxied (orange cloud) for Cloudflare TLS + CDN.
 - **M-Pesa Daraja (production)** — set `MPESA_BASE_URL=https://api.safaricom.co.ke` and the production
   `MPESA_CONSUMER_KEY/SECRET/SHORTCODE/PASSKEY`. `MPESA_CALLBACK_URL` must be
   `https://api.onyxhawkcleaningservice.com/webhooks/mpesa/stk`. Complete Safaricom's **Go-Live** approval.
-- **Cloudflare R2 (before/after photos)** — optional; set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
-  `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`. Photos degrade gracefully if unset.
+- **Cloudflare R2 (photos and documents)** — set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`. Booking photos and documents degrade
+  gracefully if unset, but website jobs need it (section 5a).
+
+---
+
+## 5a. Website jobs
+
+Staff publish finished jobs from **Website jobs** in admin; the site's "Our work" section and
+portfolio are built from them. Publishing rebuilds `onyxhawk-web`, so a change shows on the site
+within about five minutes.
+
+1. **Photo storage.** Set the five `R2_*` variables on `onyxhawk-api`. `R2_PUBLIC_URL` must be a
+   custom subdomain of `onyxhawkcleaningservice.com` connected to the bucket (R2 → bucket →
+   Settings → Custom Domains), never the bucket's `r2.dev` address, which Cloudflare rate-limits
+   and reserves for development. Each photo row stores its full URL, so changing host later
+   means rewriting every row.
+2. **Bucket CORS.** Allow `PUT` with a `Content-Type` header from
+   `https://admin.onyxhawkcleaningservice.com`, since the admin page uploads straight to the bucket.
+3. **Deploy hook.** Render → `onyxhawk-web` → Settings → Deploy Hook. Copy the URL into
+   `WEB_DEPLOY_HOOK_URL` on `onyxhawk-api`. Without it, publishing works but the site does not
+   rebuild, and admin says so.
+4. **Build guard.** `REQUIRE_WEBSITE_JOBS=1` on `onyxhawk-web` (already in `render.yaml`) makes a
+   build fail when it cannot fetch published jobs, so the previous site stays live. `turbo.json`
+   passes the variable through and never caches the web build, because a deploy-hook rebuild
+   reuses the same commit.
+5. **Release order.** Ship the API and admin first and confirm the API deploy succeeded. Staff then
+   enter the existing site photos as jobs (originals in `apps/web/public/photos/`). Ship the web
+   change last, so its first build already has jobs to show.
 
 ---
 
@@ -114,9 +141,10 @@ Keep everything proxied (orange cloud) for Cloudflare TLS + CDN.
 
 **API (Render)** — `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `NODE_ENV=production`, `HOST=0.0.0.0`,
 `MPESA_BASE_URL`, `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_SHORTCODE`, `MPESA_PASSKEY`,
-`MPESA_CALLBACK_URL`, `AT_USERNAME`, `AT_API_KEY`, `SMS_SENDER_ID`, and (optional) `R2_*`.
+`MPESA_CALLBACK_URL`, `AT_USERNAME`, `AT_API_KEY`, `SMS_SENDER_ID`, `R2_*` (required for website
+jobs), and `WEB_DEPLOY_HOOK_URL`.
 
-**Web & Admin (Cloudflare Pages)** — `NEXT_PUBLIC_API_URL`.
+**Web & Admin (Cloudflare Pages)** — `NEXT_PUBLIC_API_URL`. Web also sets `REQUIRE_WEBSITE_JOBS=1`.
 
 ---
 

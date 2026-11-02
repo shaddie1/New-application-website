@@ -86,6 +86,8 @@ export interface AdminStaffDto {
   id: string;
   fullName: string;
   phone: string;
+  /** Required for staff sign-in; null on members provisioned before email codes. */
+  email: string | null;
   role: StaffRole;
   isOwner: boolean;
   createdAt: string;
@@ -94,7 +96,12 @@ export interface AdminStaffDto {
 export interface CreateStaffInput {
   phone: string; // E.164
   fullName: string;
+  email: string;
   role: StaffRole;
+}
+
+export interface UpdateStaffInput {
+  email: string;
 }
 
 export interface AdminBookingsResult {

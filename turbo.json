@@ -6,6 +6,11 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
+    "@onyxhawk/web#build": {
+      "dependsOn": ["^build"],
+      "env": ["REQUIRE_WEBSITE_JOBS"],
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true

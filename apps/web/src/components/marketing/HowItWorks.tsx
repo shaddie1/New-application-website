@@ -21,16 +21,16 @@ export function HowItWorks() {
         {/* Rail: vertical on mobile, horizontal across the icons on desktop. */}
         <span
           aria-hidden="true"
-          className="absolute left-[1.37rem] top-2 h-[calc(100%-1rem)] w-px bg-gradient-to-b from-gold/40 via-gold/20 to-transparent lg:left-0 lg:top-[1.37rem] lg:h-px lg:w-full lg:bg-gradient-to-r"
+          className="absolute left-[1.37rem] top-2 h-[calc(100%-1rem)] w-px bg-gradient-to-b from-aqua/50 via-aqua/25 to-transparent lg:left-0 lg:top-[1.37rem] lg:h-px lg:w-full lg:bg-gradient-to-r"
         />
 
         {HOW_IT_WORKS.map((step, index) => (
           <li key={step.title} className="relative flex gap-5 lg:block">
             <div className="relative shrink-0">
-              <IconChip className="border border-gold-bright/40 bg-cream shadow-sm">
+              <IconChip className="border border-aqua/30 bg-white shadow-sm">
                 <Icon name={step.icon} />
               </IconChip>
-              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-pill bg-gold-bright text-[11px] font-bold text-charcoal">
+              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-pill bg-navy text-[11px] font-bold text-white">
                 {index + 1}
               </span>
             </div>

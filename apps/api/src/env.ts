@@ -24,6 +24,11 @@ const EnvSchema = z.object({
   // AT's shared default sender instead of being rejected.
   SMS_SENDER_ID: z.string().optional(),
 
+  // Staff sign-in codes are emailed through Resend. The from address must be
+  // on a domain verified in Resend (SPF + DKIM in DNS) or mail lands in spam.
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM_ADDRESS: z.string().email().optional(),
+
   MPESA_BASE_URL: z.string().url().default('https://sandbox.safaricom.co.ke'),
   MPESA_CONSUMER_KEY: z.string().min(1),
   MPESA_CONSUMER_SECRET: z.string().min(1),
@@ -36,11 +41,20 @@ const EnvSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().optional(),
   R2_PUBLIC_URL: z.string().url().optional(),
+
+  // Render deploy hook for the public website, which builds published website
+  // jobs into its static pages. Publishing, unpublishing or editing a published
+  // job POSTs here. Unset: changes still save, but the site is not rebuilt.
+  WEB_DEPLOY_HOOK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
 
-const parsed = EnvSchema.safeParse(process.env);
+const parsed = EnvSchema.superRefine((v, ctx) => {
+  if (v.NODE_ENV === 'production' && !(v.RESEND_API_KEY && v.EMAIL_FROM_ADDRESS)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['RESEND_API_KEY'], message: 'RESEND_API_KEY and EMAIL_FROM_ADDRESS are required in production (staff sign-in codes are emailed)' });
+  }
+}).safeParse(process.env);
 if (!parsed.success) {
   console.error('Invalid environment variables:');
   console.error(parsed.error.flatten().fieldErrors);

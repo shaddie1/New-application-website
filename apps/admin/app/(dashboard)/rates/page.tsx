@@ -15,8 +15,8 @@ const CLEAN_LEVEL_LABELS: Record<CleanLevel, string> = {
 const CLEAN_LEVELS = Object.keys(CLEAN_LEVEL_LABELS) as CleanLevel[];
 
 const input = 'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm';
-const btn = 'rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
-const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-cream-deep';
+const btn = 'rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
+const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-mist';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 

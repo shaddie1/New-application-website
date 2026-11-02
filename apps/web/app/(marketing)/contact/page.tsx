@@ -75,7 +75,7 @@ export default function ContactPage() {
                 key={channel.label}
                 href={channel.href}
                 {...(channel.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                className="flex items-start gap-4 rounded-xl border border-line bg-white p-5 transition-colors hover:border-gold-bright/55 hover:bg-cream-deep"
+                className="flex items-start gap-4 rounded-xl border border-line bg-white p-5 transition-colors hover:border-aqua/55 hover:bg-mist"
               >
                 <IconChip>
                   <channel.icon />
@@ -121,7 +121,7 @@ export default function ContactPage() {
           </div>
 
           {/* Booking panel */}
-          <div className="rounded-xl border border-gold-bright/40 bg-gradient-to-br from-gold-bright/[0.14] via-white to-white p-8">
+          <div className="rounded-xl border border-aqua/40 bg-white p-8">
             <h2 className="text-2xl font-bold tracking-tight text-charcoal">Request a free quote</h2>
             <p className="mt-3 text-sm leading-relaxed text-charcoal-muted">
               Tell us the service, the size of the space and when you need it. We come back with a fixed price — no
@@ -131,7 +131,7 @@ export default function ContactPage() {
             <ul className="mt-6 space-y-3">
               {QUOTE_INCLUDES.map((item) => (
                 <li key={item} className="flex items-start gap-3 text-sm text-charcoal-muted">
-                  <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-bronze" />
+                  <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-aqua-deep" />
                   {item}
                 </li>
               ))}
@@ -145,14 +145,14 @@ export default function ContactPage() {
                 href="/book"
                 size="lg"
                 variant="secondary"
-                className="border-gold-bright/45 bg-transparent text-charcoal hover:bg-gold-bright/15"
+                className="border-aqua/45 bg-transparent text-charcoal hover:bg-aqua-soft"
               >
                 Book online
               </ButtonLink>
             </div>
 
             <div className="mt-8 flex items-start gap-3 border-t border-line pt-6">
-              <PhonePayIcon className="mt-0.5 h-5 w-5 shrink-0 text-bronze" />
+              <PhonePayIcon className="mt-0.5 h-5 w-5 shrink-0 text-aqua-deep" />
               <p className="text-sm text-charcoal-muted">
                 <span className="font-medium text-charcoal">Pay by M-Pesa.</span> Approve the STK push on your
                 phone when you book — no cash on site, and an instant receipt.
@@ -161,7 +161,7 @@ export default function ContactPage() {
 
             <Link
               href="/services"
-              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-bronze transition-colors hover:text-charcoal"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-aqua-deep transition-colors hover:text-charcoal"
             >
               Browse all services
               <ArrowRightIcon className="h-4 w-4" />
@@ -176,12 +176,12 @@ export default function ContactPage() {
           {SERVICE_AREAS.map((area) => (
             <li
               key={area}
-              className="rounded-pill border border-line bg-cream px-4 py-2 text-sm text-charcoal-muted"
+              className="rounded-pill border border-line bg-white px-4 py-2 text-sm text-charcoal-muted"
             >
               {area}
             </li>
           ))}
-          <li className="rounded-pill border border-gold-bright/45 bg-gold-bright/15 px-4 py-2 text-sm text-bronze">
+          <li className="rounded-pill border border-aqua/45 bg-aqua-soft px-4 py-2 text-sm text-aqua-deep">
             …and countrywide
           </li>
         </ul>

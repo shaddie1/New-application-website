@@ -162,7 +162,7 @@ function Slot({
   const content = (
     <View
       className="flex-1 rounded-lg overflow-hidden items-center justify-center"
-      style={{ aspectRatio: 1, backgroundColor: '#EDE7D8' }}
+      style={{ aspectRatio: 1, backgroundColor: '#F2F2F2' }}
     >
       {photoUrl ? (
         <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />

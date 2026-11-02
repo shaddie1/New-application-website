@@ -3,8 +3,8 @@ import Link from 'next/link';
 /**
  * OnyxHawk brand.
  * - Light surfaces (header, app nav): the logo image.
- * - Dark surfaces (footer): the gold wordmark, since the logo art sits on a
- *   light background and would show as a white box on near-black.
+ * - Dark surfaces (footer): the gold wordmark, which reads more clearly on navy
+ *   than the fine logo art does at small sizes.
  */
 export function Brand({ href = '/', onDark = false }: { href?: string; onDark?: boolean }) {
   if (onDark) {
@@ -21,7 +21,7 @@ export function Brand({ href = '/', onDark = false }: { href?: string; onDark?: 
   return (
     <Link href={href} className="inline-flex items-center" aria-label="OnyxHawk Cleaning Service">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo.jpg" alt="OnyxHawk Cleaning Service" width={48} height={48} className="h-12 w-auto" />
+      <img src="/logo.png" alt="OnyxHawk Cleaning Service" width={48} height={48} className="h-12 w-auto" />
     </Link>
   );
 }

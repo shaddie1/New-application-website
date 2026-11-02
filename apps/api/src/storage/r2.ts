@@ -1,13 +1,13 @@
 /**
  * Cloudflare R2 storage (S3-compatible) — presigned PUT URLs for direct
- * client uploads.
+ * client uploads, public URLs for stored objects, and deletes by key.
  *
  * The client asks us for an upload URL, PUTs the binary straight to R2, then
  * confirms with the API. Bytes never pass through our server.
  *
  * R2 needs CORS configured on the bucket to allow PUT from the app origin.
  */
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { env } from '../env.js';
@@ -67,8 +67,19 @@ export async function presignUpload(objectKey: string, contentType: string): Pro
 
   return {
     uploadUrl,
-    publicUrl: `${env.R2_PUBLIC_URL!.replace(/\/$/, '')}/${objectKey}`,
+    publicUrl: publicUrlFor(objectKey),
     objectKey,
     expiresAt: new Date(Date.now() + UPLOAD_URL_TTL_SECONDS * 1000),
   };
+}
+
+/** Public address of a stored object, served from R2_PUBLIC_URL. */
+export function publicUrlFor(objectKey: string): string {
+  if (!isConfigured()) throw new StorageNotConfiguredError();
+  return `${env.R2_PUBLIC_URL!.replace(/\/$/, '')}/${objectKey}`;
+}
+
+/** Delete an object so its public URL stops serving it. */
+export async function deleteObject(objectKey: string): Promise<void> {
+  await getClient().send(new DeleteObjectCommand({ Bucket: env.R2_BUCKET!, Key: objectKey }));
 }

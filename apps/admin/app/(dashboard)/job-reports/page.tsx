@@ -175,7 +175,7 @@ export default function JobReportsPage() {
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
+          className="rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
         >
           {showForm ? 'Cancel' : '+ New report'}
         </button>
@@ -187,7 +187,7 @@ export default function JobReportsPage() {
       {showForm && (
         <form
           onSubmit={(e) => void handleSubmit(e)}
-          className="mb-6 rounded-xl border border-gold bg-gold-soft/10 p-5 grid grid-cols-2 md:grid-cols-4 gap-3"
+          className="mb-6 rounded-xl border border-aqua/40 bg-white p-5 grid grid-cols-2 md:grid-cols-4 gap-3"
         >
           <div className="col-span-2">
             <label className="block text-xs text-text-muted mb-1">Job title</label>
@@ -278,7 +278,7 @@ export default function JobReportsPage() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-gold-deep text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-navy text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
             >
               {saving ? 'Submitting…' : 'Submit report'}
             </button>
@@ -452,7 +452,7 @@ export default function JobReportsPage() {
                         <button
                           type="submit"
                           disabled={savingExpense}
-                          className="rounded-lg bg-gold-deep text-white px-4 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
+                          className="rounded-lg bg-navy text-white px-4 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
                         >
                           {savingExpense ? 'Adding…' : '+ Add expense'}
                         </button>

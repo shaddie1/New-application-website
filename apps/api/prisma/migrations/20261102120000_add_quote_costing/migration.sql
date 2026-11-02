@@ -5,8 +5,8 @@
 -- it was computed from, so an approved figure never moves.
 --
 -- Safe on a live database: one new table and one nullable column; no existing
--- row changes. Must sort after 20260918000000_add_quote_builder (or whatever
--- that migration is renamed to), which creates "QuoteEstimate".
+-- row changes. Must sort after 20261101000000_add_quote_builder, which
+-- creates "QuoteEstimate".
 
 -- AlterTable
 ALTER TABLE "QuoteEstimate" ADD COLUMN     "costingSnapshot" JSONB;

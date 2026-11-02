@@ -1,7 +1,7 @@
 /**
- * Break-glass sign-in: issue a SIGN_IN code for a staff phone directly in the
- * database, for when SMS delivery is unavailable (e.g. Safaricom DND blocking
- * the shared sender). Mirrors issueSignInOtp(): prior unused codes are
+ * Break-glass sign-in: issue an ADMIN_SIGN_IN code for a staff phone directly
+ * in the database, for when email delivery is unavailable (Resend down, domain
+ * not yet verified). Mirrors issueAdminSignInOtp(): prior unused codes are
  * consumed, the code is 6 random digits hashed with sha256, valid 10 minutes.
  *
  *   pnpm --filter @onyxhawk/api issue-otp +254712480392
@@ -22,12 +22,13 @@ async function main() {
 
   const user = await prisma.user.findUnique({
     where: { phone },
-    select: { fullName: true, role: true, deletedAt: true },
+    select: { fullName: true, role: true, deletedAt: true, email: true },
   });
   if (!user || user.deletedAt) throw new Error(`No active account for ${phone}. Provision it first (make-admin.ts).`);
+  if (!user.email) throw new Error(`${phone} has no email on file; staff sign-in is blocked until the owner adds one on the Team page.`);
 
   await prisma.otpCode.updateMany({
-    where: { phone, purpose: 'SIGN_IN', consumedAt: null },
+    where: { phone, purpose: 'ADMIN_SIGN_IN', consumedAt: null },
     data: { consumedAt: new Date() },
   });
 
@@ -35,8 +36,9 @@ async function main() {
   await prisma.otpCode.create({
     data: {
       phone,
+      email: user.email,
       codeHash: createHash('sha256').update(code).digest('hex'),
-      purpose: 'SIGN_IN',
+      purpose: 'ADMIN_SIGN_IN',
       expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     },
   });

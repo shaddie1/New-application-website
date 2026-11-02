@@ -15,8 +15,8 @@ export function localBusinessJsonLd() {
     url: SITE_URL,
     telephone: COMPANY.phoneE164,
     email: COMPANY.email,
-    image: `${SITE_URL}/logo.jpg`,
-    logo: `${SITE_URL}/logo.jpg`,
+    image: `${SITE_URL}/logo.png`,
+    logo: `${SITE_URL}/logo.png`,
     foundingDate: String(COMPANY.foundedYear),
     priceRange: 'KSh',
     address: {

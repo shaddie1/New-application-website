@@ -42,7 +42,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 // signed-in user is actually allowed it — otherwise the request 403s.
 const FINANCE_ROLES = ['ADMIN', 'FINANCIAL_MANAGER', 'SHAREHOLDER'];
 
-type OtpRow = { phone: string; codePlain: string; createdAt: string; expiresAt: string };
+type OtpRow = { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string };
 
 export default function DashboardPage() {
   const { session } = useAuth();
@@ -77,11 +77,11 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-8 grid md:grid-cols-2 gap-4">
-        <Link href="/bookings" className="rounded-xl border border-border bg-surface p-5 hover:border-gold">
+        <Link href="/bookings" className="rounded-xl border border-border bg-surface p-5 hover:border-aqua">
           <h2 className="text-xl" style={{ fontFamily: 'Georgia, serif' }}>Bookings</h2>
           <p className="text-text-muted text-sm mt-1">Review schedule, assign crews and leads.</p>
         </Link>
-        <Link href="/quotes" className="rounded-xl border border-border bg-surface p-5 hover:border-gold">
+        <Link href="/quotes" className="rounded-xl border border-border bg-surface p-5 hover:border-aqua">
           <h2 className="text-xl" style={{ fontFamily: 'Georgia, serif' }}>Quote requests</h2>
           <p className="text-text-muted text-sm mt-1">Respond to walkthrough requests with a price.</p>
         </Link>
@@ -126,7 +126,7 @@ function LiveOtpPanel() {
   }, []);
 
   return (
-    <div className="mt-10 rounded-xl border border-gold/40 bg-gold-soft/10 p-5">
+    <div className="mt-10 rounded-xl border border-aqua/40 bg-white p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-text-muted">Dev · Live OTP Codes</p>
@@ -137,7 +137,7 @@ function LiveOtpPanel() {
         <button
           onClick={() => void refresh()}
           disabled={loading}
-          className="text-xs text-text-muted underline hover:text-gold-deep disabled:opacity-40"
+          className="text-xs text-text-muted underline hover:text-aqua-deep disabled:opacity-40"
         >
           {loading ? 'Refreshing…' : lastRefresh ? `Last: ${lastRefresh.toLocaleTimeString()}` : 'Refresh'}
         </button>
@@ -149,7 +149,7 @@ function LiveOtpPanel() {
 
       {!loading && codes.length === 0 && (
         <p className="text-text-muted text-sm italic">
-          No active codes right now — request an OTP from the mobile app to see it here.
+          No active codes right now — request a code from the login page or the mobile app to see it here.
         </p>
       )}
 
@@ -177,14 +177,15 @@ function OtpRowCard({ row }: { row: OtpRow }) {
   return (
     <div className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3">
       <div className="flex-1 min-w-0">
-        <p className="text-text-muted text-xs truncate">{row.phone}</p>
-        <p className="font-mono text-2xl tracking-[0.35em] text-gold-deep mt-0.5">{row.codePlain}</p>
+        {/* Staff codes go by email, customer codes by SMS — show where each one went. */}
+        <p className="text-text-muted text-xs truncate">{row.email ?? row.phone}{row.email ? ' · email' : ' · SMS'}</p>
+        <p className="font-mono text-2xl tracking-[0.35em] text-aqua-deep mt-0.5">{row.codePlain}</p>
       </div>
       <div className="text-right shrink-0">
         <p className="text-text-muted text-xs">Expires in {expiresIn}m</p>
         <button
           onClick={copy}
-          className="mt-1 text-xs font-medium text-gold-deep underline hover:no-underline"
+          className="mt-1 text-xs font-medium text-aqua-deep underline hover:no-underline"
         >
           {copied ? 'Copied!' : 'Copy'}
         </button>
@@ -195,7 +196,7 @@ function OtpRowCard({ row }: { row: OtpRow }) {
 
 function StatCard({ label, value, href, accent }: { label: string; value?: number; href: string; accent?: boolean }) {
   return (
-    <Link href={href} className={`rounded-xl border p-5 ${accent ? 'border-gold bg-gold-soft/20' : 'border-border bg-surface'}`}>
+    <Link href={href} className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
       <p className="mt-2 text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
         {value ?? '—'}
@@ -267,7 +268,7 @@ function FinanceSnapshot() {
         <h2 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>
           This month
         </h2>
-        <Link href="/insights" className="text-sm font-medium text-bronze hover:underline">
+        <Link href="/insights" className="text-sm font-medium text-aqua-deep hover:underline">
           Full insights →
         </Link>
       </div>

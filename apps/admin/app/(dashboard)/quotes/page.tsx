@@ -69,10 +69,10 @@ const PRESET_LABEL: Record<RoomSizePreset, string> = { SMALL: 'Small', MEDIUM: '
 const EDITABLE: QuoteStatus[] = ['PENDING', 'SITE_VISIT_SCHEDULED'];
 
 const input = 'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm';
-const btn = 'rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed';
-const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-cream-deep disabled:opacity-50 disabled:cursor-not-allowed';
+const btn = 'rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed';
+const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-mist disabled:opacity-50 disabled:cursor-not-allowed';
 const tab = (on: boolean) =>
-  `border-b-2 px-3 py-2 text-sm ${on ? 'border-gold-deep font-medium text-gold-deep' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`;
+  `border-b-2 px-3 py-2 text-sm ${on ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`;
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
@@ -163,7 +163,7 @@ export default function QuotesPage() {
         </div>
         {showEstimate && (
           <div className="flex items-center gap-2">
-            <button onClick={() => setCreating(true)} className="rounded-lg bg-gold-deep px-3 py-1.5 text-sm font-semibold text-white">
+            <button onClick={() => setCreating(true)} className="rounded-lg bg-navy px-3 py-1.5 text-sm font-semibold text-white">
               New quote
             </button>
             <Link href="/rates" className={btnGhost}>Quote rates →</Link>
@@ -250,10 +250,10 @@ function QuoteCard({
       <div className="flex flex-wrap items-start justify-between gap-4 p-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs uppercase tracking-widest text-gold-deep">{q.serviceLineName}</span>
+            <span className="text-xs uppercase tracking-widest text-aqua-deep">{q.serviceLineName}</span>
             <StatusBadge status={q.status} />
             {q.survey && (q.survey.areas.length > 0 || q.survey.items.length > 0) && (
-              <span className="rounded-full bg-cream-deep px-2 py-0.5 text-xs text-charcoal-muted">Surveyed</span>
+              <span className="rounded-full bg-mist px-2 py-0.5 text-xs text-charcoal-muted">Surveyed</span>
             )}
           </div>
           <p className="mt-1 text-lg" style={{ fontFamily: 'Georgia, serif' }}>{q.siteType}</p>
@@ -283,14 +283,14 @@ function QuoteCard({
           <button onClick={onToggle} className={btnGhost}>
             {expanded ? '▲ Hide' : '▼ Survey & estimate'}
           </button>
-          <button onClick={onRespond} className="rounded-lg bg-gold-deep px-3 py-1.5 text-sm font-semibold text-white">
+          <button onClick={onRespond} className="rounded-lg bg-navy px-3 py-1.5 text-sm font-semibold text-white">
             Respond
           </button>
         </div>
       </div>
 
       {expanded && (
-        <div className="border-t border-line bg-cream/40 px-4 py-4">
+        <div className="border-t border-line bg-mist px-4 py-4">
           <div className="mb-4 flex items-center gap-1 border-b border-line">
             <button onClick={() => setPanel('survey')} className={tab(panel === 'survey')}>Site survey</button>
             {showEstimate && (
@@ -1338,8 +1338,8 @@ function RespondModal({ quote, onClose, onDone }: {
         )}
 
         <div className="mt-6 flex gap-3">
-          <button onClick={onClose} className="flex-1 rounded-lg border border-line py-2.5 text-charcoal">Cancel</button>
-          <button onClick={() => void submit()} disabled={busy} className="flex-1 rounded-lg bg-gold-deep py-2.5 font-semibold text-white disabled:opacity-50">
+          <button onClick={onClose} className="flex-1 rounded-lg border border-border py-2.5 text-text">Cancel</button>
+          <button onClick={() => void submit()} disabled={busy} className="flex-1 rounded-lg bg-navy py-2.5 font-semibold text-white disabled:opacity-50">
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -1450,7 +1450,7 @@ function NewQuoteModal({ options, onClose, onCreated }: {
 
         <div className="mt-6 flex gap-3">
           <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-line py-2.5 text-charcoal">Cancel</button>
-          <button type="submit" disabled={busy} className="flex-1 rounded-lg bg-gold-deep py-2.5 font-semibold text-white disabled:opacity-50">
+          <button type="submit" disabled={busy} className="flex-1 rounded-lg bg-navy py-2.5 font-semibold text-white disabled:opacity-50">
             {busy ? 'Starting…' : 'Start quote'}
           </button>
         </div>
@@ -1463,14 +1463,14 @@ function NewQuoteModal({ options, onClose, onCreated }: {
 
 function StatusBadge({ status }: { status: QuoteStatus }) {
   const map: Record<QuoteStatus, string> = {
-    PENDING: 'bg-gold-bright/20 text-bronze',
-    SITE_VISIT_SCHEDULED: 'bg-cream-deep text-charcoal',
+    PENDING: 'bg-warning/15 text-warning',
+    SITE_VISIT_SCHEDULED: 'bg-service-office/20 text-service-office',
     AWAITING_APPROVAL: 'bg-warning/15 text-warning',
     APPROVED: 'bg-success/15 text-success',
     QUOTED: 'bg-success/15 text-success',
     WON: 'bg-success/15 text-success',
-    LOST: 'bg-cream-deep text-charcoal-muted',
-    CANCELLED: 'bg-cream-deep text-charcoal-muted',
+    LOST: 'bg-mist text-charcoal-muted',
+    CANCELLED: 'bg-mist text-charcoal-muted',
   };
   return <span className={`rounded-full px-2 py-0.5 text-xs ${map[status]}`}>{STATUS_LABEL[status]}</span>;
 }
@@ -1503,7 +1503,7 @@ function Stat({ label, value, hint, accent, tone }: {
 }) {
   const toneText = { success: 'text-success', warning: 'text-warning', danger: 'text-danger' };
   return (
-    <div className={`rounded-xl border p-4 ${accent ? 'border-gold-bright/50 bg-gold-bright/10' : 'border-line bg-white'}`}>
+    <div className={`rounded-xl border p-4 ${accent ? 'border-aqua/40 bg-aqua-soft' : 'border-line bg-white'}`}>
       <p className="text-xs uppercase tracking-widest text-charcoal-muted">{label}</p>
       <p className={`mt-1 text-xl ${tone ? toneText[tone] : ''}`} style={{ fontFamily: 'Georgia, serif' }}>{value}</p>
       {hint && <p className="mt-1 text-xs text-charcoal-muted">{hint}</p>}

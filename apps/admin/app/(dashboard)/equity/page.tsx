@@ -2,26 +2,18 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { EquityOverview, ShareholderDto, ShareholderKind } from '@onyxhawk/types';
-import { colors } from '@onyxhawk/ui-tokens';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { CATEGORICAL, OTHER_GREY } from '../../../src/components/charts';
 
 const BASIS_POINTS_TOTAL = 10_000;
 
-// Colours for the cap-table bar, cycled in table order.
-const SLICE_COLORS = [
-  colors.surfaceDark,
-  colors.goldDeep,
-  colors.gold,
-  colors.serviceOffice,
-  colors.serviceResidential,
-  colors.servicePostBuild,
-  colors.serviceFumigation,
-  colors.serviceHospital,
-];
-
+// Cap-table bar colours, in table order, from the validated categorical set.
+// Cycling would put a sixth holder's green beside the fifth's red, which fails
+// colourblind separation, so holders past five share the neutral grey — every
+// slice is still named in the legend and the table.
 function sliceColor(index: number) {
-  return SLICE_COLORS[index % SLICE_COLORS.length]!;
+  return CATEGORICAL[index] ?? OTHER_GREY;
 }
 
 function fmt(cents: number) {
@@ -267,7 +259,7 @@ export default function EquityPage() {
         </span>
         <button
           onClick={() => { setShowAddForm((v) => !v); setError(null); }}
-          className="rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
+          className="rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
         >
           {showAddForm ? 'Cancel' : '+ Add shareholder'}
         </button>
@@ -276,7 +268,7 @@ export default function EquityPage() {
       {showAddForm && (
         <form
           onSubmit={(e) => void handleAdd(e)}
-          className="mb-4 rounded-xl border border-gold bg-gold-soft/10 p-5 grid grid-cols-1 md:grid-cols-4 gap-3"
+          className="mb-4 rounded-xl border border-aqua/40 bg-white p-5 grid grid-cols-1 md:grid-cols-4 gap-3"
         >
           <div className="md:col-span-2">
             <label className="block text-xs text-text-muted mb-1">Name</label>
@@ -328,7 +320,7 @@ export default function EquityPage() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-gold-deep text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-navy text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Add shareholder'}
             </button>
@@ -361,7 +353,7 @@ export default function EquityPage() {
 
                 if (isEditing) {
                   return (
-                    <tr key={s.id} className="bg-gold-soft/10">
+                    <tr key={s.id} className="bg-mist">
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2">
                           <input
@@ -406,7 +398,7 @@ export default function EquityPage() {
                           <button
                             onClick={() => void handleSaveEdit(s.id)}
                             disabled={saving}
-                            className="rounded-lg bg-gold-deep text-white px-3 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
+                            className="rounded-lg bg-navy text-white px-3 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
                           >
                             {saving ? '…' : 'Save'}
                           </button>
@@ -515,7 +507,7 @@ function StatCard({
   label: string; value: string; color?: string; accent?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border p-5 ${accent ? 'border-gold bg-gold-soft/20' : 'border-border bg-surface'}`}>
+    <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
       <p className={`mt-2 text-2xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>{value}</p>
     </div>

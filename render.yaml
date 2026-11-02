@@ -35,6 +35,23 @@ services:
         sync: false
       - key: MPESA_CALLBACK_URL
         sync: false
+      # Object storage for booking photos, documents and website-job photos.
+      # R2_PUBLIC_URL must be a custom subdomain connected to the bucket, not
+      # the rate-limited r2.dev address (see DEPLOY.md, "Website jobs").
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      # onyxhawk-web's deploy hook. Publishing a website job POSTs here so the
+      # static site rebuilds with the job in it. Unset → no rebuild.
+      - key: WEB_DEPLOY_HOOK_URL
+        sync: false
 
   # The admin app is a Next.js static export (see apps/admin/next.config.mjs):
   # `next build` emits plain HTML/JS into out/, so there is no server to start —
@@ -63,3 +80,8 @@ services:
         value: production
       - key: NEXT_PUBLIC_API_URL
         sync: false
+      # The build fetches published website jobs from the API. With this set, a
+      # failed fetch fails the build, so Render keeps the previous site live
+      # instead of shipping one with an empty "Our work" section.
+      - key: REQUIRE_WEBSITE_JOBS
+        value: "1"

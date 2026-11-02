@@ -3,7 +3,6 @@ import type { Metadata } from 'next';
 import { SurfaceCard, IconChip, Section, SectionHeading } from '../../../src/components/layout';
 import { SparkleIcon, StarIcon, ShieldIcon } from '../../../src/components/icons';
 import { Team } from '../../../src/components/marketing/Team';
-import { TrustBar } from '../../../src/components/marketing/Hero';
 import { WhyChooseUs } from '../../../src/components/marketing/WhyChooseUs';
 import { FinalCta } from '../../../src/components/marketing/FinalCta';
 import { Photo } from '../../../src/components/Photo';
@@ -44,8 +43,6 @@ export default function AboutPage() {
         />
       </Section>
 
-      <TrustBar />
-
       <Section>
         <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
           <div className="space-y-5 text-base leading-relaxed text-charcoal-muted">
@@ -84,7 +81,7 @@ export default function AboutPage() {
         />
         <div className="mt-12 grid gap-5 lg:grid-cols-3">
           {PILLARS.map((pillar) => (
-            <SurfaceCard key={pillar.title} className="bg-cream">
+            <SurfaceCard key={pillar.title} className="bg-white">
               <IconChip>
                 <pillar.icon />
               </IconChip>

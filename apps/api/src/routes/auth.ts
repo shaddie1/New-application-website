@@ -1,12 +1,18 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import type { PasswordSignInInput, RegisterInput, RequestOtpInput, VerifyOtpInput } from '@onyxhawk/types';
+import type {
+  AdminRequestOtpInput,
+  AdminRequestOtpResult,
+  AdminVerifyOtpInput,
+  RegisterInput,
+  RequestOtpInput,
+  VerifyOtpInput,
+} from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
-import { issueSignInOtp, verifySignInOtp, OtpError } from '../auth/otp.js';
+import { issueSignInOtp, verifySignInOtp, issueAdminSignInOtp, verifyAdminSignInOtp, OtpError } from '../auth/otp.js';
+import { STAFF_ROLES } from '../auth/staff.js';
 import { signRegistrationToken, verifyRegistrationToken } from '../auth/jwt.js';
-import { verifyPassword } from '../auth/password.js';
-import { lockoutSecondsRemaining, recordFailure, clearFailures } from '../auth/throttle.js';
 import { issueSession, rotateRefreshToken, revokeRefreshToken, toPublicUser, RefreshError } from '../auth/tokens.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
 import { requireAuth } from '../auth/middleware.js';
@@ -19,10 +25,14 @@ const phoneSchema = z
 
 const RequestOtpSchema = z.object({ phone: phoneSchema }) satisfies z.ZodType<RequestOtpInput>;
 const VerifyOtpSchema = z.object({ phone: phoneSchema, code: z.string().regex(/^\d{6}$/) }) satisfies z.ZodType<VerifyOtpInput>;
-const PasswordSignInSchema = z.object({
-  phone: phoneSchema,
-  password: z.string().min(1).max(200),
-}) satisfies z.ZodType<PasswordSignInInput>;
+
+// Staff sign in with their email; the Team page stores it trimmed and lowercase.
+const staffEmailSchema = z.string().trim().toLowerCase().email().max(200);
+const AdminRequestOtpSchema = z.object({ email: staffEmailSchema }) satisfies z.ZodType<AdminRequestOtpInput>;
+const AdminVerifyOtpSchema = z.object({
+  email: staffEmailSchema,
+  code: z.string().regex(/^\d{6}$/),
+}) satisfies z.ZodType<AdminVerifyOtpInput>;
 const RefreshSchema = z.object({ refreshToken: z.string().min(1) });
 const LogoutSchema = z.object({ refreshToken: z.string().min(1) });
 const RegisterSchema = z.object({
@@ -39,6 +49,29 @@ const RegisterSchema = z.object({
     .optional(),
   referralCode: z.string().trim().toUpperCase().optional(),
 }) satisfies z.ZodType<RegisterInput>;
+
+const EMAIL_MISSING_MESSAGE = 'This account has no email on file. Ask the owner to add one on the Team page.';
+
+/**
+ * Why an account cannot sign in as staff, or null when it can. Unknown emails
+ * and customers get the same answer: not a staff account.
+ */
+function staffGate(user: { role: string; isOwner: boolean; deletedAt: Date | null; email: string | null } | null) {
+  if (!user || user.deletedAt || !(user.isOwner || STAFF_ROLES.has(user.role as never))) {
+    return { status: 404, error: 'No staff account found for this email.', code: 'NOT_STAFF' as const };
+  }
+  if (!user.email) return { status: 403, error: EMAIL_MISSING_MESSAGE, code: 'EMAIL_MISSING' as const };
+  return null;
+}
+
+/**
+ * The account for a staff sign-in email. Matched case-insensitively: the Team
+ * page stores emails lowercase, but addresses entered at customer sign-up are
+ * stored as typed.
+ */
+function findUserByEmail(email: string) {
+  return prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+}
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
   // ── Step 1: request OTP ────────────────────────────────────────────────
@@ -98,42 +131,55 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  // ── Password sign-in (staff; no SMS involved) ───────────────────────────
-  // Only accounts that have deliberately been given a password can use this;
-  // customers remain OTP-only. Set one with scripts/set-password.ts.
+  // ── Staff sign-in by emailed code ──────────────────────────────────────
+  // Staff enter their email and the code goes to that address; this is the
+  // only way into the back-office. Customers keep the SMS endpoints above, and
+  // a staff account without an email on file cannot sign in until the owner
+  // adds one on the Team page.
 
-  app.post('/sign-in-password', async (req, reply) => {
-    const parsed = PasswordSignInSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const { phone, password } = parsed.data;
+  app.post('/admin/request-otp', async (req, reply) => {
+    const parsed = AdminRequestOtpSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Enter a valid email address.' });
 
-    const lockedFor = lockoutSecondsRemaining(phone);
-    if (lockedFor > 0) {
-      return reply
-        .code(429)
-        .send({ error: `Too many attempts. Try again in ${Math.ceil(lockedFor / 60)} minute(s).` });
+    const user = await findUserByEmail(parsed.data.email);
+    const gate = staffGate(user);
+    if (gate) return reply.code(gate.status).send({ error: gate.error, code: gate.code });
+
+    try {
+      const { maskedEmail, devOtp } = await issueAdminSignInOtp({ phone: user!.phone, email: user!.email! }, req.log);
+      const body: AdminRequestOtpResult = { ok: true, maskedEmail };
+      if (devOtp) body.devOtp = devOtp;
+      return reply.send(body);
+    } catch (err) {
+      if (err instanceof OtpError) return reply.code(429).send({ error: err.message, code: err.code });
+      throw err;
     }
+  });
 
-    const user = await prisma.user.findUnique({ where: { phone } });
+  app.post('/admin/verify-otp', async (req, reply) => {
+    const parsed = AdminVerifyOtpSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    // One message for every failure mode, so the endpoint cannot be used to
-    // discover which numbers have accounts or passwords.
-    const reject = () => {
-      recordFailure(phone);
-      return reply.code(401).send({ error: 'Invalid phone number or password.' });
-    };
+    // Codes are stored against the account's phone, its stable key, so resolve
+    // the email to the account before checking the code.
+    const user = await findUserByEmail(parsed.data.email);
+    const gate = staffGate(user);
+    if (gate) return reply.code(gate.status).send({ error: gate.error, code: gate.code });
 
-    if (!user || user.deletedAt || !user.passwordHash) return reject();
-    if (!(await verifyPassword(password, user.passwordHash))) return reject();
+    let ok: boolean;
+    try {
+      ok = await verifyAdminSignInOtp(user!.phone, parsed.data.code);
+    } catch (err) {
+      if (err instanceof OtpError) return reply.code(429).send({ error: err.message, code: err.code });
+      throw err;
+    }
+    if (!ok) return reply.code(401).send({ error: 'invalid or expired code' });
 
-    clearFailures(phone);
-    const tokens = await issueSession(
-      { id: user.id, role: user.role },
-      { device: req.headers['user-agent'] ?? undefined },
-    );
+    const tokens = await issueSession({ id: user!.id, role: user!.role }, { device: req.headers['user-agent'] ?? undefined });
     return reply.send({
+      kind: 'AUTHENTICATED',
       session: {
-        user: toPublicUser(user),
+        user: toPublicUser(user!),
         accessToken: tokens.accessToken,
         accessExpiresAt: tokens.accessExpiresAt.toISOString(),
         refreshToken: tokens.refreshToken,

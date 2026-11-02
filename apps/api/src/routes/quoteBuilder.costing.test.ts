@@ -21,6 +21,7 @@ beforeEach(() => {
     staff('owner', 'ADMIN', true), staff('admin', 'ADMIN'), staff('coo', 'COO'),
     staff('support', 'SUPPORT'), staff('supervisor', 'CLEANING_SUPERVISOR'),
     { id: 'cust', fullName: 'Grace Wanjiru', phone: '+254712000999', role: 'CUSTOMER', isOwner: false },
+    { id: 'crew', fullName: 'Brian Otieno', phone: '+254712000888', role: 'CREW', isOwner: false },
   ];
   t.serviceLines = [{ id: 'sl1', code: 'office', name: 'Office cleaning', isActive: true }];
   t.quotes = [
@@ -63,6 +64,16 @@ describe('PUT /admin/quote-builder/:id/costing', () => {
     expect(survey.statusCode).toBe(200);
     expect(survey.json().quoteRequest.costing).toBeNull();
     expect(survey.json().quoteRequest.estimate).toBeNull();
+  });
+
+  it.each(['cust', 'crew'])('refuses %s on the routes open to every staff role, and writes nothing', async (user) => {
+    const options = await as(user, 'GET', '/admin/quote-builder/options');
+    const survey = await as(user, 'PUT', '/admin/quote-builder/q1/survey', { ...weeklySurvey, soilLevel: 'HEAVY' });
+    const quotation = await as(user, 'GET', '/admin/quote-builder/q1/client-quotation');
+
+    expect([options.statusCode, survey.statusCode, quotation.statusCode]).toEqual([403, 403, 403]);
+    expect(t.surveys[0]!.soilLevel).toBe(weeklySurvey.soilLevel);
+    expect(t.estimates.map((e) => e.status)).toEqual(['DRAFT']);
   });
 
   it.each(['AWAITING_APPROVAL', 'APPROVED', 'QUOTED'])('refuses a save while the quote is %s, and writes nothing', async (status) => {

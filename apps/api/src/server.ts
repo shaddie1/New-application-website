@@ -23,6 +23,7 @@ import { documentRoutes } from './routes/documents.js';
 import { projectRoutes } from './routes/projects.js';
 import { jobReportsRoutes } from './routes/jobReports.js';
 import { notificationRoutes } from './routes/notifications.js';
+import { websiteJobRoutes, publicWebsiteJobRoutes } from './routes/websiteJobs.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -61,6 +62,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(documentRoutes, { prefix: '/admin/documents' });
   await app.register(projectRoutes, { prefix: '/admin/projects' });
   await app.register(jobReportsRoutes, { prefix: '/admin/job-reports' });
+  await app.register(websiteJobRoutes, { prefix: '/admin/website-jobs' });
+  await app.register(publicWebsiteJobRoutes, { prefix: '/website-jobs' });
   await app.register(notificationRoutes, { prefix: '/notifications' });
   await app.register(mpesaRoutes, { prefix: '/webhooks/mpesa' });
 

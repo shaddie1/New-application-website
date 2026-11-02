@@ -190,7 +190,7 @@ export default function QuotePage() {
 
       <p className="mt-4 text-center text-sm text-text-muted">
         Looking for a standard clean instead?{' '}
-        <Link href="/book" className="text-bronze hover:underline">
+        <Link href="/book" className="text-aqua-deep hover:underline">
           Book directly
         </Link>
         .

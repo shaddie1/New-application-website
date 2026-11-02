@@ -32,7 +32,7 @@ import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { e164 } from '../auth/phone.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
-import { attachActor, canViewEstimate, requireApprover, requireEstimateAccess } from '../quotes/access.js';
+import { attachActor, canViewEstimate, requireApprover, requireEstimateAccess, requireStaff } from '../quotes/access.js';
 import { CostingSchema, EMPTY_COSTING, MAX_PRICE_CENTS, copyOwnedMachines, defaultSurvey } from '../quotes/costing.js';
 import { adminQuoteInclude, toAdminQuoteDto } from '../quotes/dto.js';
 import { computeEstimate } from '../quotes/estimate.js';
@@ -89,6 +89,7 @@ const EDITABLE: QuoteStatus[] = [QuoteStatus.PENDING, QuoteStatus.SITE_VISIT_SCH
 export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', attachActor);
+  app.addHook('preHandler', requireStaff);
 
   // ── Rates card ────────────────────────────────────────────────────────────
 

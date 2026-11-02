@@ -28,6 +28,9 @@ const OWNER_GOVERNANCE = [
   { href: '/team', label: 'Team' },
 ];
 
+// Owner, admins and marketing; the API refuses everyone else regardless.
+const WEBSITE = [{ href: '/website-jobs', label: 'Website jobs' }];
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = useRequireAdmin();
   const { signOut } = useAuth();
@@ -39,13 +42,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   if (!session) return null; // redirecting to /login
 
-  const sections = session.user.isOwner
-    ? [
-        { title: 'Operations', items: OPERATIONS },
-        { title: 'Finance', items: OWNER_FINANCE },
-        { title: 'Governance', items: OWNER_GOVERNANCE },
-      ]
-    : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }];
+  const { role, isOwner } = session.user;
+  const canPublishWebsite = isOwner || role === 'ADMIN' || role === 'MARKETING';
+
+  const sections = [
+    ...(isOwner
+      ? [
+          { title: 'Operations', items: OPERATIONS },
+          { title: 'Finance', items: OWNER_FINANCE },
+          { title: 'Governance', items: OWNER_GOVERNANCE },
+        ]
+      : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }]),
+    ...(canPublishWebsite ? [{ title: 'Website', items: WEBSITE }] : []),
+  ];
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
@@ -65,7 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
                     isActive(item.href)
                       ? 'bg-charcoal font-medium text-white'
-                      : 'text-charcoal-muted hover:bg-cream-deep hover:text-charcoal'
+                      : 'text-charcoal-muted hover:bg-mist hover:text-charcoal'
                   }`}
                 >
                   {item.label}
@@ -84,9 +93,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex items-center justify-between border-b border-line bg-white px-4 py-3 lg:hidden">
         <span className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.jpg" alt="OnyxHawk Cleaning Service" className="h-8 w-auto" />
+          <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-8 w-auto" />
           <span className="text-base" style={{ fontFamily: 'Georgia, serif' }}>
-            OnyxHawk <span className="text-gold-deep">Admin</span>
+            OnyxHawk <span className="text-aqua-deep">Admin</span>
           </span>
         </span>
         <button
@@ -108,9 +117,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="px-5 py-5">
           <Link href="/" className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.jpg" alt="OnyxHawk Cleaning Service" className="h-9 w-auto" />
+            <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-9 w-auto" />
             <span className="text-base leading-tight" style={{ fontFamily: 'Georgia, serif' }}>
-              OnyxHawk <span className="text-gold-deep">Admin</span>
+              OnyxHawk <span className="text-aqua-deep">Admin</span>
             </span>
           </Link>
         </div>

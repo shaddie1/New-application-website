@@ -1,7 +1,5 @@
 import type {
   Session,
-  RequestOtpResult,
-  VerifyOtpResult,
   AdminStats,
   AdminBookingDto,
   AdminQuoteRequestDto,
@@ -10,6 +8,8 @@ import type {
   RespondQuoteInput,
   AdminStaffDto,
   CreateStaffInput,
+  UpdateStaffInput,
+  AdminRequestOtpResult,
   ExpenseDto,
   CreateExpenseInput,
   FinancialSummary,
@@ -56,6 +56,10 @@ import type {
   QuoteCostingInput,
   QuoteBuilderAssetDto,
   CreateBuilderQuoteInput,
+  WebsiteJobsResult,
+  WebsiteJobPhotoUploadUrlResult,
+  SaveWebsiteJobInput,
+  WebsiteJobMutationResult,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -123,16 +127,14 @@ async function tryRefresh(refreshToken: string): Promise<Session | null> {
 }
 
 export const api = {
-  requestOtp: (phone: string) =>
-    request<RequestOtpResult>('/auth/request-otp', { method: 'POST', body: JSON.stringify({ phone }) }),
+  /** Staff sign-in: staff enter their email and the code is sent there. */
+  adminRequestOtp: (email: string) =>
+    request<AdminRequestOtpResult>('/auth/admin/request-otp', { method: 'POST', body: JSON.stringify({ email }) }),
 
-  verifyOtp: (phone: string, code: string) =>
-    request<VerifyOtpResult>('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ phone, code }) }),
-
-  signInWithPassword: (phone: string, password: string) =>
-    request<{ session: Session }>('/auth/sign-in-password', {
+  adminVerifyOtp: (email: string, code: string) =>
+    request<{ kind: 'AUTHENTICATED'; session: Session }>('/auth/admin/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ phone, password }),
+      body: JSON.stringify({ email, code }),
     }),
 
   logout: (refreshToken: string) =>
@@ -263,6 +265,9 @@ export const api = {
 
   addStaff: (input: CreateStaffInput) =>
     request<{ staff: AdminStaffDto }>('/admin/staff', { method: 'POST', auth: true, body: JSON.stringify(input) }),
+
+  updateStaff: (id: string, input: UpdateStaffInput) =>
+    request<{ staff: AdminStaffDto }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'PATCH', auth: true, body: JSON.stringify(input) }),
 
   removeStaff: (id: string) =>
     request<{ ok: true }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
@@ -541,6 +546,47 @@ export const api = {
   deleteDocument: (id: string) =>
     request<{ ok: true }>(`/admin/documents/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
 
+  // ── Website jobs (owner, admin and marketing) ────────────────────────────
+  websiteJobs: () => request<WebsiteJobsResult>('/admin/website-jobs', { method: 'GET', auth: true }),
+
+  /** Photos are always re-encoded to JPEG first, so that is the only type asked for. */
+  websiteJobPhotoUploadUrl: () =>
+    request<WebsiteJobPhotoUploadUrlResult>('/admin/website-jobs/upload-url', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ contentType: 'image/jpeg' }),
+    }),
+
+  createWebsiteJob: (input: SaveWebsiteJobInput) =>
+    request<WebsiteJobMutationResult>('/admin/website-jobs', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  updateWebsiteJob: (id: string, input: SaveWebsiteJobInput) =>
+    request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  // request() always sends a JSON content type, and the API refuses an empty
+  // body under that header, so these send an empty object.
+  publishWebsiteJob: (id: string) =>
+    request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/publish`, {
+      method: 'POST',
+      auth: true,
+      body: '{}',
+    }),
+
+  unpublishWebsiteJob: (id: string) =>
+    request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/unpublish`, {
+      method: 'POST',
+      auth: true,
+      body: '{}',
+    }),
+
   // ── Pending report submissions (owner only) ──────────────────────────────
   pendingReports: () =>
     request<{ reports: JobDto[] }>('/admin/financials/reports', { method: 'GET', auth: true }),
@@ -583,7 +629,7 @@ export const api = {
 
   // ── Dev OTP viewer (owner only, returns [] in production) ────────────────
   recentOtps: () =>
-    request<{ codes: { phone: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
+    request<{ codes: { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
       '/admin/otps/recent',
       { method: 'GET', auth: true },
     ),

@@ -33,46 +33,85 @@ export const WHATSAPP_LINK = `https://wa.me/${COMPANY.whatsAppNumber}?text=${enc
  * Files are produced by scripts/prepare-photos.ps1, which bakes in EXIF
  * rotation and resizes for mobile.
  */
-export type PhotoSlot = { src: string | null; alt: string; placeholder: string };
+export type PhotoSlot = {
+  src: string | null;
+  alt: string;
+  placeholder: string;
+  /** CSS object-position, for landscape shots whose subject sits off-centre in a portrait frame. */
+  position?: string;
+};
 
 export const SITE_PHOTOS: Record<
-  'hero' | 'aboutTeam' | 'upholstery' | 'proofResult' | 'detail',
+  | 'aboutTeam'
+  | 'proofResult'
+  | 'crewOnJob'
+  | 'officeShelves'
+  | 'carpetScrub'
+  | 'workstation'
+  | 'armchairsResult'
+  | 'chairWash'
+  | 'chairCourtyard',
   PhotoSlot
 > = {
-  hero: {
-    src: '/photos/crew-floor-machine.jpg',
-    alt: 'An OnyxHawk crew member in branded uniform cleaning on site in Nairobi',
-    placeholder: 'Photo of a uniformed crew on site goes here.',
-  },
   aboutTeam: {
     src: '/photos/crew-on-site.jpg',
     alt: 'An OnyxHawk crew member deep-cleaning armchairs in a Nairobi office',
     placeholder: 'A photo of the crew on site in Nairobi goes here.',
   },
-  upholstery: {
-    src: '/photos/upholstery-clean.jpg',
-    alt: 'An OnyxHawk crew member deep-cleaning an upholstered armchair',
-    placeholder: 'Upholstery cleaning in progress.',
+  crewOnJob: {
+    src: '/photos/crew-floor-machine.jpg',
+    alt: 'An OnyxHawk crew member in branded uniform cleaning on site in Nairobi',
+    placeholder: 'Photo of a uniformed crew on site goes here.',
   },
   proofResult: {
     src: '/photos/armchair-result.jpg',
     alt: 'An armchair after an OnyxHawk deep clean',
     placeholder: 'The finished result.',
   },
-  detail: {
-    src: '/photos/upholstery-detail.jpg',
-    alt: 'Close-up of an OnyxHawk crew member cleaning upholstery in protective gloves',
-    placeholder: 'Detail of the work.',
+  officeShelves: {
+    src: '/photos/office-shelf-dusting.jpg',
+    alt: 'An OnyxHawk crew member in branded uniform dusting office shelving',
+    placeholder: 'Office shelving being dusted.',
+  },
+  carpetScrub: {
+    src: '/photos/carpet-scrub-machine.jpg',
+    alt: 'An OnyxHawk crew member shampooing an office carpet with a rotary scrubber',
+    placeholder: 'Carpet shampoo with a rotary scrubber.',
+  },
+  workstation: {
+    src: '/photos/workstation-wipe-down.jpg',
+    alt: 'An OnyxHawk crew member in gloves wiping down office workstation partitions',
+    placeholder: 'Workstations being wiped down.',
+  },
+  armchairsResult: {
+    src: '/photos/white-armchairs-result.jpg',
+    alt: 'A white upholstered armchair after an OnyxHawk clean',
+    placeholder: 'An armchair after cleaning.',
+    position: '90% center',
+  },
+  chairWash: {
+    src: '/photos/office-chairs-wash.jpg',
+    alt: 'An OnyxHawk crew member washing an office chair outdoors',
+    placeholder: 'Office chairs being washed.',
+    position: '80% center',
+  },
+  chairCourtyard: {
+    src: '/photos/office-chairs-courtyard.jpg',
+    alt: 'An OnyxHawk crew member cleaning a courtyard full of office chairs',
+    placeholder: 'A full set of office chairs being cleaned.',
+    position: '35% center',
   },
 };
 
-/** Headline proof points. Shown as the trust bar under the hero. */
-export const TRUST_STATS = [
-  { value: '6+', label: 'Years in business' },
-  { value: '4.9★', label: 'Average rating' },
-  { value: '500+', label: 'Clients served' },
-  { value: '2,000+', label: 'Cleans completed' },
-] as const;
+/**
+ * The hero photo cycles through these, cross-fading, with the caption changing
+ * alongside it. Order matters: the first one loads eagerly as the LCP image.
+ */
+export const HERO_SLIDES: { slot: keyof typeof SITE_PHOTOS; caption: string }[] = [
+  { slot: 'aboutTeam', caption: 'Upholstery shampoo and floor care on site' },
+  { slot: 'chairWash', caption: 'Office chairs washed by hand, one at a time' },
+  { slot: 'crewOnJob', caption: 'Deep clean underway in a Nairobi office' },
+];
 
 export type ServiceEntry = {
   /** Catalog code in the API, used to deep link the quote flow. */
@@ -80,7 +119,13 @@ export type ServiceEntry = {
   name: string;
   description: string;
   icon: 'home' | 'office' | 'medical' | 'hardhat' | 'sofa' | 'rug' | 'pest' | 'air';
+  /** Accent colour for the service card; each service gets its own. */
+  tone: ServiceTone;
+  /** Banner photo for the card, under /public. Cards without one get a tone-coloured banner. */
+  image?: string;
 };
+
+export type ServiceTone = 'emerald' | 'blue' | 'rose' | 'amber' | 'fuchsia' | 'cyan' | 'violet' | 'sky';
 
 /** Everyday cleaning — the core lines most clients book. */
 export const EVERYDAY_SERVICES: ServiceEntry[] = [
@@ -89,24 +134,31 @@ export const EVERYDAY_SERVICES: ServiceEntry[] = [
     name: 'Residential cleaning',
     description: 'Homes and apartments — regular upkeep, deep cleans, and move-in or move-out.',
     icon: 'home',
+    tone: 'emerald',
+    image: '/photos/services/residential.webp',
   },
   {
     code: 'office',
     name: 'Office & commercial',
     description: 'Workspaces, retail and hospitality, cleaned around your opening hours.',
     icon: 'office',
+    tone: 'blue',
+    image: '/photos/services/office.webp',
   },
   {
     code: 'hospital',
     name: 'Medical & hospital',
     description: 'Clinics and wards cleaned to clinical hygiene standards by certified crews.',
     icon: 'medical',
+    tone: 'rose',
+    image: '/photos/services/hospital.webp',
   },
   {
     code: 'post_build',
     name: 'Post-construction',
     description: 'Dust, debris and paint residue cleared so a finished site is ready to hand over.',
     icon: 'hardhat',
+    tone: 'amber',
   },
 ];
 
@@ -117,24 +169,29 @@ export const SPECIALIST_SERVICES: ServiceEntry[] = [
     name: 'Sofa & upholstery',
     description: 'Deep extraction cleaning for sofas, armchairs and headboards.',
     icon: 'sofa',
+    tone: 'fuchsia',
+    image: '/photos/services/sofa.webp',
   },
   {
     code: 'carpet',
     name: 'Carpet & rugs',
     description: 'Stain treatment and hot-water extraction that lifts embedded dirt.',
     icon: 'rug',
+    tone: 'cyan',
   },
   {
     code: 'fumigation',
     name: 'Fumigation & pest control',
     description: 'Safe, licensed treatment for roaches, bedbugs, termites and rodents.',
     icon: 'pest',
+    tone: 'violet',
   },
   {
     code: 'ac_duct',
     name: 'AC, mattress & curtains',
     description: 'Air conditioning units, ducts, mattresses, curtains and drapes.',
     icon: 'air',
+    tone: 'sky',
   },
 ];
 
@@ -224,30 +281,48 @@ export const SERVICE_AREAS = [
 ] as const;
 
 export type Segment = {
+  /** Anchor id on the homepage's "who we serve" section, and the nav dropdown target. */
+  slug: string;
   title: string;
   description: string;
-  icon: 'home' | 'office' | 'medical' | 'hardhat';
+  icon: 'home' | 'office' | 'medical' | 'hardhat' | 'buildings' | 'users';
   areas?: readonly string[];
 };
 
 export const SEGMENTS: Segment[] = [
   {
+    slug: 'residential',
     title: 'Residential',
     description: 'Homes, apartments and holiday lets across Nairobi’s suburbs.',
     icon: 'home',
     areas: SERVICE_AREAS,
   },
   {
-    title: 'Commercial',
-    description: 'Offices, retail units, gyms, schools and places of worship.',
+    slug: 'offices-corporate',
+    title: 'Offices & corporate',
+    description: 'Workspaces cleaned around your opening hours, with no disruption to the day.',
     icon: 'office',
   },
   {
+    slug: 'retail-hospitality',
+    title: 'Retail & hospitality',
+    description: 'Shops, showrooms, gyms and hospitality spaces kept guest-ready.',
+    icon: 'buildings',
+  },
+  {
+    slug: 'medical',
     title: 'Medical',
     description: 'Clinics, dental practices, labs and hospital wards.',
     icon: 'medical',
   },
   {
+    slug: 'schools-institutions',
+    title: 'Schools & institutions',
+    description: 'Classrooms, halls and shared facilities cleaned outside school hours.',
+    icon: 'users',
+  },
+  {
+    slug: 'developers',
     title: 'Developers',
     description: 'Post-construction handover cleans for contractors and property firms.',
     icon: 'hardhat',
@@ -273,7 +348,7 @@ export type TeamMember = {
  * the role alone until then rather than showing a placeholder person.
  */
 export const TEAM: TeamMember[] = [
-  { role: 'Chief Executive Officer' },
+  { role: 'Chief Executive Officer', photo: '/photos/passport.jpeg' },
   { role: 'Chief Operations Officer' },
   { role: 'Marketing Manager' },
   { role: 'Graphic Designer' },

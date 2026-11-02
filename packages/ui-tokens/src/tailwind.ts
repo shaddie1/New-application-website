@@ -1,4 +1,4 @@
-import { colors, spacing, radii } from './index.js';
+import { colors, freshNeutrals, spacing, radii } from './index.js';
 
 /**
  * Tokens shaped for Tailwind/NativeWind config.
@@ -31,6 +31,14 @@ export const tailwindTheme = {
     charcoal: colors.charcoal,
     'charcoal-muted': colors.charcoalMuted,
     line: colors.line,
+    navy: colors.navy,
+    'navy-deep': colors.navyDeep,
+    'navy-soft': colors.navySoft,
+    aqua: colors.aqua,
+    'aqua-deep': colors.aquaDeep,
+    'aqua-soft': colors.aquaSoft,
+    'aqua-light': colors.aquaLight,
+    mist: colors.mist,
     'service-residential': colors.serviceResidential,
     'service-office': colors.serviceOffice,
     'service-hospital': colors.serviceHospital,
@@ -42,4 +50,30 @@ export const tailwindTheme = {
   },
   spacing: Object.fromEntries(Object.entries(spacing).map(([k, v]) => [k, `${v}px`])),
   borderRadius: Object.fromEntries(Object.entries(radii).map(([k, v]) => [k, `${v}px`])),
+};
+
+/**
+ * Web + admin theme: `tailwindTheme` with the cool `freshNeutrals` swapped in
+ * under the same class names (`text-muted`, `border`, `line`, `ink`, …).
+ */
+export const freshTailwindTheme = {
+  ...tailwindTheme,
+  colors: {
+    ...tailwindTheme.colors,
+    text: freshNeutrals.text,
+    'text-muted': freshNeutrals.textMuted,
+    charcoal: freshNeutrals.charcoal,
+    'charcoal-muted': freshNeutrals.charcoalMuted,
+    'bg-muted': freshNeutrals.bgMuted,
+    border: freshNeutrals.border,
+    'border-strong': freshNeutrals.borderStrong,
+    line: freshNeutrals.line,
+    'surface-dark': freshNeutrals.surfaceDark,
+    'text-on-dark': freshNeutrals.textOnDark,
+    'text-on-dark-muted': freshNeutrals.textOnDarkMuted,
+    ink: freshNeutrals.ink,
+    'ink-raised': freshNeutrals.inkRaised,
+    'ink-soft': freshNeutrals.inkSoft,
+    'ink-border': freshNeutrals.inkBorder,
+  },
 };

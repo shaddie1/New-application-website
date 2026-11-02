@@ -35,6 +35,25 @@ export interface Session extends AuthTokens {
   user: PublicUser;
 }
 
+/** POST /auth/admin/request-otp — staff identify themselves by email. */
+export interface AdminRequestOtpInput {
+  email: string;
+}
+/** POST /auth/admin/verify-otp */
+export interface AdminVerifyOtpInput {
+  email: string;
+  code: string;
+}
+
+/** POST /auth/admin/request-otp — staff sign-in code, delivered by email. */
+export interface AdminRequestOtpResult {
+  ok: true;
+  /** Where the code went, masked: "o***e@onyxhawk.co.ke". */
+  maskedEmail: string;
+  // In dev, the code is surfaced so the login page can auto-fill. Never set in prod.
+  devOtp?: string;
+}
+
 /** POST /auth/request-otp */
 export interface RequestOtpInput {
   phone: string; // E.164
@@ -49,12 +68,6 @@ export interface RequestOtpResult {
 export interface VerifyOtpInput {
   phone: string;
   code: string;
-}
-
-/** POST /auth/sign-in-password — staff sign-in that does not depend on SMS. */
-export interface PasswordSignInInput {
-  phone: string;
-  password: string;
 }
 export type VerifyOtpResult =
   | { kind: 'AUTHENTICATED'; session: Session }

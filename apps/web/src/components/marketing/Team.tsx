@@ -25,12 +25,12 @@ export function Team() {
             key={member.role}
             className="overflow-hidden rounded-xl border border-line bg-white text-center"
           >
-            <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-cream-deep to-cream">
+            <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-mist to-white">
               {member.photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={member.photo} alt={member.name ?? member.role} className="h-full w-full object-cover" />
               ) : (
-                <UsersIcon className="h-9 w-9 text-bronze/40" />
+                <UsersIcon className="h-9 w-9 text-aqua-deep/40" />
               )}
             </div>
             <div className="px-4 py-5">

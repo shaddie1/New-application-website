@@ -20,8 +20,8 @@ const CATEGORY_LABELS: Record<DocumentCategory, string> = {
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as DocumentCategory[];
 
 const input = 'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm';
-const btn = 'rounded-lg bg-gold-deep text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
-const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-cream-deep';
+const btn = 'rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50';
+const btnGhost = 'rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-mist';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -189,7 +189,7 @@ export default function DocumentsPage() {
       )}
 
       {showForm && (
-        <form onSubmit={(e) => void submit(e)} className="mb-6 grid gap-3 rounded-xl border border-gold-bright/40 bg-gold-bright/[0.06] p-5 sm:grid-cols-2">
+        <form onSubmit={(e) => void submit(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs text-charcoal-muted">Title</label>
             <input required className={input} value={form.title} placeholder="e.g. Certificate of Incorporation"
@@ -272,13 +272,13 @@ export default function DocumentsPage() {
                             href={d.fileUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-medium text-charcoal hover:text-bronze hover:underline"
+                            className="font-medium text-charcoal hover:text-aqua-deep hover:underline"
                           >
                             {d.title}
                           </a>
                           <ExpiryBadge days={d.daysUntilExpiry} date={d.expiresAt} />
                           {d.isExternal && (
-                            <span className="rounded-full bg-cream-deep px-2 py-0.5 text-xs text-charcoal-muted">Link</span>
+                            <span className="rounded-full bg-mist px-2 py-0.5 text-xs text-charcoal-muted">Link</span>
                           )}
                         </div>
                         {d.description && <p className="mt-0.5 text-sm text-charcoal-muted">{d.description}</p>}
