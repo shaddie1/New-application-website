@@ -3,6 +3,7 @@
  * client-facing quotation. Money is in cents throughout (KSh × 100), the
  * same as the rest of the API; percentages are fractions (0.15 = 15%).
  */
+import type { ServiceLineCode } from './booking.js';
 import type { QuoteFrequency } from './quote.js';
 
 // ── Enumerations ─────────────────────────────────────────────────────────────
@@ -212,6 +213,21 @@ export interface EstimateCostingInput extends QuoteCosting {
 export interface QuoteCostingDto extends QuoteCosting {
   updatedByName: string | null;
   updatedAt: string;
+}
+
+/** Admin starts a quote for a client who called, was referred or sent a tender. */
+export interface CreateBuilderQuoteInput {
+  customerName: string;
+  /** As typed; a Kenyan number is read in any common form. */
+  customerPhone: string;
+  serviceLineCode: ServiceLineCode;
+  siteType: string;
+  /** How often, as on a website request. */
+  frequency: QuoteFrequency;
+  /** A row of the rates card's frequency table: the visits per month the survey starts at. */
+  frequencyLabel: string;
+  /** Scope the client will see; also the request's notes. */
+  scopeNotes?: string | null;
 }
 
 /** An asset the costing can pick as an owned machine: the figures it copies, nothing else from finance. */

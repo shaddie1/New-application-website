@@ -16,9 +16,10 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { EstimateStatus, Prisma, QuoteStatus } from '@prisma/client';
+import { EstimateStatus, Prisma, QuoteStatus, UserRole } from '@prisma/client';
 import type {
   ClientQuotationDto,
+  CreateBuilderQuoteInput,
   QuoteBuilderAssetDto,
   QuoteBuilderOptions,
   QuoteCosting,
@@ -29,6 +30,8 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { e164 } from '../auth/phone.js';
+import { generateUniqueReferralCode } from '../auth/referral.js';
 import { attachActor, canViewEstimate, requireApprover, requireEstimateAccess } from '../quotes/access.js';
 import { CostingSchema, EMPTY_COSTING, copyOwnedMachines, defaultSurvey } from '../quotes/costing.js';
 import { adminQuoteInclude, toAdminQuoteDto } from '../quotes/dto.js';
@@ -67,6 +70,16 @@ const SurveySchema = z.object({
     .max(100),
 }) satisfies z.ZodType<QuoteSurveyInput>;
 
+const CreateQuoteSchema = z.object({
+  customerName: z.string().trim().min(1).max(120),
+  customerPhone: z.string().trim().min(1).max(30),
+  serviceLineCode: z.enum(['residential', 'office', 'hospital', 'post_build', 'fumigation']),
+  siteType: z.string().trim().min(1).max(200),
+  frequency: z.enum(['NONE', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']),
+  frequencyLabel: z.string().trim().min(1).max(60),
+  scopeNotes: z.string().trim().max(2000).nullish(),
+}) satisfies z.ZodType<CreateBuilderQuoteInput>;
+
 const NoteSchema = z.object({ note: z.string().trim().max(1000).optional() });
 const RejectSchema = z.object({ note: z.string().trim().min(1).max(1000) });
 
@@ -102,6 +115,60 @@ export const quoteBuilderRoutes: FastifyPluginAsync = async (app) => {
       roomSizePresetsM2: rates.roomSizePresetsM2,
     };
     return reply.send({ options });
+  });
+
+  // ── New quote ─────────────────────────────────────────────────────────────
+
+  // Start a quote for a client who did not ask through the website or app
+  // (phone, referral, tender). It opens with a visit scheduled, so it can be
+  // costed at once and stays out of the dashboard's pending count. The survey
+  // starts at the visits picked, since "how often" stops at weekly.
+  app.post('/quotes', { preHandler: requireEstimateAccess }, async (req, reply) => {
+    const parsed = CreateQuoteSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const input = parsed.data;
+
+    const phone = e164(input.customerPhone);
+    if (!phone) return reply.code(400).send({ error: 'enter a valid phone number, e.g. 0712 345 678' });
+    const line = await prisma.serviceLine.findUnique({ where: { code: input.serviceLineCode } });
+    if (!line?.isActive) return reply.code(400).send({ error: 'that service line is not offered' });
+    const { rates } = await loadRates();
+    const labels = rates.frequencyTable.map((f) => f.label);
+    if (!labels.includes(input.frequencyLabel)) {
+      return reply.code(400).send({ error: `“${input.frequencyLabel}” is not a row of the rates card's frequency table` });
+    }
+
+    const actorId = req.actor!.id;
+    const scope = input.scopeNotes || null;
+    const survey = { ...defaultSurvey(input.frequency, labels), frequencyLabel: input.frequencyLabel };
+    const quoteId = await prisma.$transaction(async (tx) => {
+      // An existing account keeps its own name.
+      const customer =
+        (await tx.user.findUnique({ where: { phone }, select: { id: true } })) ??
+        (await tx.user.create({
+          data: { phone, fullName: input.customerName, role: UserRole.CUSTOMER, referralCode: await generateUniqueReferralCode() },
+          select: { id: true },
+        }));
+      const quote = await tx.quoteRequest.create({
+        data: {
+          userId: customer.id,
+          serviceLineId: line.id,
+          siteType: input.siteType,
+          frequency: input.frequency,
+          notes: scope,
+          status: QuoteStatus.SITE_VISIT_SCHEDULED,
+        },
+        select: { id: true },
+      });
+      await tx.quoteSurvey.create({ data: { quoteRequestId: quote.id, ...surveyData(survey, actorId) } });
+      const costing: QuoteCosting = { ...EMPTY_COSTING, clientScope: scope };
+      await tx.quoteCosting.create({
+        data: { quoteRequestId: quote.id, data: costing as unknown as Prisma.InputJsonValue, updatedById: actorId },
+      });
+      return quote.id;
+    });
+
+    return reply.code(201).send({ quoteRequest: await dto(quoteId, req) });
   });
 
   // ── Survey ────────────────────────────────────────────────────────────────
