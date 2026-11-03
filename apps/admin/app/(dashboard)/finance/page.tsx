@@ -12,9 +12,12 @@ import type {
   ProfitDistributionDto,
   RevenueBreakdown,
   RevenueBreakdownItem,
+  ShareholderDto,
   UnreconciledItem,
 } from '@onyxhawk/types';
 
+import { RankedBars, type RankedItem } from '../../../src/components/charts';
+import { DataTable, TableToolbar, useTableControls, type Column } from '../../../src/components/DataTable';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { downloadCsv, csvMoney } from '../../../src/lib/csv';
@@ -37,6 +40,15 @@ function monthStartIso() {
 function label(value: string) {
   const spaced = value.replace(/[_-]+/g, ' ').toLowerCase();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function plural(n: number, noun: string) {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+/** A ranked bar's share of its chart's total, as the bar prints it. */
+function sharePercent(share: number) {
+  return `${Math.round(share * 100)}%`;
 }
 
 const CHANNELS: MarketingChannel[] = [
@@ -94,7 +106,7 @@ export default function FinancePage() {
             Every entry carries a source reference and shows who recorded it.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`${input} w-auto`} />
           <span className="text-text-muted">to</span>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`${input} w-auto`} />
@@ -127,8 +139,8 @@ export default function FinancePage() {
       {tab === 'revenue' && <RevenueTab from={from} to={to} onError={fail} />}
       {tab === 'marketing' && <MarketingTab from={from} to={to} onError={fail} />}
       {tab === 'assets' && <AssetsTab onError={fail} />}
-      {tab === 'investments' && <InvestmentsTab onError={fail} />}
-      {tab === 'sharing' && <SharingTab onError={fail} />}
+      {tab === 'investments' && <InvestmentsTab onError={fail} isOwner={session.user.isOwner === true} />}
+      {tab === 'sharing' && <SharingTab onError={fail} isOwner={session.user.isOwner === true} />}
       {tab === 'receipts' && <ReceiptsTab from={from} to={to} onError={fail} />}
     </div>
   );
@@ -138,33 +150,19 @@ type TabProps = { onError: (err: unknown, fallback: string) => void };
 
 // ── Revenue ─────────────────────────────────────────────────────────────────
 
-function BreakdownList({ title, items }: { title: string; items: RevenueBreakdownItem[] }) {
-  const max = Math.max(...items.map((i) => i.incomeCents), 1);
+/** One dimension's income as ranked bars; hovering or tapping a row shows its income, jobs and share. */
+function BreakdownBars({ title, items }: { title: string; items: RevenueBreakdownItem[] }) {
+  const jobs = new Map(items.map((i) => [i.key, i.jobCount]));
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <p className="text-xs uppercase tracking-widest text-text-muted">{title}</p>
-      {items.length === 0 ? (
-        <p className="mt-4 text-sm text-text-muted">No income recorded in this range.</p>
-      ) : (
-        <ul className="mt-4 space-y-3">
-          {items.map((item) => (
-            <li key={item.key}>
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span>{item.label}</span>
-                <span className="font-medium">{fmt(item.incomeCents)}</span>
-              </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-bg-muted">
-                <div
-                  className="h-full rounded-full bg-aqua"
-                  style={{ width: `${Math.round((item.incomeCents / max) * 100)}%` }}
-                />
-              </div>
-              <span className="text-xs text-text-muted">{item.jobCount} job{item.jobCount === 1 ? '' : 's'}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <RankedBars
+      title={title}
+      items={items.map((i) => ({ key: i.key, label: i.label, value: i.incomeCents, sub: plural(i.jobCount, 'job') }))}
+      format={fmt}
+      emptyLabel="No income recorded in this range."
+      detail={(item, share) =>
+        `${fmt(item.value)} · ${plural(jobs.get(item.key) ?? 0, 'job')} · ${sharePercent(share)} of income`
+      }
+    />
   );
 }
 
@@ -216,10 +214,10 @@ function RevenueTab({ from, to, onError }: TabProps & { from: string; to: string
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <BreakdownList title="By service line" items={data.byServiceLine} />
-        <BreakdownList title="By region" items={data.byRegion} />
-        <BreakdownList title="By client segment" items={data.bySegment} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <BreakdownBars title="By service line" items={data.byServiceLine} />
+        <BreakdownBars title="By region" items={data.byRegion} />
+        <BreakdownBars title="By client segment" items={data.bySegment} />
       </div>
 
       <p className="mt-4 text-xs text-text-muted">
@@ -284,29 +282,94 @@ function MarketingTab({ from, to, onError }: TabProps & { from: string; to: stri
   const total = rows.reduce((acc, r) => acc + r.amountCents, 0);
   const bookings = rows.reduce((acc, r) => acc + (r.bookingsCount ?? 0), 0);
 
+  // Columns run in the export's order; the receipt ref and recorder are export- and search-only.
+  const columns: Column<MarketingSpendDto>[] = [
+    { header: 'Date', cell: (r) => r.date, sort: (r) => r.date, search: (r) => r.date, csv: (r) => r.date },
+    {
+      header: 'Campaign',
+      cell: (r) => (
+        <>
+          <div>{r.campaign}</div>
+          <Provenance by={r.createdByName} at={r.createdAt} />
+          {r.receiptRef && <div className="text-xs text-text-muted">Ref {r.receiptRef}</div>}
+        </>
+      ),
+      sort: (r) => r.campaign,
+      search: (r) => r.campaign,
+      csv: (r) => r.campaign,
+    },
+    {
+      header: 'Channel',
+      cell: (r) => label(r.channel),
+      sort: (r) => label(r.channel),
+      search: (r) => label(r.channel),
+      csv: (r) => label(r.channel),
+    },
+    {
+      header: 'Spend',
+      csvHeader: 'Amount (KSh)',
+      right: true,
+      className: 'font-medium',
+      cell: (r) => fmt(r.amountCents),
+      sort: (r) => r.amountCents,
+      csv: (r) => csvMoney(r.amountCents),
+    },
+    { header: 'Leads', right: true, cell: (r) => r.leadsCount ?? '—', sort: (r) => r.leadsCount, csv: (r) => r.leadsCount ?? '' },
+    {
+      header: 'Bookings',
+      right: true,
+      cell: (r) => r.bookingsCount ?? '—',
+      sort: (r) => r.bookingsCount,
+      csv: (r) => r.bookingsCount ?? '',
+    },
+    {
+      header: 'Cost / booking',
+      csvHeader: 'Cost per booking (KSh)',
+      right: true,
+      cell: (r) => (r.costPerBookingCents ? fmt(r.costPerBookingCents) : '—'),
+      sort: (r) => r.costPerBookingCents,
+      csv: (r) => (r.costPerBookingCents ? csvMoney(r.costPerBookingCents) : ''),
+    },
+    { header: 'Receipt ref', search: (r) => r.receiptRef, csv: (r) => r.receiptRef ?? '' },
+    { header: 'Recorded by', search: (r) => r.createdByName, csv: (r) => r.createdByName ?? '' },
+    {
+      header: '',
+      right: true,
+      cell: (r) => (
+        <button
+          className="text-xs text-danger hover:underline"
+          onClick={async () => {
+            if (!confirm(`Delete "${r.campaign}"?`)) return;
+            try { await api.deleteMarketingSpend(r.id); await load(); }
+            catch (err) { onError(err, 'Could not delete'); }
+          }}
+        >Delete</button>
+      ),
+    },
+  ];
+  const controls = useTableControls(rows, columns);
+
+  // Spend by channel, totalled from every loaded record (not just those matching the search).
+  const channels = new Map<string, { cents: number; campaigns: number }>();
+  for (const r of rows) {
+    const tally = channels.get(r.channel) ?? { cents: 0, campaigns: 0 };
+    channels.set(r.channel, { cents: tally.cents + r.amountCents, campaigns: tally.campaigns + 1 });
+  }
+  const channelBars: RankedItem[] = [...channels]
+    .map(([channel, tally]) => ({ key: channel, label: label(channel), value: tally.cents }))
+    .sort((a, b) => b.value - a.value);
+
   return (
     <div>
-      <Toolbar
+      <TableToolbar
+        controls={controls}
+        csv={{ filename: `marketing-${from}-to-${to}` }}
         summary={`${rows.length} campaign${rows.length === 1 ? '' : 's'} · ${fmt(total)} spent${
           bookings > 0 ? ` · ${bookings} bookings attributed` : ''
         }`}
-        onExport={() =>
-          downloadCsv(`marketing-${from}-to-${to}`, [
-            { header: 'Date', value: (r: MarketingSpendDto) => r.date },
-            { header: 'Campaign', value: (r) => r.campaign },
-            { header: 'Channel', value: (r) => label(r.channel) },
-            { header: 'Amount (KSh)', value: (r) => csvMoney(r.amountCents) },
-            { header: 'Leads', value: (r) => r.leadsCount ?? '' },
-            { header: 'Bookings', value: (r) => r.bookingsCount ?? '' },
-            { header: 'Cost per booking (KSh)', value: (r) => (r.costPerBookingCents ? csvMoney(r.costPerBookingCents) : '') },
-            { header: 'Receipt ref', value: (r) => r.receiptRef ?? '' },
-            { header: 'Recorded by', value: (r) => r.createdByName ?? '' },
-          ], rows)
-        }
-        onToggleForm={() => setShowForm((v) => !v)}
-        formOpen={showForm}
-        addLabel="campaign"
-      />
+      >
+        <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="campaign" />
+      </TableToolbar>
 
       {showForm && (
         <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3">
@@ -355,49 +418,62 @@ function MarketingTab({ from, to, onError }: TabProps & { from: string; to: stri
       {loading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
         <Empty>No marketing spend recorded in this range.</Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">
-                <Th>Date</Th><Th>Campaign</Th><Th>Channel</Th>
-                <Th right>Spend</Th><Th right>Leads</Th><Th right>Bookings</Th><Th right>Cost / booking</Th><Th />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-bg-muted/30">
-                  <Td>{r.date}</Td>
-                  <Td>
-                    <div>{r.campaign}</div>
-                    <Provenance by={r.createdByName} at={r.createdAt} />
-                    {r.receiptRef && <div className="text-xs text-text-muted">Ref {r.receiptRef}</div>}
-                  </Td>
-                  <Td>{label(r.channel)}</Td>
-                  <Td right className="font-medium">{fmt(r.amountCents)}</Td>
-                  <Td right>{r.leadsCount ?? '—'}</Td>
-                  <Td right>{r.bookingsCount ?? '—'}</Td>
-                  <Td right>{r.costPerBookingCents ? fmt(r.costPerBookingCents) : '—'}</Td>
-                  <Td right>
-                    <button
-                      className="text-xs text-danger hover:underline"
-                      onClick={async () => {
-                        if (!confirm(`Delete "${r.campaign}"?`)) return;
-                        try { await api.deleteMarketingSpend(r.id); await load(); }
-                        catch (err) { onError(err, 'Could not delete'); }
-                      }}
-                    >Delete</button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="mb-4 max-w-2xl">
+            <RankedBars
+              title="Spend by channel"
+              items={channelBars}
+              format={fmt}
+              detail={(item, share) => {
+                const campaigns = channels.get(item.key)?.campaigns ?? 0;
+                return `${fmt(item.value)} · ${plural(campaigns, 'campaign')} · ${sharePercent(share)} of spend`;
+              }}
+            />
+          </div>
+          <DataTable controls={controls} rowKey={(r) => r.id} />
+        </>
       )}
     </div>
   );
 }
 
 // ── Assets ──────────────────────────────────────────────────────────────────
+
+/** The asset cards' fields for search, the sort choice and the register export, in the export's order. */
+const ASSET_COLUMNS: Column<AssetDto>[] = [
+  { header: 'Name', sort: (r) => r.name, search: (r) => r.name, csv: (r) => r.name },
+  {
+    header: 'Category',
+    sort: (r) => label(r.category),
+    search: (r) => label(r.category),
+    csv: (r) => label(r.category),
+  },
+  { header: 'Purchased', sort: (r) => r.purchaseDate, search: (r) => r.purchaseDate, csv: (r) => r.purchaseDate },
+  { header: 'Cost', csvHeader: 'Cost (KSh)', sort: (r) => r.costCents, csv: (r) => csvMoney(r.costCents) },
+  { header: 'Useful life (months)', csv: (r) => r.usefulLifeMonths ?? '' },
+  {
+    header: 'Depreciated',
+    csvHeader: 'Depreciation to date (KSh)',
+    sort: (r) => r.accumulatedDepreciationCents,
+    csv: (r) => csvMoney(r.accumulatedDepreciationCents),
+  },
+  { header: 'Book value', csvHeader: 'Book value (KSh)', sort: (r) => r.bookValueCents, csv: (r) => csvMoney(r.bookValueCents) },
+  {
+    header: 'Condition',
+    // New to retired, not alphabetical.
+    sort: (r) => ASSET_CONDITIONS.indexOf(r.condition),
+    search: (r) => label(r.condition),
+    csv: (r) => label(r.condition),
+  },
+  {
+    header: 'Maintenance',
+    csvHeader: 'Maintenance spend (KSh)',
+    sort: (r) => r.totalMaintenanceCents,
+    csv: (r) => csvMoney(r.totalMaintenanceCents),
+  },
+  { header: 'Receipt ref', search: (r) => r.receiptRef, csv: (r) => r.receiptRef ?? '' },
+  { header: 'Supplier', search: (r) => r.supplier },
+];
 
 function AssetsTab({ onError }: TabProps) {
   const [rows, setRows] = useState<AssetDto[]>([]);
@@ -451,31 +527,21 @@ function AssetsTab({ onError }: TabProps) {
     }
   };
 
+  const controls = useTableControls(rows, ASSET_COLUMNS);
+
   const totalCost = rows.reduce((a, r) => a + r.costCents, 0);
   const totalBook = rows.reduce((a, r) => a + r.bookValueCents, 0);
 
   return (
     <div>
-      <Toolbar
+      <TableToolbar
+        controls={controls}
+        csv={{ filename: 'asset-register' }}
+        sortChoice
         summary={`${rows.length} asset${rows.length === 1 ? '' : 's'} · ${fmt(totalCost)} at cost · ${fmt(totalBook)} book value`}
-        onExport={() =>
-          downloadCsv('asset-register', [
-            { header: 'Name', value: (r: AssetDto) => r.name },
-            { header: 'Category', value: (r) => label(r.category) },
-            { header: 'Purchased', value: (r) => r.purchaseDate },
-            { header: 'Cost (KSh)', value: (r) => csvMoney(r.costCents) },
-            { header: 'Useful life (months)', value: (r) => r.usefulLifeMonths ?? '' },
-            { header: 'Depreciation to date (KSh)', value: (r) => csvMoney(r.accumulatedDepreciationCents) },
-            { header: 'Book value (KSh)', value: (r) => csvMoney(r.bookValueCents) },
-            { header: 'Condition', value: (r) => label(r.condition) },
-            { header: 'Maintenance spend (KSh)', value: (r) => csvMoney(r.totalMaintenanceCents) },
-            { header: 'Receipt ref', value: (r) => r.receiptRef ?? '' },
-          ], rows)
-        }
-        onToggleForm={() => setShowForm((v) => !v)}
-        formOpen={showForm}
-        addLabel="asset"
-      />
+      >
+        <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="asset" />
+      </TableToolbar>
 
       {showForm && (
         <form onSubmit={(e) => void submit(e)} className="mb-4 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3">
@@ -527,9 +593,11 @@ function AssetsTab({ onError }: TabProps) {
 
       {loading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
         <Empty>No assets on the register yet.</Empty>
+      ) : controls.rows.length === 0 ? (
+        <Empty>No assets match “{controls.query.trim()}”.</Empty>
       ) : (
         <div className="space-y-3">
-          {rows.map((r) => (
+          {controls.rows.map((r) => (
             <div key={r.id} className="overflow-hidden rounded-xl border border-border bg-surface">
               <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
                 <div className="min-w-0">
@@ -618,14 +686,16 @@ function AssetsTab({ onError }: TabProps) {
 
 // ── Investments ─────────────────────────────────────────────────────────────
 
-function InvestmentsTab({ onError }: TabProps) {
+function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
   const [rows, setRows] = useState<InvestmentDto[]>([]);
+  const [holders, setHolders] = useState<ShareholderDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [linkingId, setLinkingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     source: '', kind: 'CAPITAL_INJECTION' as InvestmentKind, amountKes: '', date: todayIso(),
-    purpose: '', reference: '',
+    purpose: '', reference: '', shareholderId: '',
   });
 
   const load = useCallback(async () => {
@@ -641,27 +711,111 @@ function InvestmentsTab({ onError }: TabProps) {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Only the owner links investments to holders, and only the owner may read the cap table.
+  useEffect(() => {
+    if (!isOwner) return;
+    api.shareholders()
+      .then((res) => setHolders(res.shareholders))
+      .catch((err) => onError(err, 'Could not load shareholders'));
+  }, [isOwner, onError]);
+
+  // Saves on pick. The row takes the server's answer, so a failed save leaves the old holder showing.
+  const linkHolder = async (r: InvestmentDto, shareholderId: string | null) => {
+    setLinkingId(r.id);
+    try {
+      const { investment } = await api.updateInvestment(r.id, { shareholderId });
+      setRows((prev) => prev.map((x) => (x.id === investment.id ? investment : x)));
+    } catch (err) {
+      onError(err, 'Could not link the investment');
+    } finally {
+      setLinkingId(null);
+    }
+  };
+
   const total = rows.reduce((a, r) => a + r.amountCents, 0);
+
+  // Columns run in the export's order. The export has the amount before the purpose and no shareholder,
+  // so its amount is an export-only column and the drawn Amount (last, as on screen) exports nothing.
+  const columns: Column<InvestmentDto>[] = [
+    { header: 'Date', cell: (r) => r.date, sort: (r) => r.date, search: (r) => r.date, csv: (r) => r.date },
+    {
+      header: 'Source',
+      cell: (r) => (
+        <>
+          <div>{r.source}</div>
+          <Provenance by={r.createdByName} at={r.createdAt} />
+        </>
+      ),
+      sort: (r) => r.source,
+      search: (r) => r.source,
+      csv: (r) => r.source,
+    },
+    {
+      header: 'Shareholder',
+      cell: (r) =>
+        isOwner ? (
+          <select
+            aria-label={`Shareholder for ${r.source}, ${r.date}`}
+            className="rounded-lg border border-border bg-bg px-2 py-1.5 text-sm disabled:opacity-50"
+            value={r.shareholderId ?? ''}
+            disabled={linkingId === r.id}
+            onChange={(e) => void linkHolder(r, e.target.value || null)}
+          >
+            <option value="">Not linked</option>
+            {/* Keeps a holder the list could not supply visible rather than reading as unlinked. */}
+            {r.shareholderId && !holders.some((h) => h.id === r.shareholderId) && (
+              <option value={r.shareholderId}>{r.shareholderName ?? 'Unknown shareholder'}</option>
+            )}
+            {holders.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+          </select>
+        ) : (
+          r.shareholderName ?? '—'
+        ),
+      sort: (r) => r.shareholderName,
+      search: (r) => r.shareholderName,
+    },
+    { header: 'Type', cell: (r) => label(r.kind), sort: (r) => label(r.kind), search: (r) => label(r.kind), csv: (r) => label(r.kind) },
+    { header: 'Amount (KSh)', csv: (r) => csvMoney(r.amountCents) },
+    {
+      header: 'Purpose',
+      cell: (r) => (
+        <>
+          {r.purpose}
+          {r.reference && <div className="text-xs text-text-muted">Ref {r.reference}</div>}
+        </>
+      ),
+      sort: (r) => r.purpose,
+      search: (r) => r.purpose,
+      csv: (r) => r.purpose,
+    },
+    { header: 'Reference', search: (r) => r.reference, csv: (r) => r.reference ?? '' },
+    { header: 'Recorded by', search: (r) => r.createdByName, csv: (r) => r.createdByName ?? '' },
+    { header: 'Amount', right: true, className: 'font-medium', cell: (r) => fmt(r.amountCents), sort: (r) => r.amountCents },
+    {
+      header: '',
+      right: true,
+      // Investment writes are owner-only, so only the owner gets Delete.
+      cell: (r) => isOwner && (
+        <button className="text-xs text-danger hover:underline"
+          onClick={async () => {
+            if (!confirm(`Delete investment from ${r.source}?`)) return;
+            try { await api.deleteInvestment(r.id); await load(); }
+            catch (err) { onError(err, 'Could not delete'); }
+          }}>Delete</button>
+      ),
+    },
+  ];
+  const controls = useTableControls(rows, columns);
 
   return (
     <div>
-      <Toolbar
+      <TableToolbar
+        controls={controls}
+        csv={{ filename: 'investments' }}
         summary={`${rows.length} record${rows.length === 1 ? '' : 's'} · ${fmt(total)} invested`}
-        onExport={() =>
-          downloadCsv('investments', [
-            { header: 'Date', value: (r: InvestmentDto) => r.date },
-            { header: 'Source', value: (r) => r.source },
-            { header: 'Type', value: (r) => label(r.kind) },
-            { header: 'Amount (KSh)', value: (r) => csvMoney(r.amountCents) },
-            { header: 'Purpose', value: (r) => r.purpose },
-            { header: 'Reference', value: (r) => r.reference ?? '' },
-            { header: 'Recorded by', value: (r) => r.createdByName ?? '' },
-          ], rows)
-        }
-        onToggleForm={() => setShowForm((v) => !v)}
-        formOpen={showForm}
-        addLabel="investment"
-      />
+      >
+        {isOwner && <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="investment" />}
+      </TableToolbar>
 
       {showForm && (
         <form
@@ -678,8 +832,9 @@ function InvestmentsTab({ onError }: TabProps) {
                 date: form.date,
                 purpose: form.purpose.trim(),
                 reference: form.reference.trim() || undefined,
+                shareholderId: form.shareholderId || null,
               });
-              setForm({ ...form, source: '', amountKes: '', purpose: '', reference: '' });
+              setForm({ ...form, source: '', amountKes: '', purpose: '', reference: '', shareholderId: '' });
               setShowForm(false);
               await load();
             } catch (err) { onError(err, 'Could not save investment'); }
@@ -715,6 +870,15 @@ function InvestmentsTab({ onError }: TabProps) {
             <input className={input} value={form.reference} placeholder="M-Pesa / bank ref"
               onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
           </Labelled>
+          {isOwner && (
+            <Labelled label="Shareholder" hint="That shareholder will be able to see this record.">
+              <select className={input} value={form.shareholderId}
+                onChange={(e) => setForm((f) => ({ ...f, shareholderId: e.target.value }))}>
+                <option value="">Not linked</option>
+                {holders.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </Labelled>
+          )}
           <div className="sm:col-span-3 flex justify-end">
             <button type="submit" disabled={saving} className={btn}>{saving ? 'Saving…' : 'Add investment'}</button>
           </div>
@@ -722,42 +886,13 @@ function InvestmentsTab({ onError }: TabProps) {
       )}
 
       {loading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
-        <Empty>No capital injections recorded yet.</Empty>
+        <Empty>
+          {isOwner
+            ? 'No capital injections recorded yet.'
+            : 'Only investments linked to your own holding show here; the owner records investments.'}
+        </Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">
-                <Th>Date</Th><Th>Source</Th><Th>Type</Th><Th>Purpose</Th><Th right>Amount</Th><Th />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-bg-muted/30">
-                  <Td>{r.date}</Td>
-                  <Td>
-                    <div>{r.source}</div>
-                    <Provenance by={r.createdByName} at={r.createdAt} />
-                  </Td>
-                  <Td>{label(r.kind)}</Td>
-                  <Td>
-                    {r.purpose}
-                    {r.reference && <div className="text-xs text-text-muted">Ref {r.reference}</div>}
-                  </Td>
-                  <Td right className="font-medium">{fmt(r.amountCents)}</Td>
-                  <Td right>
-                    <button className="text-xs text-danger hover:underline"
-                      onClick={async () => {
-                        if (!confirm(`Delete investment from ${r.source}?`)) return;
-                        try { await api.deleteInvestment(r.id); await load(); }
-                        catch (err) { onError(err, 'Could not delete'); }
-                      }}>Delete</button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable controls={controls} rowKey={(r) => r.id} />
       )}
     </div>
   );
@@ -765,7 +900,7 @@ function InvestmentsTab({ onError }: TabProps) {
 
 // ── Profit sharing ──────────────────────────────────────────────────────────
 
-function SharingTab({ onError }: TabProps) {
+function SharingTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
   const [rows, setRows] = useState<ProfitDistributionDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -785,35 +920,103 @@ function SharingTab({ onError }: TabProps) {
 
   useEffect(() => { void load(); }, [load]);
 
+  // One column list serves the tab's search and export and every period's table. It runs in the
+  // export's order; the period, stake, net profit and reference are export- and search-only, as the
+  // period card's header and the shareholder and status cells already show them.
+  const columns: Column<ProfitDistributionDto>[] = [
+    { header: 'Period', search: (r) => r.label, csv: (r) => r.label },
+    { header: 'From', csv: (r) => r.periodStart },
+    { header: 'To', csv: (r) => r.periodEnd },
+    {
+      header: 'Shareholder',
+      cell: (r) => (
+        <>
+          <div className="font-medium">{r.shareholderName}</div>
+          <span className="text-xs text-text-muted">{(r.basisPoints / 100).toFixed(2)}% stake</span>
+        </>
+      ),
+      sort: (r) => r.shareholderName,
+      search: (r) => r.shareholderName,
+      csv: (r) => r.shareholderName,
+    },
+    { header: 'Stake (%)', csv: (r) => (r.basisPoints / 100).toFixed(2) },
+    { header: 'Net profit (KSh)', csv: (r) => csvMoney(r.netProfitCents) },
+    {
+      header: 'Share',
+      csvHeader: 'Share (KSh)',
+      right: true,
+      className: 'font-medium',
+      cell: (r) => fmt(r.amountCents),
+      sort: (r) => r.amountCents,
+      csv: (r) => csvMoney(r.amountCents),
+    },
+    {
+      header: 'Status',
+      cell: (r) => (
+        <>
+          <span className={`rounded-full px-2 py-0.5 text-xs ${
+            r.status === 'PAID' ? 'bg-success/10 text-success'
+              : r.status === 'CANCELLED' ? 'bg-danger/10 text-danger'
+              : 'bg-warning/15 text-warning'
+          }`}>{label(r.status)}</span>
+          {r.reference && <span className="ml-2 text-xs text-text-muted">Ref {r.reference}</span>}
+        </>
+      ),
+      sort: (r) => label(r.status),
+      search: (r) => label(r.status),
+      csv: (r) => label(r.status),
+    },
+    {
+      // The paid date, or Mark paid for the owner while unpaid. Sort and export read the date, never the button.
+      header: 'Paid on',
+      csvHeader: 'Paid at',
+      right: true,
+      cell: (r) =>
+        r.status !== 'PAID' && isOwner ? (
+          <button
+            className={btnGhost}
+            onClick={async () => {
+              const reference = prompt(`Payment reference for ${r.shareholderName} (M-Pesa or bank):`);
+              if (reference === null) return;
+              try {
+                await api.updateDistribution(r.id, { status: 'PAID', reference: reference.trim() || undefined });
+                await load();
+              } catch (err) { onError(err, 'Could not mark paid'); }
+            }}
+          >Mark paid</button>
+        ) : (
+          <span className="text-xs text-text-muted">
+            {r.paidAt ? new Date(r.paidAt).toLocaleDateString('en-KE') : ''}
+          </span>
+        ),
+      sort: (r) => r.paidAt,
+      csv: (r) => (r.paidAt ? r.paidAt.slice(0, 10) : ''),
+    },
+    { header: 'Reference', search: (r) => r.reference, csv: (r) => r.reference ?? '' },
+  ];
+  // The tab's search box and all-periods export; each period's table follows its search.
+  const controls = useTableControls(rows, columns);
+
   // Group by declared period so each declaration reads as one block.
+  const periodKey = (r: ProfitDistributionDto) => `${r.periodStart}|${r.periodEnd}|${r.label}`;
   const periods = new Map<string, ProfitDistributionDto[]>();
   for (const row of rows) {
-    const key = `${row.periodStart}|${row.periodEnd}|${row.label}`;
+    const key = periodKey(row);
     periods.set(key, [...(periods.get(key) ?? []), row]);
   }
+  // While a search is active, only periods with a matching payout are shown.
+  const matching = new Set(controls.rows.map(periodKey));
+  const shown = [...periods.entries()].filter(([key]) => matching.has(key));
 
   return (
     <div>
-      <Toolbar
+      <TableToolbar
+        controls={controls}
+        csv={{ filename: 'profit-distributions' }}
         summary={`${periods.size} declared period${periods.size === 1 ? '' : 's'}`}
-        onExport={() =>
-          downloadCsv('profit-distributions', [
-            { header: 'Period', value: (r: ProfitDistributionDto) => r.label },
-            { header: 'From', value: (r) => r.periodStart },
-            { header: 'To', value: (r) => r.periodEnd },
-            { header: 'Shareholder', value: (r) => r.shareholderName },
-            { header: 'Stake (%)', value: (r) => (r.basisPoints / 100).toFixed(2) },
-            { header: 'Net profit (KSh)', value: (r) => csvMoney(r.netProfitCents) },
-            { header: 'Share (KSh)', value: (r) => csvMoney(r.amountCents) },
-            { header: 'Status', value: (r) => label(r.status) },
-            { header: 'Paid at', value: (r) => (r.paidAt ? r.paidAt.slice(0, 10) : '') },
-            { header: 'Reference', value: (r) => r.reference ?? '' },
-          ], rows)
-        }
-        onToggleForm={() => setShowForm((v) => !v)}
-        formOpen={showForm}
-        addLabel="declaration"
-      />
+      >
+        {isOwner && <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="declaration" />}
+      </TableToolbar>
 
       {showForm && (
         <form
@@ -859,10 +1062,16 @@ function SharingTab({ onError }: TabProps) {
       )}
 
       {loading ? <Empty>Loading…</Empty> : periods.size === 0 ? (
-        <Empty>No periods declared yet. Declare one to split a period’s profit across the cap table.</Empty>
+        <Empty>
+          {isOwner
+            ? 'No periods declared yet. Declare one to split a period’s profit across the cap table.'
+            : 'Only payouts to your own holding show here; the owner declares periods.'}
+        </Empty>
+      ) : shown.length === 0 ? (
+        <Empty>No payouts match “{controls.query.trim()}”.</Empty>
       ) : (
         <div className="space-y-4">
-          {[...periods.entries()].map(([key, items]) => {
+          {shown.map(([key, items]) => {
             const first = items[0]!;
             const paid = items.filter((i) => i.status === 'PAID').length;
             return (
@@ -880,46 +1089,7 @@ function SharingTab({ onError }: TabProps) {
                     <span className="ml-3 text-xs text-text-muted">{paid}/{items.length} paid</span>
                   </div>
                 </div>
-                <table className="w-full text-sm">
-                  <tbody className="divide-y divide-border">
-                    {items.map((r) => (
-                      <tr key={r.id} className="hover:bg-bg-muted/30">
-                        <Td>
-                          <div className="font-medium">{r.shareholderName}</div>
-                          <span className="text-xs text-text-muted">{(r.basisPoints / 100).toFixed(2)}% stake</span>
-                        </Td>
-                        <Td right className="font-medium">{fmt(r.amountCents)}</Td>
-                        <Td>
-                          <span className={`rounded-full px-2 py-0.5 text-xs ${
-                            r.status === 'PAID' ? 'bg-success/10 text-success'
-                              : r.status === 'CANCELLED' ? 'bg-danger/10 text-danger'
-                              : 'bg-warning/15 text-warning'
-                          }`}>{label(r.status)}</span>
-                          {r.reference && <span className="ml-2 text-xs text-text-muted">Ref {r.reference}</span>}
-                        </Td>
-                        <Td right>
-                          {r.status !== 'PAID' ? (
-                            <button
-                              className={btnGhost}
-                              onClick={async () => {
-                                const reference = prompt(`Payment reference for ${r.shareholderName} (M-Pesa or bank):`);
-                                if (reference === null) return;
-                                try {
-                                  await api.updateDistribution(r.id, { status: 'PAID', reference: reference.trim() || undefined });
-                                  await load();
-                                } catch (err) { onError(err, 'Could not mark paid'); }
-                              }}
-                            >Mark paid</button>
-                          ) : (
-                            <span className="text-xs text-text-muted">
-                              {r.paidAt ? new Date(r.paidAt).toLocaleDateString('en-KE') : ''}
-                            </span>
-                          )}
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <PeriodTable items={items} columns={columns} query={controls.query} />
               </div>
             );
           })}
@@ -927,6 +1097,16 @@ function SharingTab({ onError }: TabProps) {
       )}
     </div>
   );
+}
+
+/** One declared period's payouts: its own sort, filtered by the tab's one search. */
+function PeriodTable({ items, columns, query }: {
+  items: ProfitDistributionDto[];
+  columns: Column<ProfitDistributionDto>[];
+  query: string;
+}) {
+  const controls = useTableControls(items, columns, { query });
+  return <DataTable controls={controls} rowKey={(r) => r.id} className="" />;
 }
 
 // ── Receipts & reconciliation ───────────────────────────────────────────────
@@ -950,67 +1130,75 @@ function ReceiptsTab({ from, to, onError }: TabProps & { from: string; to: strin
 
   const missingReceipt = items.filter((i) => !i.hasReceipt).length;
 
+  const columns: Column<UnreconciledItem>[] = [
+    { header: 'Date', cell: (r) => r.date, sort: (r) => r.date, search: (r) => r.date, csv: (r) => r.date },
+    { header: 'Type', cell: (r) => label(r.kind), sort: (r) => label(r.kind), search: (r) => label(r.kind), csv: (r) => label(r.kind) },
+    {
+      header: 'Description',
+      cell: (r) => r.description,
+      sort: (r) => r.description,
+      search: (r) => r.description,
+      csv: (r) => r.description,
+    },
+    {
+      header: 'Amount',
+      csvHeader: 'Amount (KSh)',
+      right: true,
+      className: 'font-medium',
+      cell: (r) => fmt(r.amountCents),
+      sort: (r) => r.amountCents,
+      csv: (r) => csvMoney(r.amountCents),
+    },
+    {
+      // "Attached", or Add reference while missing. Search, sort and export read hasReceipt, never the button.
+      header: 'Source doc',
+      csvHeader: 'Has receipt',
+      cell: (r) =>
+        r.hasReceipt ? (
+          <span className="text-xs text-success">Attached</span>
+        ) : (
+          <button
+            className="text-xs text-aqua-deep hover:underline"
+            onClick={async () => {
+              const ref = prompt('Receipt / M-Pesa reference:');
+              if (!ref?.trim()) return;
+              try { await api.reconcile(r.kind, r.id, { receiptRef: ref.trim() }); await load(); }
+              catch (err) { onError(err, 'Could not attach reference'); }
+            }}
+          >Add reference</button>
+        ),
+      sort: (r) => (r.hasReceipt ? 1 : 0),
+      search: (r) => (r.hasReceipt ? 'Attached' : null),
+      csv: (r) => (r.hasReceipt ? 'yes' : 'no'),
+    },
+    {
+      header: '',
+      right: true,
+      cell: (r) => (
+        <button
+          className={btnGhost}
+          onClick={async () => {
+            try { await api.reconcile(r.kind, r.id, { reconciled: true }); await load(); }
+            catch (err) { onError(err, 'Could not reconcile'); }
+          }}
+        >Mark reconciled</button>
+      ),
+    },
+  ];
+  const controls = useTableControls(items, columns);
+
   return (
     <div>
-      <Toolbar
+      <TableToolbar
+        controls={controls}
+        csv={{ filename: `unreconciled-${from}-to-${to}` }}
         summary={`${items.length} unreconciled · ${missingReceipt} with no source document`}
-        onExport={() =>
-          downloadCsv(`unreconciled-${from}-to-${to}`, [
-            { header: 'Date', value: (r: UnreconciledItem) => r.date },
-            { header: 'Type', value: (r) => label(r.kind) },
-            { header: 'Description', value: (r) => r.description },
-            { header: 'Amount (KSh)', value: (r) => csvMoney(r.amountCents) },
-            { header: 'Has receipt', value: (r) => (r.hasReceipt ? 'yes' : 'no') },
-          ], items)
-        }
       />
 
       {loading ? <Empty>Loading…</Empty> : items.length === 0 ? (
         <Empty>Everything in this range is reconciled. </Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">
-                <Th>Date</Th><Th>Type</Th><Th>Description</Th><Th right>Amount</Th><Th>Source doc</Th><Th />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {items.map((r) => (
-                <tr key={`${r.kind}-${r.id}`} className="hover:bg-bg-muted/30">
-                  <Td>{r.date}</Td>
-                  <Td>{label(r.kind)}</Td>
-                  <Td>{r.description}</Td>
-                  <Td right className="font-medium">{fmt(r.amountCents)}</Td>
-                  <Td>
-                    {r.hasReceipt ? (
-                      <span className="text-xs text-success">Attached</span>
-                    ) : (
-                      <button
-                        className="text-xs text-aqua-deep hover:underline"
-                        onClick={async () => {
-                          const ref = prompt('Receipt / M-Pesa reference:');
-                          if (!ref?.trim()) return;
-                          try { await api.reconcile(r.kind, r.id, { receiptRef: ref.trim() }); await load(); }
-                          catch (err) { onError(err, 'Could not attach reference'); }
-                        }}
-                      >Add reference</button>
-                    )}
-                  </Td>
-                  <Td right>
-                    <button
-                      className={btnGhost}
-                      onClick={async () => {
-                        try { await api.reconcile(r.kind, r.id, { reconciled: true }); await load(); }
-                        catch (err) { onError(err, 'Could not reconcile'); }
-                      }}
-                    >Mark reconciled</button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable controls={controls} rowKey={(r) => `${r.kind}-${r.id}`} />
       )}
     </div>
   );
@@ -1018,27 +1206,12 @@ function ReceiptsTab({ from, to, onError }: TabProps & { from: string; to: strin
 
 // ── Small shared pieces ─────────────────────────────────────────────────────
 
-function Toolbar({
-  summary, onExport, onToggleForm, formOpen, addLabel,
-}: {
-  summary: string;
-  onExport: () => void;
-  onToggleForm?: () => void;
-  formOpen?: boolean;
-  addLabel?: string;
-}) {
+/** Opens and closes a tab's "+ New …" form. */
+function NewToggle({ open, onToggle, what }: { open: boolean; onToggle: () => void; what: string }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <span className="text-sm text-text-muted">{summary}</span>
-      <div className="flex items-center gap-2">
-        <button className={btnGhost} onClick={onExport}>Export CSV</button>
-        {onToggleForm && (
-          <button className={btn} onClick={onToggleForm}>
-            {formOpen ? 'Cancel' : `+ New ${addLabel}`}
-          </button>
-        )}
-      </div>
-    </div>
+    <button className={btn} onClick={onToggle}>
+      {open ? 'Cancel' : `+ New ${what}`}
+    </button>
   );
 }
 
@@ -1059,14 +1232,6 @@ function Stat({ label: text, value, tone }: { label: string; value: string; tone
       <span className={`font-medium ${tone ?? ''}`}>{value}</span>
     </span>
   );
-}
-
-function Th({ children, right }: { children?: React.ReactNode; right?: boolean }) {
-  return <th className={`px-5 py-3 font-normal ${right ? 'text-right' : 'text-left'}`}>{children}</th>;
-}
-
-function Td({ children, right, className }: { children?: React.ReactNode; right?: boolean; className?: string }) {
-  return <td className={`px-5 py-3 ${right ? 'text-right' : ''} ${className ?? ''}`}>{children}</td>;
 }
 
 function Empty({ children }: { children: React.ReactNode }) {

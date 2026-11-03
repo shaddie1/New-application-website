@@ -24,6 +24,7 @@ import type {
   RevenueBreakdown,
   RevenueBreakdownItem,
   UnreconciledItem,
+  UpdateInvestmentInput,
   MonthlyTargetDto,
   DashboardOverview,
   TargetProgress,
@@ -93,6 +94,10 @@ const CreateInvestmentSchema = z.object({
   reference: z.string().trim().max(200).optional(),
   documentUrl: z.string().trim().url().max(500).optional(),
 }) satisfies z.ZodType<CreateInvestmentInput>;
+
+const UpdateInvestmentSchema = z.object({
+  shareholderId: z.string().trim().min(1).nullable(),
+}) satisfies z.ZodType<UpdateInvestmentInput>;
 
 const DeclareDistributionSchema = z.object({
   label: z.string().trim().min(1).max(80),
@@ -253,10 +258,14 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ asset: toAssetDto(row) });
   });
 
-  // ── Investments ───────────────────────────────────────────────────────────
+  // ── Investments (the owner writes; others read only their own) ───────────
 
-  app.get('/investments', async (_req, reply) => {
+  app.get('/investments', async (req, reply) => {
+    const scope = await ownRowsScope(req);
+    if (!scope) return reply.send({ investments: [] });
+
     const rows = await prisma.investment.findMany({
+      where: scope,
       include: {
         createdBy: { select: { fullName: true } },
         shareholder: { select: { name: true } },
@@ -266,7 +275,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ investments: rows.map(toInvestmentDto) });
   });
 
-  app.post('/investments', async (req, reply) => {
+  app.post('/investments', { preHandler: requireOwner }, async (req, reply) => {
     const parsed = CreateInvestmentSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
@@ -286,7 +295,31 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ investment: toInvestmentDto(row) });
   });
 
-  app.delete<{ Params: { id: string } }>('/investments/:id', async (req, reply) => {
+  /** Link an investment to a shareholder, or unlink it with null. */
+  app.patch<{ Params: { id: string } }>('/investments/:id', { preHandler: requireOwner }, async (req, reply) => {
+    const parsed = UpdateInvestmentSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const existing = await prisma.investment.findUnique({ where: { id: req.params.id } });
+    if (!existing) return reply.code(404).send({ error: 'investment not found' });
+
+    const { shareholderId } = parsed.data;
+    if (shareholderId && !(await prisma.shareholder.findUnique({ where: { id: shareholderId } }))) {
+      return reply.code(400).send({ error: 'shareholder not found' });
+    }
+
+    const row = await prisma.investment.update({
+      where: { id: req.params.id },
+      data: { shareholderId },
+      include: {
+        createdBy: { select: { fullName: true } },
+        shareholder: { select: { name: true } },
+      },
+    });
+    return reply.send({ investment: toInvestmentDto(row) });
+  });
+
+  app.delete<{ Params: { id: string } }>('/investments/:id', { preHandler: requireOwner }, async (req, reply) => {
     const existing = await prisma.investment.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'investment not found' });
     await prisma.investment.delete({ where: { id: req.params.id } });
@@ -466,10 +499,14 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ overview });
   });
 
-  // ── Profit distributions (cap-table holders and the owner only) ───────────
+  // ── Profit distributions (the owner writes; holders read only their own) ──
 
-  app.get('/distributions', { preHandler: requireEquityAccess }, async (_req, reply) => {
+  app.get('/distributions', { preHandler: requireEquityAccess }, async (req, reply) => {
+    const scope = await ownRowsScope(req);
+    if (!scope) return reply.send({ distributions: [] });
+
     const rows = await prisma.profitDistribution.findMany({
+      where: scope,
       include: {
         shareholder: { select: { name: true } },
         createdBy: { select: { fullName: true } },
@@ -485,7 +522,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
    * profit figure are snapshotted so later cap-table edits cannot rewrite a
    * declared payout.
    */
-  app.post('/distributions/declare', { preHandler: requireEquityAccess }, async (req, reply) => {
+  app.post('/distributions/declare', { preHandler: requireOwner }, async (req, reply) => {
     const parsed = DeclareDistributionSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const { label, periodStart, periodEnd, netProfitCentsOverride } = parsed.data;
@@ -537,7 +574,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch<{ Params: { id: string } }>(
     '/distributions/:id',
-    { preHandler: requireEquityAccess },
+    { preHandler: requireOwner },
     async (req, reply) => {
       const parsed = MarkPaidSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -564,7 +601,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete<{ Params: { id: string } }>(
     '/distributions/:id',
-    { preHandler: requireEquityAccess },
+    { preHandler: requireOwner },
     async (req, reply) => {
       const existing = await prisma.profitDistribution.findUnique({ where: { id: req.params.id } });
       if (!existing) return reply.code(404).send({ error: 'distribution not found' });
@@ -607,6 +644,31 @@ async function requireEquityAccess(req: FastifyRequest, reply: FastifyReply): Pr
   if (!user.isOwner && !user.shareholder) {
     return reply.code(403).send({ error: 'shareholder access required' });
   }
+}
+
+/**
+ * Payout and investment writes: the owner alone. A declare answers with every
+ * holder's payout, and a holder must not mark their own payout paid.
+ */
+async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+  const user = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
+  if (!user?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+}
+
+/**
+ * The payout and investment rows the caller may read: every row for the
+ * owner; for anyone else only rows linked to their own holding, and none when
+ * they hold nothing. Unlinked investments are withheld from non-owners too,
+ * because their free-text source often names an investor who is a shareholder.
+ */
+async function ownRowsScope(req: FastifyRequest): Promise<{ shareholderId?: string } | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth!.sub },
+    select: { isOwner: true, shareholder: { select: { id: true } } },
+  });
+  if (user?.isOwner) return {};
+  return user?.shareholder ? { shareholderId: user.shareholder.id } : null;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

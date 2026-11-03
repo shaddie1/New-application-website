@@ -32,3 +32,53 @@ body {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Print ────────────────────────────────────────────────────────────────
+   The shareholder report is the page saved as a PDF from the browser, so any
+   admin page must print cleanly: light chart theme, chart colours kept, cards
+   and table rows whole, table headers repeated on each page. The layout hides
+   its menu with print:hidden; pages hide their own controls the same way. */
+@page {
+  margin: 14mm 12mm;
+}
+
+@media print {
+  /* Whatever theme is on screen, paper gets the light chart tokens. */
+  :root {
+    color-scheme: light;
+    --chart-surface: #ffffff !important;
+    --chart-ink: #0f1c2e !important;
+    --chart-muted: #4a5568 !important;
+    --chart-grid: #e5eaf0 !important;
+    --chart-track: #eef2f6 !important;
+    --chart-accent: #0d9488 !important;
+    --chart-accent-deep: #0f766e !important;
+    --chart-positive: #1f7a4d !important;
+    --chart-negative: #b14747 !important;
+  }
+
+  body {
+    background-color: #ffffff;
+    color: #0f1c2e;
+  }
+
+  /* Bar fills, tracks and gridlines are backgrounds, which browsers drop in
+     print unless told otherwise. The property is inherited, so the class on a
+     chart's root covers every fill inside it. */
+  .chart-fill {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Cards (the kit's rounded-xl containers and every figure) and table rows
+     never split across a page break. */
+  figure,
+  .rounded-xl,
+  tr {
+    break-inside: avoid;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+}

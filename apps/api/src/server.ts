@@ -24,6 +24,7 @@ import { projectRoutes } from './routes/projects.js';
 import { jobReportsRoutes } from './routes/jobReports.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { websiteJobRoutes, publicWebsiteJobRoutes } from './routes/websiteJobs.js';
+import { mySharesRoutes } from './routes/myShares.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -59,6 +60,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(quoteBuilderRoutes, { prefix: '/admin/quote-builder' });
   await app.register(financialsRoutes, { prefix: '/admin/financials' });
   await app.register(financeRoutes, { prefix: '/admin/finance' });
+  await app.register(mySharesRoutes, { prefix: '/admin/my-shares' });
   await app.register(documentRoutes, { prefix: '/admin/documents' });
   await app.register(projectRoutes, { prefix: '/admin/projects' });
   await app.register(jobReportsRoutes, { prefix: '/admin/job-reports' });

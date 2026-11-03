@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { MySharesAccess } from '@onyxhawk/types';
+import { api } from '../../src/lib/api';
 import { useAuth, useRequireAdmin } from '../../src/lib/auth';
 
 /** Grouped so the rail reads as sections rather than one long list. */
@@ -31,11 +33,36 @@ const OWNER_GOVERNANCE = [
 // Owner, admins and marketing; the API refuses everyone else regardless.
 const WEBSITE = [{ href: '/website-jobs', label: 'Website jobs' }];
 
+/** The owner opens every holder's page; anyone linked to the shareholder list opens their own. */
+const SHAREHOLDER_PAGES = { href: '/my-shares', label: 'Shareholder pages' };
+const MY_SHARES = { href: '/my-shares', label: 'My shares' };
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = useRequireAdmin();
   const { signOut } = useAuth();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  // The API, not the session, says whether a shareholder page exists for this
+  // account. Until it answers, or if it fails, the menu is as it was.
+  const [shareAccess, setShareAccess] = useState<MySharesAccess | null>(null);
+  const userId = session?.user.id;
+
+  useEffect(() => {
+    setShareAccess(null);
+    if (!userId) return;
+    let current = true;
+    api
+      .mySharesAccess()
+      .then((access) => {
+        if (current) setShareAccess(access);
+      })
+      .catch(() => {
+        /* no shareholder link in the menu */
+      });
+    return () => {
+      current = false;
+    };
+  }, [userId]);
 
   if (session === undefined) {
     return <div className="min-h-screen flex items-center justify-center text-charcoal-muted">Loading…</div>;
@@ -45,12 +72,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { role, isOwner } = session.user;
   const canPublishWebsite = isOwner || role === 'ADMIN' || role === 'MARKETING';
 
+  const canViewAllShares = shareAccess?.canViewAll === true;
+  const hasOwnShares = !canViewAllShares && !!shareAccess?.shareholderId;
+  // "Shareholder pages" sits beside Ownership, where the holders are kept.
+  const governance = canViewAllShares
+    ? [OWNER_GOVERNANCE[0]!, SHAREHOLDER_PAGES, ...OWNER_GOVERNANCE.slice(1)]
+    : OWNER_GOVERNANCE;
+
   const sections = [
+    // A linked shareholder who is not the owner finds their page first.
+    ...(hasOwnShares ? [{ title: 'Shareholder', items: [MY_SHARES] }] : []),
     ...(isOwner
       ? [
           { title: 'Operations', items: OPERATIONS },
           { title: 'Finance', items: OWNER_FINANCE },
-          { title: 'Governance', items: OWNER_GOVERNANCE },
+          { title: 'Governance', items: governance },
         ]
       : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }]),
     ...(canPublishWebsite ? [{ title: 'Website', items: WEBSITE }] : []),
@@ -89,8 +125,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen lg:flex">
-      {/* Mobile bar: the rail collapses rather than disappearing. */}
-      <div className="flex items-center justify-between border-b border-line bg-white px-4 py-3 lg:hidden">
+      {/* Mobile bar: the rail collapses rather than disappearing. The menu
+          never prints: a printed page is a report, not the app. */}
+      <div className="flex items-center justify-between border-b border-line bg-white px-4 py-3 lg:hidden print:hidden">
         <span className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-8 w-auto" />
@@ -110,10 +147,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       </div>
 
-      {open && <div className="border-b border-line bg-white px-4 py-4 lg:hidden">{railLinks}</div>}
+      {open && <div className="border-b border-line bg-white px-4 py-4 lg:hidden print:hidden">{railLinks}</div>}
 
       {/* Desktop rail */}
-      <aside className="hidden w-60 shrink-0 border-r border-line bg-white lg:flex lg:flex-col">
+      <aside className="hidden w-60 shrink-0 border-r border-line bg-white lg:flex lg:flex-col print:hidden">
         <div className="px-5 py-5">
           <Link href="/" className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -134,7 +171,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 px-5 py-8 sm:px-8">
+      <main className="min-w-0 flex-1 px-5 py-8 sm:px-8 print:p-0">
         <div className="mx-auto max-w-6xl">{children}</div>
       </main>
     </div>

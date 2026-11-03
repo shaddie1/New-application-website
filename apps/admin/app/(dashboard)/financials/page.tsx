@@ -8,10 +8,20 @@ import type {
   ExpenseDto,
   FinancialSummary,
   JobDto,
+  JobStatus,
   MonthlyTrendItem,
 } from '@onyxhawk/types';
+import { ColumnChart, RankedBars, signedMoney, type ColumnPoint, type ColumnSeries } from '../../../src/components/charts';
+import {
+  DataTable,
+  TableToolbar,
+  useTableControls,
+  type Column,
+  type CsvExport,
+} from '../../../src/components/DataTable';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { csvMoney } from '../../../src/lib/csv';
 
 // How many months of history the Monthly trends tab can show at once.
 const TREND_RANGES = [6, 12, 24];
@@ -59,6 +69,147 @@ const blankExpenseForm = () => ({
   date: todayIso(),
 });
 
+const STATUS_LABELS: Record<JobStatus, string> = {
+  OWNER_ENTRY: 'Owner entry',
+  APPROVED: 'Approved',
+  PENDING: 'Pending',
+};
+
+const serviceLineText = (job: JobDto) => job.serviceLineCode?.replace(/_/g, ' ') ?? null;
+
+/**
+ * The Jobs and Submissions card lists: what their search box matches, what
+ * their sort choice offers and the job half of each CSV line. No column draws
+ * a cell; the cards draw themselves.
+ */
+const JOB_COLUMNS: Column<JobDto>[] = [
+  { header: 'Date', sort: (j) => j.date, search: (j) => j.date, csv: (j) => j.date, csvHeader: 'Job date' },
+  { header: 'Title', sort: (j) => j.title, search: (j) => j.title, csv: (j) => j.title, csvHeader: 'Job' },
+  { header: 'Status', search: (j) => STATUS_LABELS[j.status], csv: (j) => STATUS_LABELS[j.status] },
+  {
+    header: 'Reported by',
+    sort: (j) => j.reportedByName,
+    search: (j) => j.reportedByName,
+    csv: (j) => j.reportedByName,
+  },
+  { header: 'Client', sort: (j) => j.clientName, search: (j) => j.clientName, csv: (j) => j.clientName },
+  { header: 'Client phone', search: (j) => j.clientPhone, csv: (j) => j.clientPhone },
+  { header: 'Location', search: (j) => j.clientLocation, csv: (j) => j.clientLocation },
+  { header: 'Service line', search: serviceLineText, csv: serviceLineText },
+  {
+    header: 'Segment',
+    search: (j) => (j.clientSegment ? SEGMENT_LABELS[j.clientSegment] : null),
+    csv: (j) => (j.clientSegment ? SEGMENT_LABELS[j.clientSegment] : null),
+  },
+  { header: 'Region', search: (j) => j.region, csv: (j) => j.region },
+  { header: 'Notes', search: (j) => j.notes, csv: (j) => j.notes },
+  { header: 'Charged', csv: (j) => csvMoney(j.incomeCents), csvHeader: 'Charged (KSh)' },
+  { header: 'Discount', csv: (j) => csvMoney(j.discountCents), csvHeader: 'Discount (KSh)' },
+  {
+    header: 'Income',
+    sort: (j) => j.actualIncomeCents,
+    csv: (j) => csvMoney(j.actualIncomeCents),
+    csvHeader: 'Income (KSh)',
+  },
+  {
+    header: 'Expenses',
+    sort: (j) => j.totalExpensesCents,
+    csv: (j) => csvMoney(j.totalExpensesCents),
+    csvHeader: 'Job expenses (KSh)',
+  },
+  { header: 'Net profit', sort: (j) => j.netCents, csv: (j) => csvMoney(j.netCents), csvHeader: 'Job net profit (KSh)' },
+  // Newline-joined so a search can't match across the end of one description and the start of the next.
+  { header: 'Expense descriptions', search: (j) => j.expenses.map((ex) => ex.description ?? '').join('\n') },
+];
+
+type ExpenseLine = { job: JobDto; expense: ExpenseDto | null };
+
+/** Export CSV for the card lists: one line per expense with its job, and one line for a job with none. */
+const JOB_CSV_LINES: NonNullable<CsvExport<JobDto, ExpenseLine>['lines']> = {
+  of: (job) => (job.expenses.length > 0 ? job.expenses.map((expense) => ({ job, expense })) : [{ job, expense: null }]),
+  columns: [
+    ...JOB_COLUMNS.flatMap((c) => {
+      const csv = c.csv;
+      return csv ? [{ header: c.csvHeader ?? c.header, value: (line: ExpenseLine) => csv(line.job) }] : [];
+    }),
+    { header: 'Expense date', value: (line) => line.expense?.date },
+    { header: 'Expense category', value: (line) => (line.expense ? CATEGORY_LABELS[line.expense.category] : null) },
+    { header: 'Expense description', value: (line) => line.expense?.description },
+    { header: 'Expense amount (KSh)', value: (line) => (line.expense ? csvMoney(line.expense.amountCents) : null) },
+  ],
+};
+
+/** A job's or submission's expense lines; sortable headers, reached by the list's own search and CSV. */
+const EXPENSE_COLUMNS: Column<ExpenseDto>[] = [
+  { header: 'Date', className: 'text-text-muted', cell: (ex) => ex.date, sort: (ex) => ex.date },
+  { header: 'Category', cell: (ex) => CATEGORY_LABELS[ex.category], sort: (ex) => CATEGORY_LABELS[ex.category] },
+  {
+    header: 'Description',
+    className: 'text-text-muted',
+    cell: (ex) => ex.description ?? '—',
+    sort: (ex) => ex.description,
+  },
+  { header: 'Amount', right: true, className: 'font-medium', cell: (ex) => fmt(ex.amountCents), sort: (ex) => ex.amountCents },
+];
+
+const monthKey = (t: MonthlyTrendItem) => `${t.year}-${String(t.month).padStart(2, '0')}`;
+const monthName = (t: MonthlyTrendItem, month: 'long' | 'short') =>
+  new Date(t.year, t.month - 1, 1).toLocaleDateString('en-KE', month === 'long' ? { month, year: 'numeric' } : { month });
+
+const TREND_SERIES: readonly [ColumnSeries, ColumnSeries] = [
+  { key: 'income', label: 'Income' },
+  { key: 'net', label: 'Net profit' },
+];
+
+/** The Trends table. Money uses the chart's own format so the two read the same for every month. */
+const TREND_COLUMNS: Column<MonthlyTrendItem>[] = [
+  {
+    header: 'Month',
+    cell: (t) => t.label,
+    sort: monthKey,
+    search: (t) => `${t.label}\n${monthName(t, 'long')}`,
+    csv: (t) => t.label,
+  },
+  {
+    header: 'Jobs',
+    right: true,
+    className: 'text-text-muted',
+    cell: (t) => t.jobCount,
+    sort: (t) => t.jobCount,
+    csv: (t) => t.jobCount,
+  },
+  {
+    header: 'Income',
+    right: true,
+    className: 'text-success',
+    cell: (t) => signedMoney(t.incomeCents),
+    sort: (t) => t.incomeCents,
+    csv: (t) => csvMoney(t.incomeCents),
+    csvHeader: 'Income (KSh)',
+  },
+  {
+    header: 'Expenses',
+    right: true,
+    className: 'text-danger',
+    cell: (t) => signedMoney(t.totalExpensesCents),
+    sort: (t) => t.totalExpensesCents,
+    csv: (t) => csvMoney(t.totalExpensesCents),
+    csvHeader: 'Expenses (KSh)',
+  },
+  {
+    header: 'Net profit',
+    right: true,
+    cell: (t) => (
+      <span className={`font-medium ${t.netCents >= 0 ? 'text-success' : 'text-danger'}`}>
+        {signedMoney(t.netCents)}
+      </span>
+    ),
+    sort: (t) => t.netCents,
+    csv: (t) => csvMoney(t.netCents),
+    csvHeader: 'Net profit (KSh)',
+  },
+];
+
 type Tab = 'jobs' | 'submissions' | 'trends';
 
 export default function FinancialsPage() {
@@ -97,6 +248,14 @@ export default function FinancialsPage() {
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  // Search, sort and CSV for each tab's list. The charts above them always show
+  // the tab's loaded data, never the searched subset.
+  const jobControls = useTableControls(jobs, JOB_COLUMNS);
+  const reportControls = useTableControls(pendingReports, JOB_COLUMNS);
+  const trendControls = useTableControls(trends, TREND_COLUMNS);
+  // The month picked on the Trends chart. It only drives the chart's readout.
+  const [trendKey, setTrendKey] = useState<string | null>(null);
 
   const { from, to } = monthRange(year, month);
 
@@ -191,12 +350,21 @@ export default function FinancialsPage() {
     try {
       await api.deleteJob(job.id);
       setJobs((prev) => prev.filter((j) => j.id !== job.id));
-      setSummary((prev) => prev ? {
-        ...prev,
-        incomeCents: prev.incomeCents - job.actualIncomeCents,
-        totalExpensesCents: prev.totalExpensesCents - job.totalExpensesCents,
-        netCents: prev.netCents - job.netCents,
-      } : prev);
+      setSummary((prev) => {
+        if (!prev) return prev;
+        // Keep the category split in step with the total, so the expense bars still add up to it.
+        const expensesByCategoryCents = { ...prev.expensesByCategoryCents };
+        for (const ex of job.expenses) {
+          expensesByCategoryCents[ex.category] = (expensesByCategoryCents[ex.category] ?? 0) - ex.amountCents;
+        }
+        return {
+          ...prev,
+          incomeCents: prev.incomeCents - job.actualIncomeCents,
+          expensesByCategoryCents,
+          totalExpensesCents: prev.totalExpensesCents - job.totalExpensesCents,
+          netCents: prev.netCents - job.netCents,
+        };
+      });
       if (expandedJobId === job.id) setExpandedJobId(null);
     } catch {
       setError('Could not delete job.');
@@ -319,10 +487,33 @@ export default function FinancialsPage() {
     return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Owner access required.</div>;
   }
 
+  const trendPoints: ColumnPoint[] = trends.map((t, i) => ({
+    key: monthKey(t),
+    label: monthName(t, 'long'),
+    shortLabel: monthName(t, 'short'),
+    values: [t.incomeCents, t.netCents],
+    // The trends route always ends with the current month.
+    inProgress: i === trends.length - 1,
+  }));
+  const trendExpenses = (point: ColumnPoint) => {
+    const t = trends.find((item) => monthKey(item) === point.key);
+    return t ? [{ label: 'Expenses', value: signedMoney(t.totalExpensesCents) }] : [];
+  };
+  // Every month loaded, whatever the table's search.
+  const trendTotals = trends.reduce(
+    (acc, t) => ({
+      jobs: acc.jobs + t.jobCount,
+      income: acc.income + t.incomeCents,
+      expenses: acc.expenses + t.totalExpensesCents,
+      net: acc.net + t.netCents,
+    }),
+    { jobs: 0, income: 0, expenses: 0, net: 0 },
+  );
+
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Financials</h1>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">←</button>
@@ -359,7 +550,7 @@ export default function FinancialsPage() {
       </div>
 
       {/* Summary cards — the selected month */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <SummaryCard label="Income" cents={summary?.incomeCents} color="text-success" loading={loading} />
         <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} color="text-danger" loading={loading} />
         <SummaryCard
@@ -371,8 +562,8 @@ export default function FinancialsPage() {
         />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-border">
+      {/* Tabs. On a phone the strip scrolls on its own rather than widening the page. */}
+      <div className="flex gap-1 mb-4 border-b border-border overflow-x-auto">
         {([
           { key: 'jobs', label: `Jobs — ${monthLabel}` },
           { key: 'submissions', label: `Submissions${pendingReports.length > 0 ? ` (${pendingReports.length})` : ''}` },
@@ -381,7 +572,7 @@ export default function FinancialsPage() {
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-4 py-2 text-sm border-b-2 transition-colors ${
+            className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm border-b-2 transition-colors ${
               tab === key
                 ? 'border-aqua text-navy font-medium'
                 : 'border-transparent text-text-muted hover:text-text'
@@ -395,15 +586,25 @@ export default function FinancialsPage() {
       {/* ── Tab: Jobs ──────────────────────────────────────────────────────── */}
       {tab === 'jobs' && (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm text-text-muted">{jobs.length} job{jobs.length !== 1 ? 's' : ''} recorded</span>
+          {!loading && summary && (
+            <div className="mb-6">
+              <ExpensesByCategory summary={summary} monthLabel={monthLabel} />
+            </div>
+          )}
+
+          <TableToolbar
+            controls={jobControls}
+            csv={{ filename: `jobs-${from}-to-${to}`, lines: JOB_CSV_LINES }}
+            sortChoice
+            summary={`${jobs.length} job${jobs.length !== 1 ? 's' : ''} recorded`}
+          >
             <button
               onClick={() => { setShowJobForm((v) => !v); }}
               className="rounded-lg bg-navy text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
             >
               {showJobForm ? 'Cancel' : '+ New job'}
             </button>
-          </div>
+          </TableToolbar>
 
           {/* New job form */}
           {showJobForm && (
@@ -552,7 +753,8 @@ export default function FinancialsPage() {
           )}
 
           <JobList
-            jobs={jobs}
+            jobs={jobControls.rows}
+            total={jobs.length}
             loading={loading}
             monthLabel={monthLabel}
             expandedJobId={expandedJobId}
@@ -572,113 +774,30 @@ export default function FinancialsPage() {
       {/* ── Tab: Submissions ───────────────────────────────────────────────── */}
       {tab === 'submissions' && (
         <div>
-          {loading ? (
-            <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
-          ) : pendingReports.length === 0 ? (
-            <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
-              No pending submissions from your team.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingReports.map((report) => (
-                <div key={report.id} className="rounded-xl border border-border bg-surface p-5">
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-base">{report.title}</span>
-                        <span className="text-text-muted text-xs">{report.date}</span>
-                        <span className="rounded-full bg-warning/15 text-warning text-xs px-2 py-0.5">Pending</span>
-                      </div>
-                      {report.reportedByName && (
-                        <p className="text-text-muted text-xs mt-0.5">Submitted by {report.reportedByName}</p>
-                      )}
-                      {(report.clientName || report.clientPhone || report.clientLocation) && (
-                        <div className="flex items-center gap-3 mt-0.5 flex-wrap text-xs text-text-muted">
-                          {report.clientName && <span>👤 {report.clientName}</span>}
-                          {report.clientPhone && <span>📞 {report.clientPhone}</span>}
-                          {report.clientLocation && <span>📍 {report.clientLocation}</span>}
-                        </div>
-                      )}
-                      {report.notes && <p className="text-text-muted text-xs mt-0.5">{report.notes}</p>}
-                      <div className="flex items-center gap-4 mt-2 text-sm flex-wrap">
-                        <span>
-                          <span className="text-text-muted text-xs">Charged </span>
-                          <span className="font-medium">{fmt(report.incomeCents)}</span>
-                        </span>
-                        {report.discountCents > 0 && (
-                          <span>
-                            <span className="text-text-muted text-xs">Discount </span>
-                            <span className="text-warning font-medium">{fmt(report.discountCents)}</span>
-                          </span>
-                        )}
-                        <span>
-                          <span className="text-text-muted text-xs">Income </span>
-                          <span className="text-success font-medium">{fmt(report.actualIncomeCents)}</span>
-                        </span>
-                        <span>
-                          <span className="text-text-muted text-xs">Expenses </span>
-                          <span className="text-danger font-medium">{fmt(report.totalExpensesCents)}</span>
-                        </span>
-                        <span>
-                          <span className="text-text-muted text-xs">Net </span>
-                          <span className={`font-medium ${report.netCents >= 0 ? 'text-success' : 'text-danger'}`}>
-                            {fmt(report.netCents)}
-                          </span>
-                        </span>
-                      </div>
-                      {report.expenses.length > 0 && (
-                        <div className="mt-3 rounded-lg border border-border overflow-hidden">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-text-muted uppercase tracking-widest border-b border-border bg-bg-muted/40">
-                                <th className="px-3 py-1.5 text-left font-normal">Date</th>
-                                <th className="px-3 py-1.5 text-left font-normal">Category</th>
-                                <th className="px-3 py-1.5 text-left font-normal">Description</th>
-                                <th className="px-3 py-1.5 text-right font-normal">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                              {report.expenses.map((ex) => (
-                                <tr key={ex.id}>
-                                  <td className="px-3 py-1.5 text-text-muted">{ex.date}</td>
-                                  <td className="px-3 py-1.5">{CATEGORY_LABELS[ex.category]}</td>
-                                  <td className="px-3 py-1.5 text-text-muted">{ex.description ?? '—'}</td>
-                                  <td className="px-3 py-1.5 text-right font-medium">{fmt(ex.amountCents)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-2 shrink-0">
-                      <button
-                        onClick={() => void handleApprove(report)}
-                        disabled={approvingId === report.id}
-                        className="rounded-lg bg-success text-white px-4 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
-                      >
-                        {approvingId === report.id ? '…' : 'Approve'}
-                      </button>
-                      <button
-                        onClick={() => void handleDecline(report)}
-                        disabled={deletingJobId === report.id}
-                        className="text-danger text-xs hover:underline disabled:opacity-40 text-center"
-                      >
-                        {deletingJobId === report.id ? '…' : 'Decline'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          {!loading && pendingReports.length > 0 && (
+            <TableToolbar
+              controls={reportControls}
+              csv={{ filename: 'pending-submissions', lines: JOB_CSV_LINES }}
+              sortChoice
+              summary={`${pendingReports.length} awaiting approval`}
+            />
           )}
+          <SubmissionList
+            reports={reportControls.rows}
+            total={pendingReports.length}
+            loading={loading}
+            approvingId={approvingId}
+            decliningId={deletingJobId}
+            onApprove={(r) => void handleApprove(r)}
+            onDecline={(r) => void handleDecline(r)}
+          />
         </div>
       )}
 
       {/* ── Tab: Monthly trends ────────────────────────────────────────────── */}
       {tab === 'trends' && (
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <span className="text-sm text-text-muted">Income, expenses and profit for every month.</span>
             <div className="flex items-center gap-1">
               {TREND_RANGES.map((n) => (
@@ -703,101 +822,47 @@ export default function FinancialsPage() {
             <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">No trend data yet.</div>
           ) : (
             <>
-              {/* Mini bar-chart using proportional widths */}
-              <div className="mb-6 rounded-xl border border-border bg-surface p-5">
-                <p className="text-xs text-text-muted uppercase tracking-widest mb-4">
-                  Income &amp; net profit — last {trends.length} months
-                </p>
-                <div className="space-y-3">
-                  {(() => {
-                    // Both bars share one scale, so income and profit stay comparable.
-                    const maxAbs = Math.max(
-                      ...trends.map((t) => Math.max(Math.abs(t.netCents), t.incomeCents)),
-                      1,
-                    );
-                    return trends.map((t) => {
-                      const incomePct = Math.round((t.incomeCents / maxAbs) * 100);
-                      const netPct = Math.round((Math.abs(t.netCents) / maxAbs) * 100);
-                      const positive = t.netCents >= 0;
-                      return (
-                        <div key={`${t.year}-${t.month}`} className="flex items-center gap-3">
-                          <span className="text-xs text-text-muted w-16 shrink-0">{t.label}</span>
-                          <div className="flex-1 space-y-1">
-                            <div className="bg-bg-muted rounded-full h-2.5 overflow-hidden">
-                              <div className="h-full rounded-full bg-aqua" style={{ width: `${incomePct}%` }} />
-                            </div>
-                            <div className="bg-bg-muted rounded-full h-2.5 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${positive ? 'bg-success' : 'bg-danger'}`}
-                                style={{ width: `${netPct}%` }}
-                              />
-                            </div>
-                          </div>
-                          <span className="text-xs font-medium w-28 text-right shrink-0">
-                            <span className="text-aqua-deep block">{fmt(t.incomeCents)}</span>
-                            <span className={positive ? 'text-success block' : 'text-danger block'}>
-                              {fmt(t.netCents)}
-                            </span>
-                          </span>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-                <div className="mt-4 flex items-center gap-5 text-xs text-text-muted">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-sm bg-aqua" /> Income
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-sm bg-success" /> Net profit
-                  </span>
-                </div>
+              {/* Straight in the page column: the chart sizes its own phone layout and
+                  scrolls sideways inside its card when the months don't fit. */}
+              <div className="mb-6">
+                <ColumnChart
+                  title={`Income and net profit — last ${trends.length} months`}
+                  series={TREND_SERIES}
+                  points={trendPoints}
+                  unit="money"
+                  selectedKey={trendKey}
+                  onSelect={setTrendKey}
+                  extraFigures={trendExpenses}
+                />
               </div>
 
-              {/* Data table */}
-              <div className="rounded-xl border border-border bg-surface overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border bg-bg-muted/30">
-                      <th className="px-5 py-3 text-left font-normal">Month</th>
-                      <th className="px-5 py-3 text-right font-normal">Jobs</th>
-                      <th className="px-5 py-3 text-right font-normal">Income</th>
-                      <th className="px-5 py-3 text-right font-normal">Expenses</th>
-                      <th className="px-5 py-3 text-right font-normal">Net profit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {trends.map((t) => (
-                      <tr key={`${t.year}-${t.month}`} className="hover:bg-bg-muted/30">
-                        <td className="px-5 py-3">{t.label}</td>
-                        <td className="px-5 py-3 text-right text-text-muted">{t.jobCount}</td>
-                        <td className="px-5 py-3 text-right text-success">{fmt(t.incomeCents)}</td>
-                        <td className="px-5 py-3 text-right text-danger">{fmt(t.totalExpensesCents)}</td>
-                        <td className={`px-5 py-3 text-right font-medium ${t.netCents >= 0 ? 'text-success' : 'text-danger'}`}>
-                          {fmt(t.netCents)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="border-t-2 border-border bg-bg-muted/30">
-                    <tr>
-                      <td className="px-5 py-3 font-medium">{trends.length}-month total</td>
-                      <td className="px-5 py-3 text-right font-medium text-text-muted">
-                        {trends.reduce((acc, t) => acc + t.jobCount, 0)}
-                      </td>
-                      <td className="px-5 py-3 text-right font-medium text-success">
-                        {fmt(trends.reduce((acc, t) => acc + t.incomeCents, 0))}
-                      </td>
-                      <td className="px-5 py-3 text-right font-medium text-danger">
-                        {fmt(trends.reduce((acc, t) => acc + t.totalExpensesCents, 0))}
-                      </td>
-                      <td className={`px-5 py-3 text-right font-medium ${trends.reduce((acc, t) => acc + t.netCents, 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {fmt(trends.reduce((acc, t) => acc + t.netCents, 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <TableToolbar
+                controls={trendControls}
+                csv={{ filename: `monthly-trends-${trendPoints[0]?.key}-to-${trendPoints[trendPoints.length - 1]?.key}` }}
+              />
+              <DataTable
+                controls={trendControls}
+                rowKey={monthKey}
+                footer={
+                  <tr>
+                    <td className="px-5 py-3 font-medium">All months</td>
+                    <td className="px-5 py-3 whitespace-nowrap text-right font-medium text-text-muted">{trendTotals.jobs}</td>
+                    <td className="px-5 py-3 whitespace-nowrap text-right font-medium text-success">
+                      {signedMoney(trendTotals.income)}
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap text-right font-medium text-danger">
+                      {signedMoney(trendTotals.expenses)}
+                    </td>
+                    <td
+                      className={`px-5 py-3 whitespace-nowrap text-right font-medium ${
+                        trendTotals.net >= 0 ? 'text-success' : 'text-danger'
+                      }`}
+                    >
+                      {signedMoney(trendTotals.net)}
+                    </td>
+                  </tr>
+                }
+              />
             </>
           )}
         </div>
@@ -806,14 +871,71 @@ export default function FinancialsPage() {
   );
 }
 
+// ── Expenses by category ───────────────────────────────────────────────────
+
+/** The month's expenses split by category; the bars add up to the Total expenses card. */
+function ExpensesByCategory({ summary, monthLabel }: { summary: FinancialSummary; monthLabel: string }) {
+  const items = CATEGORIES
+    .map((c) => ({ key: c, label: CATEGORY_LABELS[c], value: summary.expensesByCategoryCents[c] ?? 0 }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+  return (
+    <RankedBars
+      title={`Expenses by category — ${monthLabel}`}
+      items={items}
+      format={fmt}
+      emptyLabel={`No expenses recorded for ${monthLabel}.`}
+      detail={(item, share) =>
+        `${item.label}: ${fmt(item.value)}, ${(share * 100).toFixed(1)}% of ${fmt(summary.totalExpensesCents)} total expenses`
+      }
+    />
+  );
+}
+
+// ── Expense lines inside a job or submission card ──────────────────────────
+
+function ExpenseTable({
+  expenses, className, onDelete, deletingExpenseId,
+}: {
+  expenses: ExpenseDto[];
+  className: string;
+  /** Adds a Delete action column. */
+  onDelete?: (expense: ExpenseDto) => void;
+  deletingExpenseId?: string | null;
+}) {
+  const columns: Column<ExpenseDto>[] = onDelete
+    ? [
+        ...EXPENSE_COLUMNS,
+        {
+          header: '',
+          right: true,
+          cell: (ex) => (
+            <button
+              onClick={() => onDelete(ex)}
+              disabled={deletingExpenseId === ex.id}
+              className="text-danger text-xs hover:underline disabled:opacity-40"
+            >
+              {deletingExpenseId === ex.id ? '…' : 'Delete'}
+            </button>
+          ),
+        },
+      ]
+    : EXPENSE_COLUMNS;
+  const controls = useTableControls(expenses, columns);
+  return <DataTable controls={controls} rowKey={(ex) => ex.id} dense className={className} />;
+}
+
 // ── Job list sub-component ─────────────────────────────────────────────────
 
 function JobList({
-  jobs, loading, monthLabel, expandedJobId, expenseForm, savingExpense,
+  jobs, total, loading, monthLabel, expandedJobId, expenseForm, savingExpense,
   deletingJobId, deletingExpenseId, onToggleExpand, onDeleteJob,
   onAddExpense, onDeleteExpense, onExpenseFormChange,
 }: {
+  /** The jobs to show: the month's jobs after the search, in the chosen order. */
   jobs: JobDto[];
+  /** How many jobs the month has, whatever the search. */
+  total: number;
   loading: boolean;
   monthLabel: string;
   expandedJobId: string | null;
@@ -830,9 +952,14 @@ function JobList({
   if (loading) return (
     <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
   );
-  if (jobs.length === 0) return (
+  if (total === 0) return (
     <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
       No jobs recorded for {monthLabel}. Click <strong>+ New job</strong> to add one.
+    </div>
+  );
+  if (jobs.length === 0) return (
+    <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
+      No jobs match your search.
     </div>
   );
   return (
@@ -842,7 +969,8 @@ function JobList({
         const isDeleting = deletingJobId === job.id;
         return (
           <div key={job.id} className="rounded-xl border border-border bg-surface overflow-hidden">
-            <div className="px-5 py-4 flex items-start gap-4">
+            {/* Actions drop under the figures on a phone, so the figures keep the card's width. */}
+            <div className="px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-base">{job.title}</span>
@@ -943,36 +1071,12 @@ function JobList({
             {isExpanded && (
               <div className="border-t border-border">
                 {job.expenses.length > 0 ? (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border">
-                        <th className="px-5 py-2 text-left font-normal">Date</th>
-                        <th className="px-5 py-2 text-left font-normal">Category</th>
-                        <th className="px-5 py-2 text-left font-normal">Description</th>
-                        <th className="px-5 py-2 text-right font-normal">Amount</th>
-                        <th className="px-5 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {job.expenses.map((ex) => (
-                        <tr key={ex.id} className="hover:bg-bg-muted/40">
-                          <td className="px-5 py-2 text-text-muted text-xs">{ex.date}</td>
-                          <td className="px-5 py-2">{CATEGORY_LABELS[ex.category]}</td>
-                          <td className="px-5 py-2 text-text-muted">{ex.description ?? '—'}</td>
-                          <td className="px-5 py-2 text-right font-medium">{fmt(ex.amountCents)}</td>
-                          <td className="px-5 py-2 text-right">
-                            <button
-                              onClick={() => onDeleteExpense(job.id, ex)}
-                              disabled={deletingExpenseId === ex.id}
-                              className="text-danger text-xs hover:underline disabled:opacity-40"
-                            >
-                              {deletingExpenseId === ex.id ? '…' : 'Delete'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <ExpenseTable
+                    expenses={job.expenses}
+                    className=""
+                    onDelete={(ex) => onDeleteExpense(job.id, ex)}
+                    deletingExpenseId={deletingExpenseId}
+                  />
                 ) : (
                   <p className="px-5 py-3 text-text-muted text-sm">No expenses yet.</p>
                 )}
@@ -1041,6 +1145,110 @@ function JobList({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Submissions list sub-component ─────────────────────────────────────────
+
+function SubmissionList({
+  reports, total, loading, approvingId, decliningId, onApprove, onDecline,
+}: {
+  /** The submissions to show: after the search, in the chosen order. */
+  reports: JobDto[];
+  /** How many submissions are pending, whatever the search. */
+  total: number;
+  loading: boolean;
+  approvingId: string | null;
+  decliningId: string | null;
+  onApprove: (report: JobDto) => void;
+  onDecline: (report: JobDto) => void;
+}) {
+  if (loading) return (
+    <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
+  );
+  if (total === 0) return (
+    <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
+      No pending submissions from your team.
+    </div>
+  );
+  if (reports.length === 0) return (
+    <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">
+      No submissions match your search.
+    </div>
+  );
+  return (
+    <div className="space-y-3">
+      {reports.map((report) => (
+        <div key={report.id} className="rounded-xl border border-border bg-surface p-5">
+          {/* Approve and Decline drop under the figures on a phone. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-base">{report.title}</span>
+                <span className="text-text-muted text-xs">{report.date}</span>
+                <span className="rounded-full bg-warning/15 text-warning text-xs px-2 py-0.5">Pending</span>
+              </div>
+              {report.reportedByName && (
+                <p className="text-text-muted text-xs mt-0.5">Submitted by {report.reportedByName}</p>
+              )}
+              {(report.clientName || report.clientPhone || report.clientLocation) && (
+                <div className="flex items-center gap-3 mt-0.5 flex-wrap text-xs text-text-muted">
+                  {report.clientName && <span>👤 {report.clientName}</span>}
+                  {report.clientPhone && <span>📞 {report.clientPhone}</span>}
+                  {report.clientLocation && <span>📍 {report.clientLocation}</span>}
+                </div>
+              )}
+              {report.notes && <p className="text-text-muted text-xs mt-0.5">{report.notes}</p>}
+              <div className="flex items-center gap-4 mt-2 text-sm flex-wrap">
+                <span>
+                  <span className="text-text-muted text-xs">Charged </span>
+                  <span className="font-medium">{fmt(report.incomeCents)}</span>
+                </span>
+                {report.discountCents > 0 && (
+                  <span>
+                    <span className="text-text-muted text-xs">Discount </span>
+                    <span className="text-warning font-medium">{fmt(report.discountCents)}</span>
+                  </span>
+                )}
+                <span>
+                  <span className="text-text-muted text-xs">Income </span>
+                  <span className="text-success font-medium">{fmt(report.actualIncomeCents)}</span>
+                </span>
+                <span>
+                  <span className="text-text-muted text-xs">Expenses </span>
+                  <span className="text-danger font-medium">{fmt(report.totalExpensesCents)}</span>
+                </span>
+                <span>
+                  <span className="text-text-muted text-xs">Net </span>
+                  <span className={`font-medium ${report.netCents >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {fmt(report.netCents)}
+                  </span>
+                </span>
+              </div>
+              {report.expenses.length > 0 && (
+                <ExpenseTable expenses={report.expenses} className="mt-3 rounded-lg border border-border" />
+              )}
+            </div>
+            <div className="flex items-center gap-4 shrink-0 sm:flex-col sm:items-stretch sm:gap-2">
+              <button
+                onClick={() => onApprove(report)}
+                disabled={approvingId === report.id}
+                className="rounded-lg bg-success text-white px-4 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
+              >
+                {approvingId === report.id ? '…' : 'Approve'}
+              </button>
+              <button
+                onClick={() => onDecline(report)}
+                disabled={decliningId === report.id}
+                className="text-danger text-xs hover:underline disabled:opacity-40 text-center"
+              >
+                {decliningId === report.id ? '…' : 'Decline'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

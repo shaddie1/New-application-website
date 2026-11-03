@@ -30,6 +30,7 @@ import type {
   CreateAssetMaintenanceInput,
   InvestmentDto,
   CreateInvestmentInput,
+  UpdateInvestmentInput,
   ProfitDistributionDto,
   DeclareDistributionInput,
   MarkDistributionPaidInput,
@@ -60,6 +61,9 @@ import type {
   WebsiteJobPhotoUploadUrlResult,
   SaveWebsiteJobInput,
   WebsiteJobMutationResult,
+  PublicWebsiteJobsResult,
+  MySharesResult,
+  MySharesAccess,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -361,6 +365,17 @@ export const api = {
       auth: true,
     }),
 
+  // ── Shareholder page (the owner, or the holder linked to the account) ─────
+  /** One holder's figures; only the owner may name a holder, anyone else gets their own. */
+  myShares: (shareholderId?: string) =>
+    request<MySharesResult>(
+      `/admin/my-shares${shareholderId ? `?shareholderId=${encodeURIComponent(shareholderId)}` : ''}`,
+      { method: 'GET', auth: true },
+    ),
+
+  /** Whether the menu shows a shareholder page: the caller's own holding, and whether they may open every one. */
+  mySharesAccess: () => request<MySharesAccess>('/admin/my-shares/access', { method: 'GET', auth: true }),
+
   // ── Finance: marketing, assets, investments, distributions ───────────────
   marketingSpends: (from: string, to: string) =>
     request<{ spends: MarketingSpendDto[] }>(
@@ -410,6 +425,14 @@ export const api = {
   addInvestment: (input: CreateInvestmentInput) =>
     request<{ investment: InvestmentDto }>('/admin/finance/investments', {
       method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  /** Owner only: link an investment to a shareholder, or unlink it with null. */
+  updateInvestment: (id: string, input: UpdateInvestmentInput) =>
+    request<{ investment: InvestmentDto }>(`/admin/finance/investments/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
       auth: true,
       body: JSON.stringify(input),
     }),
@@ -545,6 +568,9 @@ export const api = {
 
   deleteDocument: (id: string) =>
     request<{ ok: true }>(`/admin/documents/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  /** Published website jobs with their photo URLs: the public list the website builds from, no sign-in. */
+  publishedWebsiteJobs: () => request<PublicWebsiteJobsResult>('/website-jobs', { method: 'GET' }),
 
   // ── Website jobs (owner, admin and marketing) ────────────────────────────
   websiteJobs: () => request<WebsiteJobsResult>('/admin/website-jobs', { method: 'GET', auth: true }),
