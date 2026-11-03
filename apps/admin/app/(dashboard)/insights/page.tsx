@@ -143,7 +143,7 @@ export default function InsightsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Insights</h1>
+          <h1 className="font-serif text-3xl">Insights</h1>
           <p className="mt-1 text-sm text-charcoal-muted">Targets, trends and where the money comes from.</p>
         </div>
         <div className="flex items-center gap-2">

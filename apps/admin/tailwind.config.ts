@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import animate from 'tailwindcss-animate';
 import { freshTailwindTheme } from '@onyxhawk/ui-tokens/tailwind';
 
 const config: Config = {
@@ -6,7 +7,8 @@ const config: Config = {
   theme: {
     extend: freshTailwindTheme,
   },
-  plugins: [],
+  // The enter and exit animations (`animate-in`, `fade-in-0`, …) the dialogs use.
+  plugins: [animate],
 };
 
 export default config;

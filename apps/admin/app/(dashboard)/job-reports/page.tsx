@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import type { ExpenseCategory, ExpenseDto, JobDto } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
+import { useConfirm } from '../../../src/components/ui/confirm-dialog';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
@@ -36,6 +38,7 @@ const blankExpenseForm = () => ({
 });
 
 export default function JobReportsPage() {
+  const confirm = useConfirm();
   const session = useRequireAdmin();
 
   const [reports, setReports] = useState<JobDto[]>([]);
@@ -103,10 +106,11 @@ export default function JobReportsPage() {
 
   // ── Delete report ──────────────────────────────────────────────────────────
   const handleDelete = async (report: JobDto) => {
-    if (!confirm(`Delete "${report.title}"?`)) return;
+    if (!(await confirm({ title: `Delete "${report.title}"?`, confirmLabel: 'Delete', destructive: true }))) return;
     setDeletingReportId(report.id);
     try {
       await api.deleteMyReport(report.id);
+      toast.success(`Deleted "${report.title}"`);
       setReports((prev) => prev.filter((r) => r.id !== report.id));
       if (expandedId === report.id) setExpandedId(null);
     } catch {
@@ -170,7 +174,7 @@ export default function JobReportsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Job Reports</h1>
+          <h1 className="font-serif text-3xl">Job Reports</h1>
           <p className="text-text-muted text-sm mt-1">Submit job details after each completed job. The owner reviews and approves them.</p>
         </div>
         <button

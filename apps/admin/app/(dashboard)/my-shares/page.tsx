@@ -159,7 +159,7 @@ export default function MySharesPage() {
   if (load.state === 'notLinked') {
     return (
       <div>
-        <h1 className="mb-6 text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
+        <h1 className="font-serif mb-6 text-3xl">
           My shares
         </h1>
         <div className="max-w-prose rounded-xl border border-line bg-white p-6 text-sm text-charcoal">
@@ -182,7 +182,7 @@ export default function MySharesPage() {
       <header className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           {holder && <p className="mb-1 text-sm text-charcoal-muted">Shareholder report</p>}
-          <h1 className="text-3xl text-charcoal" style={{ fontFamily: 'Georgia, serif' }}>
+          <h1 className="font-serif text-3xl text-charcoal">
             {holder ? holder.name : isOwner ? 'Shareholder pages' : 'My shares'}
           </h1>
           {holder && (

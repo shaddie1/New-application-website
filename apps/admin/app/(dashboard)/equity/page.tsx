@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import type { AdminStaffDto, EquityOverview, ShareholderDto, ShareholderKind } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
+import { useConfirm } from '../../../src/components/ui/confirm-dialog';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { CATEGORICAL, OTHER_GREY } from '../../../src/components/charts';
 
@@ -57,6 +59,7 @@ function accountLabel(u: AdminStaffDto) {
 }
 
 export default function EquityPage() {
+  const confirm = useConfirm();
   const session = useRequireAdmin();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -165,10 +168,12 @@ export default function EquityPage() {
     const linkChanged = userId !== s.userId;
     if (linkChanged && userId && s.userId) {
       const next = staffById.get(userId);
-      const ok = confirm(
-        `${next ? accountLabel(next) : 'The new account'} will see ${name}'s figures. `
+      const ok = await confirm({
+        title: `Change who sees ${name}'s figures?`,
+        description: `${next ? accountLabel(next) : 'The new account'} will see ${name}'s figures. `
           + `${linkedLabel(s)} will no longer see them.`,
-      );
+        confirmLabel: 'Change account',
+      });
       if (!ok) return;
     }
     setSaving(true);
@@ -191,12 +196,13 @@ export default function EquityPage() {
   };
 
   const handleRemove = async (s: ShareholderDto) => {
-    if (!confirm(`Remove ${s.name} from the cap table?`)) return;
+    if (!(await confirm({ title: `Remove ${s.name} from the cap table?`, confirmLabel: 'Remove', destructive: true }))) return;
     setRemovingId(s.id);
     setError(null);
     try {
       await api.removeShareholder(s.id);
       await load();
+      toast.success(`Removed ${s.name}`);
     } catch {
       setError('Could not remove shareholder.');
     } finally {
@@ -224,7 +230,7 @@ export default function EquityPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Ownership</h1>
+        <h1 className="font-serif text-3xl">Ownership</h1>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">←</button>
           <span className="text-sm font-medium w-36 text-center">{monthLabel}</span>
@@ -591,7 +597,7 @@ function StatCard({
   return (
     <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className={`mt-2 text-2xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>{value}</p>
+      <p className={`font-serif mt-2 text-2xl ${color ?? ''}`}>{value}</p>
     </div>
   );
 }

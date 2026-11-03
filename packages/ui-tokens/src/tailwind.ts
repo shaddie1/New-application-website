@@ -76,4 +76,12 @@ export const freshTailwindTheme = {
     'ink-soft': freshNeutrals.inkSoft,
     'ink-border': freshNeutrals.inkBorder,
   },
+  // DM Serif Display for headlines, Raleway for body. Each app's root layout
+  // loads both with next/font, which defines these variables. Only list a
+  // var() an app defines: an undefined var() voids the whole stack and the
+  // browser drops to Times New Roman.
+  fontFamily: {
+    serif: ['var(--font-serif)', 'Georgia', 'Cambria', 'serif'],
+    sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
+  },
 };

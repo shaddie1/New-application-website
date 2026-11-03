@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import type { CompanyDocumentDto, DocumentCategory } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
+import { useConfirm } from '../../../src/components/ui/confirm-dialog';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
 const CATEGORY_LABELS: Record<DocumentCategory, string> = {
@@ -48,6 +50,7 @@ function ExpiryBadge({ days, date }: { days: number | null; date: string | null 
 }
 
 export default function DocumentsPage() {
+  const confirm = useConfirm();
   const session = useRequireAdmin();
   const [docs, setDocs] = useState<CompanyDocumentDto[]>([]);
   const [uploadEnabled, setUploadEnabled] = useState(false);
@@ -144,7 +147,7 @@ export default function DocumentsPage() {
   if (forbidden) {
     return (
       <div className="rounded-xl border border-line bg-white p-8 text-center">
-        <h1 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>Shareholders only</h1>
+        <h1 className="font-serif text-2xl">Shareholders only</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-charcoal-muted">
           Company documents are visible only to the owner and people on the cap table.
         </p>
@@ -162,7 +165,7 @@ export default function DocumentsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Company documents</h1>
+          <h1 className="font-serif text-3xl">Company documents</h1>
           <p className="mt-1 text-sm text-charcoal-muted">
             Incorporation, tax, licences, insurance and contracts — visible to shareholders only.
           </p>
@@ -293,8 +296,8 @@ export default function DocumentsPage() {
                         <button
                           className="text-xs text-danger hover:underline"
                           onClick={async () => {
-                            if (!confirm(`Delete "${d.title}"?`)) return;
-                            try { await api.deleteDocument(d.id); await load(); }
+                            if (!(await confirm({ title: `Delete "${d.title}"?`, confirmLabel: 'Delete', destructive: true }))) return;
+                            try { await api.deleteDocument(d.id); await load(); toast.success(`Deleted "${d.title}"`); }
                             catch { setError('Could not delete document.'); }
                           }}
                         >Delete</button>

@@ -1,14 +1,23 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { Raleway } from 'next/font/google';
+import { DM_Serif_Display, Raleway } from 'next/font/google';
 import { AuthProvider } from '../src/lib/auth';
 
-// Same face as the admin app. Self-hosted at build time by next/font, and it
-// defines --font-sans, which the Tailwind `font-sans` stack starts with.
+// Same faces as the admin app. Self-hosted at build time by next/font, they
+// define --font-sans and --font-serif, which the Tailwind `font-sans` and
+// `font-serif` stacks start with.
 const raleway = Raleway({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-sans',
+  display: 'swap',
+});
+
+// The headline face has a single weight, so serif headings stay unbolded.
+const dmSerif = DM_Serif_Display({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-serif',
   display: 'swap',
 });
 
@@ -49,7 +58,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={raleway.variable}>
+    <html lang="en" className={`${raleway.variable} ${dmSerif.variable}`}>
       <body className="font-sans antialiased">
         <AuthProvider>{children}</AuthProvider>
       </body>

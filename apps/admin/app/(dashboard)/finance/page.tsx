@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import type {
   AssetDto,
   AssetCategory,
@@ -19,6 +20,8 @@ import type {
 import { RankedBars, type RankedItem } from '../../../src/components/charts';
 import { DataTable, TableToolbar, useTableControls, type Column } from '../../../src/components/DataTable';
 import { api, ApiError } from '../../../src/lib/api';
+import { useConfirm } from '../../../src/components/ui/confirm-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../src/components/ui/tabs';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { downloadCsv, csvMoney } from '../../../src/lib/csv';
 
@@ -98,10 +101,10 @@ export default function FinancePage() {
   if (!session) return null;
 
   return (
-    <div>
+    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Finance</h1>
+          <h1 className="font-serif text-3xl">Finance</h1>
           <p className="mt-1 text-sm text-text-muted">
             Every entry carries a source reference and shows who recorded it.
           </p>
@@ -120,29 +123,21 @@ export default function FinancePage() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-border">
+      <TabsList>
         {TABS.map(({ key, label: text }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`border-b-2 px-4 py-2 text-sm transition-colors ${
-              tab === key
-                ? 'border-aqua font-medium text-navy'
-                : 'border-transparent text-text-muted hover:text-text'
-            }`}
-          >
+          <TabsTrigger key={key} value={key}>
             {text}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
 
-      {tab === 'revenue' && <RevenueTab from={from} to={to} onError={fail} />}
-      {tab === 'marketing' && <MarketingTab from={from} to={to} onError={fail} />}
-      {tab === 'assets' && <AssetsTab onError={fail} />}
-      {tab === 'investments' && <InvestmentsTab onError={fail} isOwner={session.user.isOwner === true} />}
-      {tab === 'sharing' && <SharingTab onError={fail} isOwner={session.user.isOwner === true} />}
-      {tab === 'receipts' && <ReceiptsTab from={from} to={to} onError={fail} />}
-    </div>
+      <TabsContent value="revenue"><RevenueTab from={from} to={to} onError={fail} /></TabsContent>
+      <TabsContent value="marketing"><MarketingTab from={from} to={to} onError={fail} /></TabsContent>
+      <TabsContent value="assets"><AssetsTab onError={fail} /></TabsContent>
+      <TabsContent value="investments"><InvestmentsTab onError={fail} isOwner={session.user.isOwner === true} /></TabsContent>
+      <TabsContent value="sharing"><SharingTab onError={fail} isOwner={session.user.isOwner === true} /></TabsContent>
+      <TabsContent value="receipts"><ReceiptsTab from={from} to={to} onError={fail} /></TabsContent>
+    </Tabs>
   );
 }
 
@@ -231,6 +226,7 @@ function RevenueTab({ from, to, onError }: TabProps & { from: string; to: string
 // ── Marketing ───────────────────────────────────────────────────────────────
 
 function MarketingTab({ from, to, onError }: TabProps & { from: string; to: string }) {
+  const confirm = useConfirm();
   const [rows, setRows] = useState<MarketingSpendDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -339,8 +335,8 @@ function MarketingTab({ from, to, onError }: TabProps & { from: string; to: stri
         <button
           className="text-xs text-danger hover:underline"
           onClick={async () => {
-            if (!confirm(`Delete "${r.campaign}"?`)) return;
-            try { await api.deleteMarketingSpend(r.id); await load(); }
+            if (!(await confirm({ title: `Delete "${r.campaign}"?`, confirmLabel: 'Delete', destructive: true }))) return;
+            try { await api.deleteMarketingSpend(r.id); await load(); toast.success(`Deleted "${r.campaign}"`); }
             catch (err) { onError(err, 'Could not delete'); }
           }}
         >Delete</button>
@@ -687,6 +683,7 @@ function AssetsTab({ onError }: TabProps) {
 // ── Investments ─────────────────────────────────────────────────────────────
 
 function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
+  const confirm = useConfirm();
   const [rows, setRows] = useState<InvestmentDto[]>([]);
   const [holders, setHolders] = useState<ShareholderDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -798,8 +795,8 @@ function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
       cell: (r) => isOwner && (
         <button className="text-xs text-danger hover:underline"
           onClick={async () => {
-            if (!confirm(`Delete investment from ${r.source}?`)) return;
-            try { await api.deleteInvestment(r.id); await load(); }
+            if (!(await confirm({ title: `Delete investment from ${r.source}?`, confirmLabel: 'Delete', destructive: true }))) return;
+            try { await api.deleteInvestment(r.id); await load(); toast.success(`Deleted investment from ${r.source}`); }
             catch (err) { onError(err, 'Could not delete'); }
           }}>Delete</button>
       ),
