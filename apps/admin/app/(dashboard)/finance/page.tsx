@@ -140,7 +140,7 @@ export default function FinancePage() {
       {tab === 'marketing' && <MarketingTab from={from} to={to} onError={fail} />}
       {tab === 'assets' && <AssetsTab onError={fail} />}
       {tab === 'investments' && <InvestmentsTab onError={fail} isOwner={session.user.isOwner === true} />}
-      {tab === 'sharing' && <SharingTab onError={fail} />}
+      {tab === 'sharing' && <SharingTab onError={fail} isOwner={session.user.isOwner === true} />}
       {tab === 'receipts' && <ReceiptsTab from={from} to={to} onError={fail} />}
     </div>
   );
@@ -794,7 +794,8 @@ function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
     {
       header: '',
       right: true,
-      cell: (r) => (
+      // Investment writes are owner-only, so only the owner gets Delete.
+      cell: (r) => isOwner && (
         <button className="text-xs text-danger hover:underline"
           onClick={async () => {
             if (!confirm(`Delete investment from ${r.source}?`)) return;
@@ -813,7 +814,7 @@ function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
         csv={{ filename: 'investments' }}
         summary={`${rows.length} record${rows.length === 1 ? '' : 's'} · ${fmt(total)} invested`}
       >
-        <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="investment" />
+        {isOwner && <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="investment" />}
       </TableToolbar>
 
       {showForm && (
@@ -885,7 +886,11 @@ function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
       )}
 
       {loading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
-        <Empty>No capital injections recorded yet.</Empty>
+        <Empty>
+          {isOwner
+            ? 'No capital injections recorded yet.'
+            : 'Only investments linked to your own holding show here; the owner records investments.'}
+        </Empty>
       ) : (
         <DataTable controls={controls} rowKey={(r) => r.id} />
       )}
@@ -895,7 +900,7 @@ function InvestmentsTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
 
 // ── Profit sharing ──────────────────────────────────────────────────────────
 
-function SharingTab({ onError }: TabProps) {
+function SharingTab({ onError, isOwner }: TabProps & { isOwner: boolean }) {
   const [rows, setRows] = useState<ProfitDistributionDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -962,12 +967,12 @@ function SharingTab({ onError }: TabProps) {
       csv: (r) => label(r.status),
     },
     {
-      // The paid date, or Mark paid while unpaid. Sort and export read the date, never the button.
+      // The paid date, or Mark paid for the owner while unpaid. Sort and export read the date, never the button.
       header: 'Paid on',
       csvHeader: 'Paid at',
       right: true,
       cell: (r) =>
-        r.status !== 'PAID' ? (
+        r.status !== 'PAID' && isOwner ? (
           <button
             className={btnGhost}
             onClick={async () => {
@@ -1010,7 +1015,7 @@ function SharingTab({ onError }: TabProps) {
         csv={{ filename: 'profit-distributions' }}
         summary={`${periods.size} declared period${periods.size === 1 ? '' : 's'}`}
       >
-        <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="declaration" />
+        {isOwner && <NewToggle open={showForm} onToggle={() => setShowForm((v) => !v)} what="declaration" />}
       </TableToolbar>
 
       {showForm && (
@@ -1057,7 +1062,11 @@ function SharingTab({ onError }: TabProps) {
       )}
 
       {loading ? <Empty>Loading…</Empty> : periods.size === 0 ? (
-        <Empty>No periods declared yet. Declare one to split a period’s profit across the cap table.</Empty>
+        <Empty>
+          {isOwner
+            ? 'No periods declared yet. Declare one to split a period’s profit across the cap table.'
+            : 'Only payouts to your own holding show here; the owner declares periods.'}
+        </Empty>
       ) : shown.length === 0 ? (
         <Empty>No payouts match “{controls.query.trim()}”.</Empty>
       ) : (
