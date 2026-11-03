@@ -38,7 +38,7 @@ export default function BookingsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Bookings</h1>
+      <h1 className="font-serif text-3xl">Bookings</h1>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {STATUS_FILTERS.map((f) => (
@@ -154,7 +154,7 @@ function AssignModal({
   return (
     <div className="fixed inset-0 bg-surface-dark/50 flex items-center justify-center px-4 z-50" onClick={() => onDone(current)}>
       <div className="w-full max-w-md rounded-2xl bg-bg p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>Crew · {current.reference}</h2>
+        <h2 className="font-serif text-2xl">Crew · {current.reference}</h2>
         <p className="text-text-muted text-sm mt-1">{formatWhen(current.scheduledAt)} · {current.address.line1}</p>
 
         {error && <div className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-danger text-sm">{error}</div>}

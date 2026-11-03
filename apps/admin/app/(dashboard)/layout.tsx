@@ -1,5 +1,27 @@
 'use client';
 
+import {
+  CalendarDays,
+  Calculator,
+  ChartColumn,
+  ChartPie,
+  ClipboardCheck,
+  ClipboardList,
+  FileText,
+  FolderKanban,
+  FolderLock,
+  Globe,
+  LayoutDashboard,
+  Lightbulb,
+  LogOut,
+  Menu,
+  TrendingUp,
+  UserCog,
+  Users,
+  Wallet,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -7,35 +29,39 @@ import type { MySharesAccess } from '@onyxhawk/types';
 import { api } from '../../src/lib/api';
 import { useAuth, useRequireAdmin } from '../../src/lib/auth';
 
+type NavItem = { href: string; label: string; icon: LucideIcon };
+
 /** Grouped so the rail reads as sections rather than one long list. */
-const OPERATIONS = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/projects', label: 'Projects' },
-  { href: '/calendar', label: 'Calendar' },
-  { href: '/bookings', label: 'Bookings' },
-  { href: '/quotes', label: 'Quotes' },
+const OPERATIONS: NavItem[] = [
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/projects', label: 'Projects', icon: FolderKanban },
+  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
+  { href: '/bookings', label: 'Bookings', icon: ClipboardList },
+  { href: '/quotes', label: 'Quotes', icon: FileText },
 ];
 
-const OWNER_FINANCE = [
-  { href: '/insights', label: 'Insights' },
-  { href: '/financials', label: 'Financials' },
-  { href: '/finance', label: 'Finance' },
-  { href: '/rates', label: 'Quote rates' },
+const OWNER_FINANCE: NavItem[] = [
+  { href: '/insights', label: 'Insights', icon: Lightbulb },
+  { href: '/financials', label: 'Financials', icon: ChartColumn },
+  { href: '/finance', label: 'Finance', icon: Wallet },
+  { href: '/rates', label: 'Quote rates', icon: Calculator },
 ];
 
-const OWNER_GOVERNANCE = [
-  { href: '/equity', label: 'Ownership' },
+const OWNER_GOVERNANCE: NavItem[] = [
+  { href: '/equity', label: 'Ownership', icon: ChartPie },
   // Shareholder-only; the API refuses non-shareholders regardless.
-  { href: '/documents', label: 'Documents' },
-  { href: '/team', label: 'Team' },
+  { href: '/documents', label: 'Documents', icon: FolderLock },
+  { href: '/team', label: 'Team', icon: UserCog },
 ];
 
 // Owner, admins and marketing; the API refuses everyone else regardless.
-const WEBSITE = [{ href: '/website-jobs', label: 'Website jobs' }];
+const WEBSITE: NavItem[] = [{ href: '/website-jobs', label: 'Website jobs', icon: Globe }];
+
+const JOB_REPORTS: NavItem = { href: '/job-reports', label: 'Job Reports', icon: ClipboardCheck };
 
 /** The owner opens every holder's page; anyone linked to the shareholder list opens their own. */
-const SHAREHOLDER_PAGES = { href: '/my-shares', label: 'Shareholder pages' };
-const MY_SHARES = { href: '/my-shares', label: 'My shares' };
+const SHAREHOLDER_PAGES: NavItem = { href: '/my-shares', label: 'Shareholder pages', icon: Users };
+const MY_SHARES: NavItem = { href: '/my-shares', label: 'My shares', icon: TrendingUp };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = useRequireAdmin();
@@ -88,7 +114,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           { title: 'Finance', items: OWNER_FINANCE },
           { title: 'Governance', items: governance },
         ]
-      : [{ title: 'Operations', items: [...OPERATIONS, { href: '/job-reports', label: 'Job Reports' }] }]),
+      : [{ title: 'Operations', items: [...OPERATIONS, JOB_REPORTS] }]),
     ...(canPublishWebsite ? [{ title: 'Website', items: WEBSITE }] : []),
   ];
 
@@ -107,12 +133,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Link
                   href={item.href}
                   onClick={() => setOpen(false)}
-                  className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                  aria-current={isActive(item.href) ? 'page' : undefined}
+                  className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
                     isActive(item.href)
                       ? 'bg-charcoal font-medium text-white'
                       : 'text-charcoal-muted hover:bg-mist hover:text-charcoal'
                   }`}
                 >
+                  <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden />
                   {item.label}
                 </Link>
               </li>
@@ -131,7 +159,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <span className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-8 w-auto" />
-          <span className="text-base" style={{ fontFamily: 'Georgia, serif' }}>
+          <span className="font-serif text-base">
             OnyxHawk <span className="text-aqua-deep">Admin</span>
           </span>
         </span>
@@ -141,9 +169,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           aria-expanded={open}
           className="rounded-md p-2 text-charcoal"
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-            {open ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
-          </svg>
+          {open ? <X size={22} strokeWidth={1.8} aria-hidden /> : <Menu size={22} strokeWidth={1.8} aria-hidden />}
         </button>
       </div>
 
@@ -155,7 +181,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/" className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-9 w-auto" />
-            <span className="text-base leading-tight" style={{ fontFamily: 'Georgia, serif' }}>
+            <span className="font-serif text-base leading-tight">
               OnyxHawk <span className="text-aqua-deep">Admin</span>
             </span>
           </Link>
@@ -165,7 +191,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className="border-t border-line px-5 py-4">
           <p className="truncate text-sm text-charcoal">{session.user.fullName}</p>
-          <button onClick={signOut} className="mt-1 text-xs text-danger hover:underline">
+          <button onClick={signOut} className="mt-1 inline-flex items-center gap-1.5 text-xs text-danger hover:underline">
+            <LogOut className="h-3.5 w-3.5" aria-hidden />
             Sign out
           </button>
         </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import type {
   ClientSegment,
   PaymentFrequency,
@@ -12,6 +13,8 @@ import type {
 } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
+import { useConfirm } from '../../../src/components/ui/confirm-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../src/components/ui/tabs';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
 const STAGE_LABELS: Record<ProjectStage, string> = {
@@ -108,6 +111,7 @@ function ProgressBar({ percent, blocked }: { percent: number; blocked: boolean }
 }
 
 export default function ProjectsPage() {
+  const confirm = useConfirm();
   const session = useRequireAdmin();
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [serviceLines, setServiceLines] = useState<{ code: string; name: string }[]>([]);
@@ -212,7 +216,7 @@ export default function ProjectsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Projects</h1>
+          <h1 className="font-serif text-3xl">Projects</h1>
           <p className="mt-1 text-sm text-charcoal-muted">
             Each project carries a checklist of questions. Answering them is what moves the tracker.
           </p>
@@ -365,8 +369,8 @@ export default function ProjectsPage() {
               newQuestion={newQuestion}
               setNewQuestion={setNewQuestion}
               onDelete={async () => {
-                if (!confirm(`Delete "${p.title}" and its checklist?`)) return;
-                try { await api.deleteProject(p.id); await load(); }
+                if (!(await confirm({ title: `Delete "${p.title}" and its checklist?`, confirmLabel: 'Delete', destructive: true }))) return;
+                try { await api.deleteProject(p.id); await load(); toast.success(`Deleted "${p.title}"`); }
                 catch { setError('Could not delete the project.'); }
               }}
             />
@@ -376,6 +380,8 @@ export default function ProjectsPage() {
     </div>
   );
 }
+
+type ProjectTab = 'questions' | 'log';
 
 /** The project's history, fetched the first time the log tab is opened. */
 function ActivityLog({ projectId, reloadKey }: { projectId: string; reloadKey: number }) {
@@ -435,7 +441,7 @@ function ProjectCard({
   setNewQuestion: (v: string) => void;
   onDelete: () => void;
 }) {
-  const [tab, setTab] = useState<'questions' | 'log'>('questions');
+  const [tab, setTab] = useState<ProjectTab>('questions');
 
   // Group the checklist by its section headings.
   const sections = new Map<string, ProjectCheckDto[]>();
@@ -523,25 +529,24 @@ function ProjectCard({
       </div>
 
       {expanded && (
-        <div className="border-t border-line bg-mist/60 px-5 py-4">
-          <div className="mb-4 flex items-center gap-1 border-b border-line">
-            <button
-              onClick={() => setTab('questions')}
-              className={`border-b-2 px-3 py-2 text-sm ${tab === 'questions' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
-            >
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as ProjectTab)}
+          className="border-t border-line bg-mist/60 px-5 py-4"
+        >
+          <TabsList className="mb-4 items-center border-line">
+            <TabsTrigger value="questions" className="px-3 text-charcoal-muted hover:text-charcoal">
               Questions ({p.checklistCount})
-            </button>
-            <button
-              onClick={() => setTab('log')}
-              className={`border-b-2 px-3 py-2 text-sm ${tab === 'log' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
-            >
+            </TabsTrigger>
+            <TabsTrigger value="log" className="px-3 text-charcoal-muted hover:text-charcoal">
               Activity log ({p.eventCount})
-            </button>
-          </div>
+            </TabsTrigger>
+          </TabsList>
 
-          {tab === 'log' ? (
+          <TabsContent value="log">
             <ActivityLog projectId={p.id} reloadKey={p.eventCount} />
-          ) : (
+          </TabsContent>
+          <TabsContent value="questions">
         <>
           {/* Answers write straight to the server, so say so — an admin who
               expects a submit button will otherwise assume nothing was kept. */}
@@ -644,13 +649,13 @@ function ProjectCard({
             <button onClick={onToggle} className={btn}>Done</button>
           </div>
         </>
-          )}
+          </TabsContent>
 
           <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs text-charcoal-muted">
             <span>Created by {p.createdByName ?? 'unknown'} · {new Date(p.createdAt).toLocaleDateString('en-KE')}</span>
             <button onClick={onDelete} className="text-danger hover:underline">Delete project</button>
           </div>
-        </div>
+        </Tabs>
       )}
     </div>
   );

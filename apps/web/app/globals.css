@@ -12,8 +12,8 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Headlines use a serif to match the mockups (Georgia for now). A display
-   face such as DM Serif Display can be wired via next/font later. */
+/* Headlines use DM Serif Display, loaded in the root layout. A display face
+   reads best slightly tightened. */
 .font-serif {
   letter-spacing: -0.01em;
 }

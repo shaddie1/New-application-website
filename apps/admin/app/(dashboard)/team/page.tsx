@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import type { AdminStaffDto, StaffRole } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
+import { useConfirm } from '../../../src/components/ui/confirm-dialog';
 import { useAuth } from '../../../src/lib/auth';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -25,6 +27,7 @@ const e164 = (input: string): string => {
 };
 
 export default function TeamPage() {
+  const confirm = useConfirm();
   const { session } = useAuth();
   const isOwner = !!session?.user.isOwner;
 
@@ -109,11 +112,17 @@ export default function TeamPage() {
   }
 
   async function remove(member: AdminStaffDto) {
-    if (!confirm(`Remove ${member.fullName} from the team? They’ll become a normal customer.`)) return;
+    if (!(await confirm({
+      title: `Remove ${member.fullName} from the team?`,
+      description: 'They’ll become a normal customer.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) return;
     setError(null);
     try {
       await api.removeStaff(member.id);
       await load();
+      toast.success(`Removed ${member.fullName}`);
     } catch (err) {
       setError(msg(err, 'Could not remove the team member.'));
     }
@@ -122,7 +131,7 @@ export default function TeamPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
+        <h1 className="font-serif text-3xl">
           Team
         </h1>
         <p className="text-text-muted text-sm mt-1">Add or remove admins and support staff. Only you (owner) can do this.</p>

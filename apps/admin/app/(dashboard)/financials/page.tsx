@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import type {
   AllTimeTotals,
   ClientSegment,
@@ -20,6 +21,8 @@ import {
   type CsvExport,
 } from '../../../src/components/DataTable';
 import { api, ApiError } from '../../../src/lib/api';
+import { useConfirm } from '../../../src/components/ui/confirm-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../src/components/ui/tabs';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { csvMoney } from '../../../src/lib/csv';
 
@@ -213,6 +216,7 @@ const TREND_COLUMNS: Column<MonthlyTrendItem>[] = [
 type Tab = 'jobs' | 'submissions' | 'trends';
 
 export default function FinancialsPage() {
+  const confirm = useConfirm();
   const session = useRequireAdmin();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -345,10 +349,11 @@ export default function FinancialsPage() {
 
   // ── Delete job ─────────────────────────────────────────────────────────────
   const handleDeleteJob = async (job: JobDto) => {
-    if (!confirm(`Delete "${job.title}" and all its expenses?`)) return;
+    if (!(await confirm({ title: `Delete "${job.title}" and all its expenses?`, confirmLabel: 'Delete', destructive: true }))) return;
     setDeletingJobId(job.id);
     try {
       await api.deleteJob(job.id);
+      toast.success(`Deleted "${job.title}"`);
       setJobs((prev) => prev.filter((j) => j.id !== job.id));
       setSummary((prev) => {
         if (!prev) return prev;
@@ -395,10 +400,11 @@ export default function FinancialsPage() {
 
   // ── Decline (delete) a pending submission ───────────────────────────────────
   const handleDecline = async (report: JobDto) => {
-    if (!confirm(`Decline and delete "${report.title}"?`)) return;
+    if (!(await confirm({ title: `Decline and delete "${report.title}"?`, confirmLabel: 'Decline and delete', destructive: true }))) return;
     setDeletingJobId(report.id);
     try {
       await api.deleteReport(report.id);
+      toast.success(`Declined "${report.title}"`);
       setPendingReports((prev) => prev.filter((r) => r.id !== report.id));
     } catch {
       setError('Could not decline report.');
@@ -511,10 +517,10 @@ export default function FinancialsPage() {
   );
 
   return (
-    <div>
+    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Financials</h1>
+        <h1 className="font-serif text-3xl">Financials</h1>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">←</button>
           <span className="text-sm font-medium w-36 text-center">{monthLabel}</span>
@@ -528,19 +534,19 @@ export default function FinancialsPage() {
       <div className="mb-6 rounded-xl border border-border bg-surface-dark px-5 py-4 flex flex-wrap items-center gap-x-10 gap-y-3">
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Projects so far</p>
-          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="font-serif mt-1 text-2xl text-text-on-dark">
             {loading || !totals ? '—' : totals.totalProjects}
           </p>
         </div>
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Income generated so far</p>
-          <p className="mt-1 text-2xl text-aqua-light" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="font-serif mt-1 text-2xl text-aqua-light">
             {loading || !totals ? '—' : fmt(totals.totalIncomeCents)}
           </p>
         </div>
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Net profit so far</p>
-          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="font-serif mt-1 text-2xl text-text-on-dark">
             {loading || !totals ? '—' : fmt(totals.totalNetCents)}
           </p>
         </div>
@@ -563,28 +569,20 @@ export default function FinancialsPage() {
       </div>
 
       {/* Tabs. On a phone the strip scrolls on its own rather than widening the page. */}
-      <div className="flex gap-1 mb-4 border-b border-border overflow-x-auto">
+      <TabsList className="mb-4 flex-nowrap overflow-x-auto">
         {([
           { key: 'jobs', label: `Jobs — ${monthLabel}` },
           { key: 'submissions', label: `Submissions${pendingReports.length > 0 ? ` (${pendingReports.length})` : ''}` },
           { key: 'trends', label: 'Monthly trends' },
         ] as { key: Tab; label: string }[]).map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm border-b-2 transition-colors ${
-              tab === key
-                ? 'border-aqua text-navy font-medium'
-                : 'border-transparent text-text-muted hover:text-text'
-            }`}
-          >
+          <TabsTrigger key={key} value={key} className="shrink-0 whitespace-nowrap">
             {label}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
 
       {/* ── Tab: Jobs ──────────────────────────────────────────────────────── */}
-      {tab === 'jobs' && (
+      <TabsContent value="jobs">
         <>
           {!loading && summary && (
             <div className="mb-6">
@@ -769,10 +767,10 @@ export default function FinancialsPage() {
             onExpenseFormChange={setExpenseForm}
           />
         </>
-      )}
+      </TabsContent>
 
       {/* ── Tab: Submissions ───────────────────────────────────────────────── */}
-      {tab === 'submissions' && (
+      <TabsContent value="submissions">
         <div>
           {!loading && pendingReports.length > 0 && (
             <TableToolbar
@@ -792,10 +790,10 @@ export default function FinancialsPage() {
             onDecline={(r) => void handleDecline(r)}
           />
         </div>
-      )}
+      </TabsContent>
 
       {/* ── Tab: Monthly trends ────────────────────────────────────────────── */}
-      {tab === 'trends' && (
+      <TabsContent value="trends">
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <span className="text-sm text-text-muted">Income, expenses and profit for every month.</span>
@@ -866,8 +864,8 @@ export default function FinancialsPage() {
             </>
           )}
         </div>
-      )}
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -1261,7 +1259,7 @@ function SummaryCard({
   return (
     <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className={`mt-2 text-3xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>
+      <p className={`font-serif mt-2 text-3xl ${color ?? ''}`}>
         {loading || cents === undefined ? '—' : fmt(cents)}
       </p>
     </div>

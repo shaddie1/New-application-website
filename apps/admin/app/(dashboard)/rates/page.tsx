@@ -84,7 +84,7 @@ export default function RatesPage() {
   if (forbidden || !canViewEstimate(session)) {
     return (
       <div className="rounded-xl border border-line bg-white p-8 text-center">
-        <h1 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>Owner and finance only</h1>
+        <h1 className="font-serif text-2xl">Owner and finance only</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-charcoal-muted">
           The rates card sets pay, margins and market prices. It is visible to the owner, admins, the financial
           manager and the COO.
@@ -100,7 +100,7 @@ export default function RatesPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Quote rates</h1>
+          <h1 className="font-serif text-3xl">Quote rates</h1>
           <p className="mt-1 text-sm text-charcoal-muted">
             Pay, time policy, transport, market prices and production rates — everything an estimate is built from.
             {meta.updatedAt

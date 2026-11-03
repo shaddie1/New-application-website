@@ -25,7 +25,7 @@ const TILE_ROW = 'grid gap-4 grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]';
 export function SectionHeading({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="mb-4">
-      <h2 className="text-2xl text-charcoal" style={{ fontFamily: 'Georgia, serif' }}>
+      <h2 className="font-serif text-2xl text-charcoal">
         {title}
       </h2>
       {children && <p className="mt-1 max-w-prose text-sm text-charcoal-muted">{children}</p>}
