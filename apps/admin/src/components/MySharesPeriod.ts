@@ -3,7 +3,7 @@ import type { StatComparison } from './charts';
 import { money } from './charts';
 
 /**
- * The shareholder page's period model (AS1). A period is one of the 12 months
+ * The shareholder page's period model. A period is one of the 12 months
  * shown ("YYYY-MM"), this quarter, this year or all time. The page holds one
  * period; the picker and a click on either month chart both set it, and
  * everything below the header follows it without a refetch.
@@ -14,8 +14,12 @@ export type PeriodKey = string; // "YYYY-MM" | LongPeriod
 
 export const LONG_PERIODS: readonly LongPeriod[] = ['quarter', 'year', 'allTime'];
 
+function isLongPeriod(key: PeriodKey): key is LongPeriod {
+  return (LONG_PERIODS as readonly string[]).includes(key);
+}
+
 /** How many months the charts and the picker show; the payload carries 25. */
-export const MONTHS_SHOWN = 12;
+const MONTHS_SHOWN = 12;
 
 export interface PeriodView {
   key: PeriodKey;
@@ -43,13 +47,13 @@ export function shownMonths(data: MyShares): MySharesMonth[] {
 
 /** A picked period that still exists, else the month in progress (the default). */
 export function resolvePeriod(data: MyShares, picked: PeriodKey | null): PeriodKey {
-  if (picked && (LONG_PERIODS as readonly string[]).includes(picked)) return picked;
+  if (picked && isLongPeriod(picked)) return picked;
   if (picked && shownMonths(data).some((m) => m.key === picked)) return picked;
   return data.currentMonth;
 }
 
 export function periodView(data: MyShares, key: PeriodKey): PeriodView {
-  if (key === 'quarter' || key === 'year' || key === 'allTime') {
+  if (isLongPeriod(key)) {
     const p = data.periods[key];
     // A quarter never crosses a year, so the year is written once: "October–December 2026".
     const title =
@@ -109,7 +113,7 @@ export function monthName(key: string, style: 'long' | 'short', withYear = true)
   });
 }
 
-// ── Change figures (R5, AS2, AS3) ─────────────────────────────────────────────
+// ── Change figures ────────────────────────────────────────────────────────────
 
 type Comparable = CompanyFigures & { hasRecords: boolean };
 
@@ -129,10 +133,10 @@ export interface PeriodChanges {
 
 /**
  * Change lines for a month period; undefined for quarter, year and all time,
- * whose tiles carry no comparison line (AS1). The month in progress compares
- * with the same days of the earlier months (AS2); a closed month compares
+ * whose tiles carry no comparison line. The month in progress compares
+ * with the same days of the earlier months; a closed month compares
  * whole months, `months[i-1]` and the year-earlier `months[i-12]`. A month
- * without records reads "Not available", never 0% (AS3). Net profit changes
+ * without records reads "Not available", never 0%. Net profit changes
  * in KSh, since a percentage across a loss and a profit misleads.
  */
 export function periodChanges(data: MyShares, view: PeriodView): PeriodChanges | undefined {

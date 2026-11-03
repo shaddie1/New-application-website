@@ -5,7 +5,7 @@ import type { MyShares, MySharesAccess, MySharesResult } from '@onyxhawk/types';
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { STAFF_ROLES } from '../auth/staff.js';
-import { allocate, loadLedger } from '../finance/ledger.js';
+import { allocate, isoDate, loadLedger } from '../finance/ledger.js';
 
 /**
  * The shareholder page: one holder's stake, share of profit, money put in and
@@ -97,8 +97,8 @@ export const mySharesRoutes: FastifyPluginAsync = async (app) => {
         pendingCents: total(payouts.filter((p) => p.status === 'PENDING')),
         rows: payouts.map((p) => ({
           label: p.label,
-          periodStart: p.periodStart.toISOString().slice(0, 10),
-          periodEnd: p.periodEnd.toISOString().slice(0, 10),
+          periodStart: isoDate(p.periodStart),
+          periodEnd: isoDate(p.periodEnd),
           amountCents: p.amountCents,
           status: p.status,
           paidAt: p.paidAt ? p.paidAt.toISOString() : null,

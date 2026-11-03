@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   // The API, not the session, says whether a shareholder page exists for this
-  // account (KTD9). Until it answers, or if it fails, the menu is as it was.
+  // account. Until it answers, or if it fails, the menu is as it was.
   const [shareAccess, setShareAccess] = useState<MySharesAccess | null>(null);
   const userId = session?.user.id;
 

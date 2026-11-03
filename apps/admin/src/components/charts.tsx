@@ -527,8 +527,6 @@ export type ColumnPoint = {
   label: string;
   /** Axis label from `sm` up, e.g. "Mar". */
   shortLabel: string;
-  /** Axis label below `sm`, where a band can be 24 px wide; keep it to about three letters. Defaults to `shortLabel`. */
-  tinyLabel?: string;
   /** One value per series, in series order: cents for `unit="money"`, a count for `unit="count"`. */
   values: readonly number[];
   /** False before records began: draws an empty slot and reads "No records yet". */
@@ -640,7 +638,7 @@ function FigureRows({ rows, shape, className }: { rows: FigureRow[]; shape: 'rec
  * inset column in the ink, ringed in the surface colour, so revenue and net
  * profit differ by shape as well as colour.
  *
- * Interaction (KTD6): each month is a full-height button band at least 24 px
+ * Interaction: each month is a full-height button band at least 24 px
  * wide. A mouse hover or keyboard focus shows a tooltip without selecting;
  * click, tap, Enter or Space selects through `onSelect`; arrow keys, Home and
  * End move focus between months. The readout under the plot always shows the
@@ -926,8 +924,7 @@ export function ColumnChart({ title, series, points, unit, selectedKey, onSelect
                           isSelected ? 'font-semibold text-charcoal' : noRecords ? 'text-charcoal-muted/70' : 'text-charcoal-muted'
                         }`}
                       >
-                        <span className="sm:hidden">{p.tinyLabel ?? p.shortLabel}</span>
-                        <span className="hidden sm:inline">{p.shortLabel}</span>
+                        {p.shortLabel}
                       </span>
                     </button>
                   );

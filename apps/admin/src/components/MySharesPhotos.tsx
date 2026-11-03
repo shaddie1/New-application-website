@@ -10,7 +10,7 @@ const MAX_PHOTOS = 12;
 
 /**
  * Photos of jobs completed in the selected period and published to the
- * website (R11, KTD10): each job's cover only, newest first. Renders nothing
+ * website: each job's cover only, newest first. Renders nothing
  * while the list is loading or after it failed (`jobs` null), and nothing for
  * a period with no such jobs, so the rest of the page never depends on it.
  * Photos are not links; they scroll sideways on screen and wrap into a grid

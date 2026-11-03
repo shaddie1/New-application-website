@@ -33,12 +33,12 @@ export function SectionHeading({ title, children }: { title: string; children?: 
   );
 }
 
-/** "Share of profit" or, for a negative figure, "Share of the loss" (R2). */
+/** "Share of profit" or, for a negative figure, "Share of the loss". */
 function shareLabel(cents: number): string {
   return cents < 0 ? 'Share of the loss' : 'Share of profit';
 }
 
-// ── Your shares (R1–R3, AS4–AS6) ─────────────────────────────────────────────
+// ── Your shares ──────────────────────────────────────────────────────────────
 
 export function SharesSection({ data, view }: { data: MyShares; view: PeriodView }) {
   const stake = stakePercent(data.holder.basisPoints);
@@ -74,7 +74,7 @@ export function SharesSection({ data, view }: { data: MyShares; view: PeriodView
   );
 }
 
-/** Money put in (AS5) beside payouts to date (AS6): actual money, whatever the period. */
+/** Money put in beside payouts to date: actual money, whatever the period. */
 function MoneyInAndOut({ invested, payouts }: { invested: MyShares['invested']; payouts: MyShares['payouts'] }) {
   const figures = [
     { label: 'Invested', value: money(invested.capitalCents), note: 'Capital put in' },
@@ -127,7 +127,7 @@ function MoneyInAndOut({ invested, payouts }: { invested: MyShares['invested']; 
   );
 }
 
-// ── Company growth (R4–R9) ───────────────────────────────────────────────────
+// ── Company growth ───────────────────────────────────────────────────────────
 
 export function GrowthSection({
   data,
@@ -213,9 +213,9 @@ export function GrowthSection({
   );
 }
 
-// ── Revenue by service line (R8, R10) ────────────────────────────────────────
+// ── Revenue by service line ──────────────────────────────────────────────────
 
-/** Lines with a service illustration, copied from the website into public/services (KTD11). */
+/** Lines with a service illustration, copied from the website into public/services. */
 const ILLUSTRATED = new Set(['residential', 'office', 'hospital', 'sofa']);
 
 export function ServiceBreakdown({ view }: { view: PeriodView }) {
@@ -269,7 +269,7 @@ function ServiceRow({ line, total, max }: { line: ServiceLineFigures; total: num
   );
 }
 
-/** The line's illustration, or one plain icon for every line without one (R10). Decorative: the row names the line. */
+/** The line's illustration, or one plain icon for every line without one. Decorative: the row names the line. */
 function ServiceImage({ code }: { code: string | null }) {
   if (code && ILLUSTRATED.has(code)) {
     return (

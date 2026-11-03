@@ -124,7 +124,7 @@ export default function MySharesPage() {
   const view = data && periodKey ? periodView(data, periodKey) : null;
   const printTitle = data && view ? `OnyxHawk shares – ${data.holder.name} – ${view.title}` : null;
 
-  /** Stamp the saved time and name the file for its holder and period (KTD7). */
+  /** Stamp the saved time and name the file for its holder and period. */
   const prepareForPrint = useCallback(() => {
     if (!printTitle) return;
     // Rendered before the print dialog lays the page out, not after.

@@ -192,7 +192,8 @@ function byServiceLine(rows: LineTally[], names: Map<string, string>): ServiceLi
 const sum = (values: number[]) => values.reduce((acc, v) => acc + v, 0);
 const pad = (n: number) => String(n).padStart(2, '0');
 
-function isoDate(d: Date): string {
+/** A calendar date stored as UTC midnight, as YYYY-MM-DD. */
+export function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 

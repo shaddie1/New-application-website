@@ -251,7 +251,6 @@ export function DataTable<T>({
               ))}
             </tr>
           ))}
-          {/* A search that matches nothing says so instead of leaving bare headings. */}
           {rows.length === 0 && query.trim() && (
             <tr>
               <td colSpan={columns.length} className={`${pad} text-center text-text-muted`}>
