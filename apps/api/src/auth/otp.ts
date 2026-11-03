@@ -2,7 +2,9 @@ import { randomInt } from 'node:crypto';
 import { prisma } from '../db.js';
 import { sha256 } from './hash.js';
 import { sendSms, type SmsLogger } from './sms.js';
-import { maskEmail, sendEmail, signInCodeEmail } from './email.js';
+import { maskEmail } from '../email/format.js';
+import { sendEmail } from '../email/service.js';
+import { adminSignInCodeEmail } from '../email/templates.js';
 import { env } from '../env.js';
 
 const OTP_TTL_MS = 10 * 60 * 1000;        // 10 minutes
@@ -63,7 +65,7 @@ export async function issueAdminSignInOtp(
   log: SmsLogger,
 ): Promise<{ maskedEmail: string; devOtp?: string }> {
   const code = await createOtp(user.phone, 'ADMIN_SIGN_IN', user.email);
-  await sendEmail(user.email, signInCodeEmail(code), log);
+  await sendEmail(user.email, adminSignInCodeEmail({ code, expiresInMinutes: OTP_TTL_MS / 60_000 }), log);
   const maskedEmail = maskEmail(user.email);
   return env.NODE_ENV === 'production' ? { maskedEmail } : { maskedEmail, devOtp: code };
 }

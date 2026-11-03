@@ -45,3 +45,7 @@ coverage/
 # 14 of the videos exceed GitHub's 100MB per-file limit. Web-ready derivatives
 # live in apps/web/public/photos/ and are committed.
 /Media/
+
+# Rendered emails: `pnpm --filter @onyxhawk/api preview-emails`, and every
+# email the API "sends" outside production (email-previews/sent/).
+apps/api/email-previews/
