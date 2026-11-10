@@ -36,7 +36,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get<{ Params: { id: string } }>('/:id', async (req, reply) => {
-    const payment = await getPaymentForUser(req.auth!.sub, req.params.id);
+    const payment = await getPaymentForUser(req.auth!.sub, req.params.id, req.log);
     if (!payment) return reply.code(404).send({ error: 'payment not found' });
     return reply.send({ payment });
   });
