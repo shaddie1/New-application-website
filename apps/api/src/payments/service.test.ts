@@ -4,27 +4,39 @@ import type { MpesaStkCallback } from '@onyxhawk/types';
 const txFindUnique = vi.fn();
 const txUpdate = vi.fn();
 const paymentUpdate = vi.fn();
+const paymentFindUnique = vi.fn();
+const paymentFindMany = vi.fn();
+const paymentCreate = vi.fn();
 const bookingUpdateMany = vi.fn();
+const bookingFindUnique = vi.fn();
 const db = {
   mpesaTransaction: { findUnique: txFindUnique, update: txUpdate },
-  payment: { update: paymentUpdate },
-  booking: { updateMany: bookingUpdateMany },
+  payment: {
+    updateMany: paymentUpdate,
+    findUnique: paymentFindUnique,
+    findUniqueOrThrow: paymentFindUnique,
+    findMany: paymentFindMany,
+    create: paymentCreate,
+  },
+  booking: { updateMany: bookingUpdateMany, findUnique: bookingFindUnique, findUniqueOrThrow: bookingFindUnique },
 };
 vi.mock('../db.js', () => ({
   prisma: { ...db, $transaction: (fn: (tx: typeof db) => Promise<unknown>) => fn(db) },
 }));
 
 const stkQuery = vi.fn();
+const stkPush = vi.fn();
 vi.mock('./daraja.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./daraja.js')>()),
   stkQuery,
+  stkPush,
 }));
 
 const notifyBookingConfirmed = vi.fn();
 vi.mock('../notifications/service.js', () => ({ notifyBookingConfirmed }));
 
 const { DarajaError } = await import('./daraja.js');
-const { handleStkCallback } = await import('./service.js');
+const { getPaymentForUser, handleStkCallback, initiateStkPush, PaymentError } = await import('./service.js');
 
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
@@ -59,10 +71,12 @@ const handle = (body: MpesaStkCallback) => handleStkCallback(body, log as never)
 
 beforeEach(() => {
   txFindUnique.mockResolvedValue({ id: 'tx1', paymentId: 'pay1', callbackReceivedAt: null, payment: { bookingId: 'b1' } });
+  paymentUpdate.mockResolvedValue({ count: 1 });
+  bookingUpdateMany.mockResolvedValue({ count: 1 });
 });
 
 afterEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   vi.useRealTimers();
 });
 
@@ -136,5 +150,185 @@ describe('handleStkCallback', () => {
     expect(stkQuery).not.toHaveBeenCalled();
     expect(paymentUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'CANCELLED' }) }));
     expect(bookingUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('changes nothing when the payment was settled already', async () => {
+    stkQuery.mockResolvedValue(answer('0', 'The service request is processed successfully.'));
+    paymentUpdate.mockResolvedValue({ count: 0 });
+
+    await handle(callback(0));
+
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(bookingUpdateMany).not.toHaveBeenCalled();
+    expect(notifyBookingConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not tell the customer a cancelled booking is confirmed', async () => {
+    stkQuery.mockResolvedValue(answer('0', 'The service request is processed successfully.'));
+    bookingUpdateMany.mockResolvedValue({ count: 0 });
+
+    await handle(callback(0));
+
+    expect(paymentUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SUCCEEDED' }) }));
+    expect(notifyBookingConfirmed).not.toHaveBeenCalled();
+    expect(log.error).toHaveBeenCalled();
+  });
+});
+
+const NOW = new Date('2026-11-10T09:00:00Z');
+const secondsAgo = (s: number) => new Date(NOW.getTime() - s * 1000);
+
+let nextPayment = 0;
+/** A payment whose push went out `sentSecondsAgo` seconds ago. Each has its own id: the query rate limit is per payment. */
+function awaitingPayment(sentSecondsAgo: number) {
+  const id = `pay-${++nextPayment}`;
+  return {
+    id,
+    userId: 'u1',
+    bookingId: 'b1',
+    provider: 'MPESA_STK',
+    amountCents: 350_000,
+    currency: 'KES',
+    status: 'AWAITING_USER',
+    failureReason: null,
+    createdAt: secondsAgo(sentSecondsAgo),
+    completedAt: null,
+    mpesaTransaction: {
+      id: `tx-${id}`,
+      msisdn: '+254712000001',
+      checkoutRequestId: `c-${id}`,
+      mpesaReceiptNumber: null,
+      pushSentAt: secondsAgo(sentSecondsAgo),
+    },
+  };
+}
+
+describe('getPaymentForUser', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+
+  const get = (id: string, userId = 'u1') => getPaymentForUser(userId, id, log as never);
+
+  it('settles a paid payment whose callback never arrived', async () => {
+    const payment = awaitingPayment(45);
+    paymentFindUnique
+      .mockResolvedValueOnce(payment)
+      .mockResolvedValueOnce({ ...payment, status: 'SUCCEEDED', completedAt: NOW });
+    stkQuery.mockResolvedValue(answer('0', 'The service request is processed successfully.'));
+
+    const dto = await get(payment.id);
+
+    expect(stkQuery).toHaveBeenCalledWith(payment.mpesaTransaction.checkoutRequestId);
+    expect(paymentUpdate).toHaveBeenCalledWith({
+      where: { id: payment.id, status: { in: ['REQUESTED', 'AWAITING_USER'] } },
+      data: { status: 'SUCCEEDED', failureReason: null, completedAt: NOW },
+    });
+    expect(txUpdate).toHaveBeenCalledWith({
+      where: { id: payment.mpesaTransaction.id },
+      data: { resultCode: '0', resultDesc: 'The service request is processed successfully.' },
+    });
+    expect(bookingUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'b1', status: 'PENDING_PAYMENT' },
+      data: { status: 'CONFIRMED', confirmedAt: NOW },
+    });
+    expect(notifyBookingConfirmed).toHaveBeenCalledWith('b1', log);
+    expect(dto?.status).toBe('SUCCEEDED');
+  });
+
+  it('closes a payment the customer cancelled', async () => {
+    const payment = awaitingPayment(45);
+    paymentFindUnique.mockResolvedValueOnce(payment).mockResolvedValueOnce({ ...payment, status: 'CANCELLED' });
+    stkQuery.mockResolvedValue(answer('1032', 'Request cancelled by user'));
+
+    const dto = await get(payment.id);
+
+    expect(paymentUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'CANCELLED', failureReason: 'Request cancelled by user', completedAt: null } }),
+    );
+    expect(bookingUpdateMany).not.toHaveBeenCalled();
+    expect(dto?.status).toBe('CANCELLED');
+  });
+
+  it('does not ask Daraja while the customer may still be entering their PIN', async () => {
+    const payment = awaitingPayment(10);
+    paymentFindUnique.mockResolvedValue(payment);
+
+    const dto = await get(payment.id);
+
+    expect(stkQuery).not.toHaveBeenCalled();
+    expect(dto?.status).toBe('AWAITING_USER');
+  });
+
+  it('asks Daraja about one payment at most once every 15 seconds', async () => {
+    const payment = awaitingPayment(45);
+    paymentFindUnique.mockResolvedValue(payment);
+    stkQuery.mockRejectedValue(stillProcessing());
+
+    await get(payment.id);
+    vi.advanceTimersByTime(3_000);
+    await get(payment.id);
+    expect(stkQuery).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(15_000);
+    await get(payment.id);
+    expect(stkQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['has no final result yet', () => stkQuery.mockRejectedValue(stillProcessing())],
+    ['cannot be reached', () => stkQuery.mockRejectedValue(new TypeError('fetch failed'))],
+    ['answers with a code we do not take as final', () => stkQuery.mockResolvedValue(answer('4999', 'The transaction is still under processing'))],
+  ])('leaves the payment open when Daraja %s', async (_name, arrange) => {
+    const payment = awaitingPayment(45);
+    paymentFindUnique.mockResolvedValue(payment);
+    arrange();
+
+    const dto = await get(payment.id);
+
+    expect(stkQuery).toHaveBeenCalledTimes(1);
+    expect(paymentUpdate).not.toHaveBeenCalled();
+    expect(dto?.status).toBe('AWAITING_USER');
+  });
+
+  it('confirms once when the callback settles the payment first', async () => {
+    const payment = awaitingPayment(45);
+    paymentFindUnique.mockResolvedValue(payment);
+    stkQuery.mockResolvedValue(answer('0', 'The service request is processed successfully.'));
+    paymentUpdate.mockResolvedValue({ count: 0 });
+
+    await get(payment.id);
+
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(bookingUpdateMany).not.toHaveBeenCalled();
+    expect(notifyBookingConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("does not look up another customer's payment with Daraja", async () => {
+    const payment = awaitingPayment(45);
+    paymentFindUnique.mockResolvedValue(payment);
+
+    expect(await get(payment.id, 'someone-else')).toBeNull();
+    expect(stkQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('initiateStkPush', () => {
+  const pendingBooking = { id: 'b1', userId: 'u1', status: 'PENDING_PAYMENT', totalCents: 350_000, reference: 'OH-1234' };
+
+  it('does not charge again when an earlier push turns out to be paid', async () => {
+    const earlier = awaitingPayment(5);
+    bookingFindUnique.mockResolvedValueOnce(pendingBooking).mockResolvedValueOnce({ ...pendingBooking, status: 'CONFIRMED' });
+    paymentFindMany.mockResolvedValue([earlier]);
+    stkQuery.mockResolvedValue(answer('0', 'The service request is processed successfully.'));
+
+    const attempt = initiateStkPush({ userId: 'u1', bookingId: 'b1', log: log as never });
+
+    await expect(attempt).rejects.toBeInstanceOf(PaymentError);
+    await expect(attempt).rejects.toMatchObject({ status: 409 });
+    expect(stkQuery).toHaveBeenCalledWith(earlier.mpesaTransaction.checkoutRequestId);
+    expect(bookingUpdateMany).toHaveBeenCalled();
+    expect(paymentCreate).not.toHaveBeenCalled();
+    expect(stkPush).not.toHaveBeenCalled();
   });
 });
