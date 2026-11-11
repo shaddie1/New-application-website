@@ -118,6 +118,12 @@ export type ExpenseCategory = 'MATERIALS' | 'TRANSPORT' | 'EMPLOYEE_PAY' | 'LUNC
 
 export type JobStatus = 'OWNER_ENTRY' | 'PENDING' | 'APPROVED';
 
+/** Where a job sits for project money. STANDALONE is what the back-office calls a one-off job. */
+export type JobPlacement = 'UNSORTED' | 'PROJECT' | 'STANDALONE';
+
+/** The place the owner chooses for a job: under one project, or one-off. "Not yet sorted" cannot be chosen. */
+export type JobPlaceInput = { placement: 'PROJECT'; projectId: string } | { placement: 'STANDALONE' };
+
 export interface ExpenseDto {
   id: string;
   category: ExpenseCategory;
@@ -153,6 +159,9 @@ export interface JobDto {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  placement: JobPlacement;
+  projectId: string | null; // set only when placement is PROJECT
+  projectTitle: string | null;
   expenses: ExpenseDto[];
   totalExpensesCents: number;
   netCents: number; // actualIncomeCents - totalExpensesCents
@@ -172,6 +181,8 @@ export interface CreateJobInput {
   serviceLineCode?: string;
   region?: string;
   clientSegment?: ClientSegment;
+  /** A new job cannot be saved without its place. */
+  place: JobPlaceInput;
 }
 
 export interface UpdateJobInput {
@@ -185,6 +196,19 @@ export interface UpdateJobInput {
   clientPhone?: string;
   clientLocation?: string;
   notes?: string;
+  /** Moves the job to another project, or between a project and one-off. */
+  place?: JobPlaceInput;
+}
+
+/** Approving a crew job report: the owner chooses its place in the same step. */
+export interface ApproveReportInput {
+  place: JobPlaceInput;
+}
+
+/** Sorting several jobs into one place at once. All are placed, or none. */
+export interface PlaceJobsInput {
+  jobIds: string[];
+  place: JobPlaceInput;
 }
 
 export interface FinancialSummary {
