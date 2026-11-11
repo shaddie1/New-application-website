@@ -64,6 +64,7 @@ import type {
   WebsiteJobMutationResult,
   ProjectMoneyTable,
   ProjectMoneyDetail,
+  UnsortedJobDto,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -316,6 +317,10 @@ export const api = {
       auth: true,
       body: JSON.stringify(input),
     }),
+
+  /** Every job not yet under a contract or marked one-off, oldest first, with the contracts that match its client. */
+  unsortedJobs: () =>
+    request<{ jobs: UnsortedJobDto[] }>('/admin/financials/unsorted', { method: 'GET', auth: true }),
 
   addJobExpense: (jobId: string, input: CreateExpenseInput) =>
     request<{ expense: ExpenseDto }>(

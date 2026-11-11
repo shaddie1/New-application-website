@@ -14,6 +14,7 @@ import type {
 } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { JobPlaceMover, PlacementPicker, refusalMessage } from '../../../src/components/project-money/PlacementPicker';
+import { SortJobs } from '../../../src/components/project-money/SortJobs';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
 // How many months of history the Monthly trends tab can show at once.
@@ -62,7 +63,7 @@ const blankExpenseForm = () => ({
   date: todayIso(),
 });
 
-type Tab = 'jobs' | 'submissions' | 'trends';
+type Tab = 'jobs' | 'submissions' | 'sort' | 'trends';
 
 export default function FinancialsPage() {
   const session = useRequireAdmin();
@@ -96,6 +97,8 @@ export default function FinancialsPage() {
   const [createJobRefusal, setCreateJobRefusal] = useState<string | null>(null);
   const [reportPlaces, setReportPlaces] = useState<Record<string, JobPlaceInput>>({});
   const [approveRefusal, setApproveRefusal] = useState<{ reportId: string; message: string } | null>(null);
+  // How many jobs still wait to be sorted, for the tab label. null until known.
+  const [unsortedCount, setUnsortedCount] = useState<number | null>(null);
 
   // Per-job expansion + expense form
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
@@ -141,6 +144,9 @@ export default function FinancialsPage() {
     api.projects()
       .then((r) => setProjects(r.projects))
       .catch(() => setError('Could not load the contracts list. Reload the page before saving or moving a job.'));
+    api.unsortedJobs()
+      .then((r) => setUnsortedCount(r.jobs.length))
+      .catch(() => undefined); // the label goes without a count; the Sort jobs tab reports its own failed load
   }, []);
 
   const prevMonth = () => {
@@ -396,10 +402,11 @@ export default function FinancialsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-border">
+      <div className="flex flex-wrap gap-1 mb-4 border-b border-border">
         {([
           { key: 'jobs', label: `Jobs — ${monthLabel}` },
           { key: 'submissions', label: `Submissions${pendingReports.length > 0 ? ` (${pendingReports.length})` : ''}` },
+          { key: 'sort', label: `Sort jobs${unsortedCount ? ` (${unsortedCount})` : ''}` },
           { key: 'trends', label: 'Monthly trends' },
         ] as { key: Tab; label: string }[]).map(({ key, label }) => (
           <button
@@ -727,6 +734,9 @@ export default function FinancialsPage() {
           )}
         </div>
       )}
+
+      {/* ── Tab: Sort jobs ─────────────────────────────────────────────────── */}
+      {tab === 'sort' && <SortJobs projects={projects} onCountChange={setUnsortedCount} />}
 
       {/* ── Tab: Monthly trends ────────────────────────────────────────────── */}
       {tab === 'trends' && (
