@@ -16,6 +16,8 @@ import type {
   JobDto,
   CreateJobInput,
   UpdateJobInput,
+  ApproveReportInput,
+  PlaceJobsInput,
   CreateJobReportInput,
   MonthlyTrendItem,
   ShareholderDto,
@@ -60,6 +62,8 @@ import type {
   WebsiteJobPhotoUploadUrlResult,
   SaveWebsiteJobInput,
   WebsiteJobMutationResult,
+  ProjectMoneyTable,
+  ProjectMoneyDetail,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -305,6 +309,14 @@ export const api = {
       auth: true,
     }),
 
+  /** Puts several jobs in one place at once. All are placed, or none. */
+  placeJobs: (input: PlaceJobsInput) =>
+    request<{ placed: number }>('/admin/financials/jobs/place', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
   addJobExpense: (jobId: string, input: CreateExpenseInput) =>
     request<{ expense: ExpenseDto }>(
       `/admin/financials/jobs/${encodeURIComponent(jobId)}/expenses`,
@@ -526,6 +538,16 @@ export const api = {
       auth: true,
     }),
 
+  // ── Project money (owner, admin, financial manager, COO) ─────────────────
+  projectMoneyTable: () =>
+    request<{ table: ProjectMoneyTable }>('/admin/project-money', { method: 'GET', auth: true }),
+
+  projectMoneyDetail: (projectId: string) =>
+    request<{ detail: ProjectMoneyDetail }>(
+      `/admin/project-money/projects/${encodeURIComponent(projectId)}`,
+      { method: 'GET', auth: true },
+    ),
+
   // ── Company documents (shareholders only) ────────────────────────────────
   documents: () => request<DocumentsResult>('/admin/documents', { method: 'GET', auth: true }),
 
@@ -591,9 +613,10 @@ export const api = {
   pendingReports: () =>
     request<{ reports: JobDto[] }>('/admin/financials/reports', { method: 'GET', auth: true }),
 
-  approveReport: (id: string) =>
+  /** Approving a report needs the job's place: a project, or one-off. */
+  approveReport: (id: string, input: ApproveReportInput) =>
     request<{ job: JobDto }>(`/admin/financials/reports/${encodeURIComponent(id)}/approve`, {
-      method: 'PATCH', auth: true, body: '{}', // Fastify refuses an empty body once Content-Type is JSON
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
     }),
 
   deleteReport: (id: string) =>
