@@ -759,12 +759,28 @@ model Job {
   reportedBy     User?     @relation("JobsReportedBy", fields: [reportedById], references: [id])
   reportedById   String?
   expenses       Expense[]
+  // Where the job sits for per-project money. `projectId` is set only when
+  // `placement` is PROJECT; the database checks the two agree. Restrict, so a
+  // project that holds jobs cannot be deleted.
+  placement      JobPlacement @default(UNSORTED)
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId      String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   @@index([date])
   @@index([createdById])
   @@index([status])
+  @@index([projectId])
+}
+
+// Where a job sits for per-project money. STANDALONE is what the back-office
+// calls a "one-off job"; it is not named ONE_OFF because PaymentFrequency
+// already uses that for a project billed once.
+enum JobPlacement {
+  UNSORTED
+  PROJECT
+  STANDALONE
 }
 
 enum JobStatus {
@@ -1049,6 +1065,7 @@ model Project {
   notes           String?
   checklist       ProjectCheck[]
   events          ProjectEvent[]
+  jobs            Job[]
   createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   createdById     String
   createdAt       DateTime      @default(now())
