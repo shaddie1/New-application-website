@@ -8,6 +8,11 @@ export function canViewEstimate(session: Session | null | undefined): boolean {
   return !!session && (session.user.isOwner === true || ESTIMATE_ROLES.includes(session.user.role));
 }
 
+/** May see what each project was charged, what it cost and its profit: the same people who see the estimate. */
+export function canViewProjectMoney(session: Session | null | undefined): boolean {
+  return canViewEstimate(session);
+}
+
 /** May approve or reject an estimate: the COO or the owner. */
 export function canApproveEstimate(session: Session | null | undefined): boolean {
   return !!session && (session.user.isOwner === true || session.user.role === 'COO');
