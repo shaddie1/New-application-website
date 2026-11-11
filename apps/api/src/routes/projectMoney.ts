@@ -12,20 +12,8 @@ import type { CostLineDto, ProjectMoneyDetail, ProjectMoneyTable } from '@onyxha
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { requireProjectMoneyAccess } from '../projectMoney/access.js';
-import { COUNTED_STATUSES, contractBreakdown, contractLines } from '../projectMoney/figures.js';
+import { COUNTED_STATUSES, contractBreakdown, contractLines, moneyJobFields, moneyJobSelect } from '../projectMoney/figures.js';
 import { attachActor } from '../quotes/access.js';
-
-/** What the calculation needs of a job. */
-const jobFields = {
-  id: true,
-  title: true,
-  date: true,
-  incomeCents: true,
-  discountCents: true,
-  status: true,
-  placement: true,
-  projectId: true,
-} as const;
 
 /**
  * Staff can type anything into a cost's receipt link, and the Money tab shows
@@ -42,13 +30,12 @@ export const projectMoneyRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', attachActor);
   app.addHook('preHandler', requireProjectMoneyAccess);
 
-  /** The contracts table: a line per project in the Projects list's order, one-off jobs, jobs not yet sorted, totals. */
   app.get('/', async (_req, reply) => {
     const [projects, jobs] = await Promise.all([
       prisma.project.findMany({ select: { id: true }, orderBy: [{ updatedAt: 'desc' }] }),
       prisma.job.findMany({
         where: { status: { in: COUNTED_STATUSES } },
-        select: { ...jobFields, expenses: { select: { category: true, amountCents: true } } },
+        select: moneyJobSelect,
       }),
     ]);
 
@@ -62,7 +49,6 @@ export const projectMoneyRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ table });
   });
 
-  /** One contract: totals, spending by group, month rows unless it is billed once, and its jobs with their cost lines. */
   app.get<{ Params: { id: string } }>('/projects/:id', async (req, reply) => {
     const project = await prisma.project.findUnique({
       where: { id: req.params.id },
@@ -73,7 +59,7 @@ export const projectMoneyRoutes: FastifyPluginAsync = async (app) => {
     const jobs = await prisma.job.findMany({
       where: { projectId: project.id, status: { in: COUNTED_STATUSES } },
       select: {
-        ...jobFields,
+        ...moneyJobFields,
         expenses: {
           select: {
             id: true,

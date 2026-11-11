@@ -318,7 +318,6 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  /** Every job not yet under a contract or marked one-off, oldest first, with the contracts that match its client. */
   unsortedJobs: () =>
     request<{ jobs: UnsortedJobDto[] }>('/admin/financials/unsorted', { method: 'GET', auth: true }),
 
@@ -618,7 +617,6 @@ export const api = {
   pendingReports: () =>
     request<{ reports: JobDto[] }>('/admin/financials/reports', { method: 'GET', auth: true }),
 
-  /** Approving a report needs the job's place: a project, or one-off. */
   approveReport: (id: string, input: ApproveReportInput) =>
     request<{ job: JobDto }>(`/admin/financials/reports/${encodeURIComponent(id)}/approve`, {
       method: 'PATCH', auth: true, body: JSON.stringify(input),

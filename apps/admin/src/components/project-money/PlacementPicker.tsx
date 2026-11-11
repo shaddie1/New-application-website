@@ -24,7 +24,6 @@ function isOpen(stage: ProjectStage) {
   return stage !== 'COMPLETE' && stage !== 'CANCELLED';
 }
 
-/** `firstIds` in the order given, then open-stage projects, then completed and cancelled ones. */
 function orderProjects(projects: PlacementProject[], firstIds: string[]): PlacementProject[] {
   const first = firstIds
     .map((id) => projects.find((p) => p.id === id))
@@ -44,7 +43,6 @@ function fromOptionValue(raw: string): JobPlaceInput | null {
   return null;
 }
 
-/** The message the server sent with a refusal, or `fallback` when it sent none. */
 export function refusalMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError && err.payload && typeof err.payload === 'object') {
     const message = (err.payload as { error?: unknown }).error;
@@ -53,7 +51,6 @@ export function refusalMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Where a job sits now, in the owner's words. */
 export function placeLabel(job: Pick<JobDto, 'placement' | 'projectTitle'>): string {
   if (job.placement === 'PROJECT') return job.projectTitle ?? 'A contract';
   return job.placement === 'STANDALONE' ? 'One-off job' : 'Not yet sorted';

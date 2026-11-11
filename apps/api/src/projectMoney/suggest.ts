@@ -24,19 +24,28 @@ const nameKey = (name: string | null) => (name ?? '').trim().toLowerCase() || nu
 const isOpen = (stage: ProjectStage) => stage !== 'COMPLETE' && stage !== 'CANCELLED';
 
 export function suggestProjects(job: JobClient, projects: ProjectClient[]): { matches: ProjectMatchDto[]; suggestedProjectId: string | null } {
-  const phone = lastNine(job.clientPhone);
-  const name = nameKey(job.clientName);
+  return suggester(projects)(job);
+}
 
-  const found = projects.flatMap((p) => {
-    const by = phone !== null && lastNine(p.clientPhone) === phone ? 'PHONE' as const
-      : name !== null && nameKey(p.clientName) === name ? 'NAME' as const
-      : null;
-    return by ? [{ projectId: p.id, title: p.title, clientName: p.clientName, stage: p.stage, by }] : [];
-  });
+/** Like `suggestProjects`, with each project's phone and name keys worked out once for many jobs. */
+export function suggester(projects: ProjectClient[]) {
+  const keyed = projects.map((p) => ({ p, phone: lastNine(p.clientPhone), name: nameKey(p.clientName) }));
 
-  // Array.prototype.sort is stable, so equal rows keep the input order.
-  const rank = (m: ProjectMatchDto) => (m.by === 'PHONE' ? 0 : 2) + (isOpen(m.stage) ? 0 : 1);
-  const matches = found.sort((a, b) => rank(a) - rank(b));
+  return (job: JobClient): { matches: ProjectMatchDto[]; suggestedProjectId: string | null } => {
+    const phone = lastNine(job.clientPhone);
+    const name = nameKey(job.clientName);
 
-  return { matches, suggestedProjectId: matches.length === 1 ? matches[0]!.projectId : null };
+    const found = keyed.flatMap(({ p, phone: pPhone, name: pName }) => {
+      const by = phone !== null && pPhone === phone ? 'PHONE' as const
+        : name !== null && pName === name ? 'NAME' as const
+        : null;
+      return by ? [{ projectId: p.id, title: p.title, clientName: p.clientName, stage: p.stage, by }] : [];
+    });
+
+    // Array.prototype.sort is stable, so equal rows keep the input order.
+    const rank = (m: ProjectMatchDto) => (m.by === 'PHONE' ? 0 : 2) + (isOpen(m.stage) ? 0 : 1);
+    const matches = found.sort((a, b) => rank(a) - rank(b));
+
+    return { matches, suggestedProjectId: matches.length === 1 ? matches[0]!.projectId : null };
+  };
 }

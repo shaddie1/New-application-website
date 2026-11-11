@@ -49,7 +49,6 @@ function withRelations(job: Row) {
 
 let seq = 0;
 
-/** A cost answers a `job: {...}` filter through the job it belongs to; a cost with no job never does. */
 function costMatches(cost: Row, { job, ...own }: Row = {}) {
   if (!matches(cost, own)) return false;
   if (job === undefined) return true;
@@ -92,7 +91,6 @@ export const db = {
       const job = t.jobs.find((j) => matches(j, where));
       return job ? withRelations(job) : null;
     }),
-    /** A new job takes the columns' defaults: not yet sorted, under no project. */
     create: vi.fn(async ({ data }: Data) => {
       const job = { id: `job${++seq}`, placement: 'UNSORTED', projectId: null, reportedById: null, createdAt: new Date(), ...data };
       t.jobs.push(job);
@@ -118,7 +116,6 @@ export const db = {
   $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(db)),
 };
 
-/** Call a Financials route as a seeded user. The one place tokens are made. */
 export async function as(userId: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) {
   const { signAccessToken } = await import('../auth/jwt.js');
   const { financialsRoutes } = await import('../routes/financials.js');

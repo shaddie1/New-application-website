@@ -12,7 +12,6 @@ function fmt(cents: number) {
   return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
 }
 
-/** A row's starting choice: the contract the server suggests, which it does only when exactly one matches. */
 function suggestedPlace(job: UnsortedJobDto): JobPlaceInput | null {
   return job.suggestedProjectId ? { placement: 'PROJECT', projectId: job.suggestedProjectId } : null;
 }

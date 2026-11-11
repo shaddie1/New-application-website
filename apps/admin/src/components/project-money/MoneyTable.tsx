@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { MoneyFiguresDto, PaymentFrequency, ProjectDto, ProjectMoneyTable } from '@onyxhawk/types';
 
 import { api } from '../../lib/api';
+import { money } from '../charts';
 
 /** The same suffixes the project card uses, so the agreed price reads the same in both places. */
 const FREQUENCY_SUFFIX: Record<PaymentFrequency, string> = {
@@ -13,12 +14,7 @@ const FREQUENCY_SUFFIX: Record<PaymentFrequency, string> = {
   MONTHLY: '/month',
 };
 
-/** Name column, then agreed price, charged, spent and profit. One column pair per line at phone width. */
 const COLS = 'sm:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))]';
-
-export function money(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
-}
 
 /** A profit figure. A loss carries a minus sign and the word, so it never rests on colour alone. */
 export function Profit({ cents }: { cents: number }) {
@@ -26,7 +22,6 @@ export function Profit({ cents }: { cents: number }) {
   return <>{money(cents)}</>;
 }
 
-/** One figure in a row: its label shows above it at phone width and is left to the column heading from `sm` up. */
 export function Figure({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0 sm:text-right">

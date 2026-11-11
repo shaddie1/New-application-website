@@ -23,8 +23,8 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
-import { COUNTED_STATUSES, allTimeTotalsOf } from '../projectMoney/figures.js';
-import { suggestProjects } from '../projectMoney/suggest.js';
+import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
+import { suggester } from '../projectMoney/suggest.js';
 
 const DateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
@@ -33,8 +33,6 @@ const DateRangeSchema = z.object({
 
 const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
 
-// A job's place as the owner chooses it: one project, or one-off. Strict, so
-// one-off sent together with a project is refused. "Not yet sorted" is not a choice.
 const PlaceSchema = z.discriminatedUnion('placement', [
   z.object({ placement: z.literal('PROJECT'), projectId: z.string().trim().min(1) }).strict(),
   z.object({ placement: z.literal('STANDALONE') }).strict(),
@@ -259,7 +257,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'job not found' });
 
-    // A place in the body moves the job; without one it stays where it is.
     const place = parsed.data.place && (await resolvePlace(parsed.data.place));
     if (place === null) return reply.code(400).send({ error: 'project not found' });
 
@@ -399,24 +396,24 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── Jobs still to sort ─────────────────────────────────────────────────────
-  // Counted jobs with no place yet, oldest first, each with the projects that
-  // could be its home. A report still waiting for approval is not listed.
 
   app.get('/unsorted', async (_req, reply) => {
     const [rows, projects] = await Promise.all([
       prisma.job.findMany({
-        where: { placement: JobPlacement.UNSORTED, status: { in: [...COUNTED_STATUSES] } },
+        where: { placement: JobPlacement.UNSORTED, status: { in: COUNTED_STATUSES } },
+        select: { id: true, date: true, title: true, clientName: true, clientPhone: true, incomeCents: true, discountCents: true },
         orderBy: { date: 'asc' },
       }),
       prisma.project.findMany({ select: { id: true, title: true, clientName: true, clientPhone: true, stage: true } }),
     ]);
+    const suggest = suggester(projects);
     const jobs: UnsortedJobDto[] = rows.map((j) => ({
       jobId: j.id,
       date: j.date.toISOString().slice(0, 10),
       title: j.title,
       clientName: j.clientName,
       chargedCents: j.incomeCents - j.discountCents,
-      ...suggestProjects(j, projects),
+      ...suggest(j),
     }));
     return reply.send({ jobs });
   });
@@ -632,17 +629,7 @@ function allocate(
 async function allTimeTotals(): Promise<AllTimeTotals> {
   const jobs = await prisma.job.findMany({
     where: { status: { in: COUNTED_STATUSES } },
-    select: {
-      id: true,
-      title: true,
-      date: true,
-      incomeCents: true,
-      discountCents: true,
-      status: true,
-      placement: true,
-      projectId: true,
-      expenses: { select: { category: true, amountCents: true } },
-    },
+    select: moneyJobSelect,
   });
   return allTimeTotalsOf(jobs);
 }
@@ -655,13 +642,11 @@ async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<v
   if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
 }
 
-/** A body refused only for its place gets the sentence the owner can act on; any other fault keeps the field errors. */
 function refusal(error: z.ZodError) {
   const onlyThePlace = error.issues.every((issue) => issue.path[0] === 'place');
   return { error: onlyThePlace ? CHOOSE_PLACE : error.flatten() };
 }
 
-/** The columns to write for a chosen place, or null when its project does not exist. */
 async function resolvePlace(
   place: JobPlaceInput,
 ): Promise<{ placement: 'PROJECT'; projectId: string } | { placement: 'STANDALONE'; projectId: null } | null> {

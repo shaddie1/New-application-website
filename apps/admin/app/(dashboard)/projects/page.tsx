@@ -388,7 +388,6 @@ export default function ProjectsPage() {
                 if (!confirm(`Delete "${p.title}" and its checklist?`)) return;
                 try { await api.deleteProject(p.id); await load(); }
                 catch (err) {
-                  // A project with jobs under it is refused with the reason; show the server's words.
                   const refusal = err instanceof ApiError && err.status === 409
                     ? (err.payload as { error?: unknown } | null)?.error
                     : null;
@@ -471,7 +470,6 @@ function ProjectCard({
   const [tab, setTab] = useState<'questions' | 'log' | 'money'>('questions');
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // A click on this project's row in the money table lands here.
   useEffect(() => {
     if (!focusMoney) return;
     setTab('money');

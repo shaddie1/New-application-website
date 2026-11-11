@@ -25,6 +25,19 @@ export type MoneyJob = {
   expenses: { category: ExpenseCategory; amountCents: number }[];
 };
 
+// The columns the calculation reads.
+export const moneyJobFields = {
+  id: true,
+  title: true,
+  date: true,
+  incomeCents: true,
+  discountCents: true,
+  status: true,
+  placement: true,
+  projectId: true,
+} as const;
+export const moneyJobSelect = { ...moneyJobFields, expenses: { select: { category: true, amountCents: true } } } as const;
+
 export type MoneyFigures = {
   jobCount: number;
   /** The amount charged as typed on the job, before its discount. */
@@ -41,9 +54,7 @@ export type MoneyFigures = {
 export type ContractLines = {
   /** One line per project id asked for, in the order asked. */
   projects: (MoneyFigures & { projectId: string })[];
-  /** Jobs marked one-off. */
   standalone: MoneyFigures;
-  /** Counted jobs not yet sorted. */
   unsorted: MoneyFigures;
   /** Every counted job: the company's all-time figures. */
   totals: MoneyFigures;
@@ -64,9 +75,7 @@ export type MonthFigures = MoneyFigures & {
 export type ContractBreakdown = {
   totals: MoneyFigures;
   spentByGroupCents: Record<ExpenseCategory, number>;
-  /** In the order the jobs were given. */
   jobs: JobFigures[];
-  /** Empty unless asked for. */
   months: MonthFigures[];
 };
 
@@ -83,7 +92,6 @@ function add(jobs: MoneyJob[]): MoneyFigures {
   return { jobCount: jobs.length, typedCents, discountCents, chargedCents, spentCents, profitCents: chargedCents - spentCents };
 }
 
-/** The contracts table: a line for each project, for one-off jobs and for jobs not yet sorted, and the totals. */
 export function contractLines(jobs: MoneyJob[], projectIds: string[]): ContractLines {
   const all = counted(jobs);
   return {
@@ -147,7 +155,6 @@ function monthRows(jobs: MoneyJob[]): MonthFigures[] {
   return rows;
 }
 
-/** The Financials all-time totals, from every counted job. */
 export function allTimeTotalsOf(jobs: MoneyJob[]): AllTimeTotals {
   const all = counted(jobs);
   const figures = add(all);

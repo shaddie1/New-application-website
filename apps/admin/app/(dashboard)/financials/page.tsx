@@ -97,7 +97,6 @@ export default function FinancialsPage() {
   const [createJobRefusal, setCreateJobRefusal] = useState<string | null>(null);
   const [reportPlaces, setReportPlaces] = useState<Record<string, JobPlaceInput>>({});
   const [approveRefusal, setApproveRefusal] = useState<{ reportId: string; message: string } | null>(null);
-  // How many jobs still wait to be sorted, for the tab label. null until known.
   const [unsortedCount, setUnsortedCount] = useState<number | null>(null);
 
   // Per-job expansion + expense form

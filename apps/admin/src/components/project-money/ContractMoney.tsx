@@ -4,9 +4,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { CostLineDto, ExpenseCategory, ProjectMoneyDetail, ProjectMoneyJobDto } from '@onyxhawk/types';
 
 import { api } from '../../lib/api';
-import { Figure, Profit, money } from './MoneyTable';
+import { money } from '../charts';
+import { Figure, Profit } from './MoneyTable';
 
-/** The five spending groups, in the order they are shown. */
 const GROUP_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
   TRANSPORT: 'Transport',
@@ -21,7 +21,6 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-/** Name column, then charged, spent and profit. One column pair per line at phone width. */
 const COLS = 'sm:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]';
 const rowBase = `grid grid-cols-2 gap-x-4 gap-y-1 px-3 py-3 sm:items-baseline sm:px-4 ${COLS}`;
 const box = 'overflow-hidden rounded-lg border border-line bg-white text-sm text-charcoal';
