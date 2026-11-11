@@ -78,9 +78,16 @@ export const db = {
   },
   project: {
     findUnique: vi.fn(async ({ where }: Where) => t.projects.find((p) => matches(p, where)) ?? null),
+    findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.projects.filter((p) => matches(p, where))),
   },
   job: {
-    findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.jobs.filter((j) => matches(j, where)).map(withRelations)),
+    /** `orderBy` is honoured for a single ascending or descending column. */
+    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & { orderBy?: Record<string, 'asc' | 'desc'> } = {}) => {
+      const rows = t.jobs.filter((j) => matches(j, where));
+      const [[column, way] = []] = Object.entries(orderBy ?? {});
+      if (column) rows.sort((a, b) => (a[column] < b[column] ? -1 : a[column] > b[column] ? 1 : 0) * (way === 'desc' ? -1 : 1));
+      return rows.map(withRelations);
+    }),
     findUnique: vi.fn(async ({ where }: Where) => {
       const job = t.jobs.find((j) => matches(j, where));
       return job ? withRelations(job) : null;

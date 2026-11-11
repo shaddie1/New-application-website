@@ -18,11 +18,13 @@ import type {
   ShareholderAllocation,
   AllTimeTotals,
   EquityOverview,
+  UnsortedJobDto,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { COUNTED_STATUSES, allTimeTotalsOf } from '../projectMoney/figures.js';
+import { suggestProjects } from '../projectMoney/suggest.js';
 
 const DateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
@@ -394,6 +396,29 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     if (!existing || existing.status !== 'PENDING') return reply.code(404).send({ error: 'pending report not found' });
     await prisma.job.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
+  });
+
+  // ── Jobs still to sort ─────────────────────────────────────────────────────
+  // Counted jobs with no place yet, oldest first, each with the projects that
+  // could be its home. A report still waiting for approval is not listed.
+
+  app.get('/unsorted', async (_req, reply) => {
+    const [rows, projects] = await Promise.all([
+      prisma.job.findMany({
+        where: { placement: JobPlacement.UNSORTED, status: { in: [...COUNTED_STATUSES] } },
+        orderBy: { date: 'asc' },
+      }),
+      prisma.project.findMany({ select: { id: true, title: true, clientName: true, clientPhone: true, stage: true } }),
+    ]);
+    const jobs: UnsortedJobDto[] = rows.map((j) => ({
+      jobId: j.id,
+      date: j.date.toISOString().slice(0, 10),
+      title: j.title,
+      clientName: j.clientName,
+      chargedCents: j.incomeCents - j.discountCents,
+      ...suggestProjects(j, projects),
+    }));
+    return reply.send({ jobs });
   });
 
   // ── All-time totals ────────────────────────────────────────────────────────

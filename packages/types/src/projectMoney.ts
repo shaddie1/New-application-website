@@ -3,7 +3,7 @@
  * added up from its jobs. Served to the owner, the admin, the financial
  * manager and the COO only. Money is in cents (KSh x 100).
  */
-import type { ExpenseCategory } from './admin.js';
+import type { ExpenseCategory, ProjectStage } from './admin.js';
 
 export interface MoneyFiguresDto {
   jobCount: number;
@@ -62,4 +62,28 @@ export interface ProjectMoneyDetail {
   months: (MoneyFiguresDto & { month: string /* YYYY-MM */ })[];
   /** Newest first. */
   jobs: ProjectMoneyJobDto[];
+}
+
+/** A project that may be the home of a job not yet sorted. */
+export interface ProjectMatchDto {
+  projectId: string;
+  title: string;
+  clientName: string | null;
+  stage: ProjectStage;
+  /** Phone wins over name when both match. */
+  by: 'PHONE' | 'NAME';
+}
+
+/** A counted job the owner has not yet put under a project or marked one-off. */
+export interface UnsortedJobDto {
+  jobId: string;
+  date: string; // YYYY-MM-DD
+  title: string;
+  clientName: string | null;
+  /** Income less discount. */
+  chargedCents: number;
+  /** Phone matches first, then name matches; open projects before completed or cancelled ones. */
+  matches: ProjectMatchDto[];
+  /** Set only when exactly one project matches. */
+  suggestedProjectId: string | null;
 }

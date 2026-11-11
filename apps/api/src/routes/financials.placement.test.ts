@@ -234,3 +234,42 @@ describe('POST /admin/job-reports', () => {
     expect(stored(res.json().report.id)).toMatchObject({ status: 'PENDING', placement: 'UNSORTED', projectId: null });
   });
 });
+
+describe('GET /admin/financials/unsorted', () => {
+  it('lists the owner-entered and approved jobs not yet sorted, oldest first, with what was charged', async () => {
+    t.projects = [{ id: 'pA', title: 'Bank branch', clientName: 'Karen Heights', clientPhone: null, stage: 'IN_PROGRESS' }];
+    t.jobs = [
+      job('late', { date: day('2026-06-10'), incomeCents: 900_000, discountCents: 100_000, clientName: 'karen heights' }),
+      job('early', { date: day('2026-03-02'), status: 'APPROVED', incomeCents: 300_000 }),
+      job('sorted', { date: day('2026-01-01'), placement: 'PROJECT', projectId: 'pA' }),
+      job('oneoff', { date: day('2026-01-02'), placement: 'STANDALONE' }),
+    ];
+
+    const res = await as('owner', 'GET', '/admin/financials/unsorted');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().jobs).toEqual([
+      { jobId: 'early', date: '2026-03-02', title: 'Job early', clientName: null, chargedCents: 300_000, matches: [], suggestedProjectId: null },
+      {
+        jobId: 'late', date: '2026-06-10', title: 'Job late', clientName: 'karen heights', chargedCents: 800_000,
+        matches: [{ projectId: 'pA', title: 'Bank branch', clientName: 'Karen Heights', stage: 'IN_PROGRESS', by: 'NAME' }],
+        suggestedProjectId: 'pA',
+      },
+    ]);
+  });
+
+  it('leaves out a job waiting for approval', async () => {
+    t.jobs = [job('waiting', { status: 'PENDING' }), job('counted')];
+
+    const res = await as('owner', 'GET', '/admin/financials/unsorted');
+
+    expect(res.json().jobs.map((j: { jobId: string }) => j.jobId)).toEqual(['counted']);
+  });
+
+  it('refuses an admin', async () => {
+    const res = await as('admin', 'GET', '/admin/financials/unsorted');
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'owner access required' });
+  });
+});
