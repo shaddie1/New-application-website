@@ -159,6 +159,37 @@ describe('contractBreakdown', () => {
     expect(out.months.map((m) => [m.month, m.chargedCents])).toEqual([['2026-01', 1_000_000], ['2026-02', 0], ['2026-03', 2_000_000]]);
   });
 
+  it('runs the month rows across a year end, with zero rows for December and January', () => {
+    const jobs = [
+      job({ date: day('2025-11-20'), incomeCents: 3_000_000, expenses: [cost(1_000_000)] }),
+      job({ date: day('2026-02-03'), incomeCents: 2_000_000 }),
+    ];
+
+    const out = contractBreakdown(jobs, 'A', { byMonth: true });
+
+    expect(out.months.map((m) => [m.month, m.chargedCents])).toEqual([
+      ['2025-11', 3_000_000], ['2025-12', 0], ['2026-01', 0], ['2026-02', 2_000_000],
+    ]);
+    expect(out.months.reduce((acc, m) => acc + m.profitCents, 0)).toBe(out.totals.profitCents);
+  });
+
+  it.each([
+    ['long before', '0202-11-11', ['0202-11', '2026-10', '2026-11']],
+    ['long after', '2206-01-01', ['2026-10', '2026-11', '2206-01']],
+  ])('shows only the months that have jobs when one job has a mistyped year %s the others', (_name, mistyped, months) => {
+    const jobs = [
+      job({ date: day(mistyped), incomeCents: 1_000_000, expenses: [cost(400_000)] }),
+      job({ date: day('2026-10-05'), incomeCents: 3_000_000 }),
+      job({ date: day('2026-11-02'), incomeCents: 3_000_000 }),
+    ];
+
+    const out = contractBreakdown(jobs, 'A', { byMonth: true });
+
+    expect(out.months.map((m) => m.month)).toEqual(months);
+    expect(out.months.reduce((acc, m) => acc + m.chargedCents, 0)).toBe(out.totals.chargedCents);
+    expect(out.months.reduce((acc, m) => acc + m.spentCents, 0)).toBe(out.totals.spentCents);
+  });
+
   it('gives no month rows for a project billed as one-off', () => {
     const jobs = [job({ date: day('2026-03-02'), incomeCents: 3_000_000 }), job({ date: day('2026-05-04'), incomeCents: 3_000_000 })];
 

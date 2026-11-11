@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AllTimeTotals,
   ClientSegment,
@@ -136,6 +136,24 @@ export default function FinancialsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // The count on the "Sort jobs" tab label. Asked again whenever a job not yet sorted is moved or deleted.
+  const refreshUnsortedCount = useCallback(() => {
+    api.unsortedJobs()
+      .then((r) => setUnsortedCount(r.jobs.length))
+      .catch(() => undefined); // the label keeps its last count; the Sort jobs tab reports its own failed load
+  }, []);
+
+  // The month on screen, so a reply for a month the owner has since left is dropped.
+  const shownMonth = useRef(from);
+  shownMonth.current = from;
+
+  // After jobs are placed in the Sort jobs tab, the Jobs tab must show their new place.
+  const refreshJobs = useCallback(() => {
+    api.jobs(from, to)
+      .then((r) => { if (shownMonth.current === from) setJobs(r.jobs); })
+      .catch(() => undefined); // the Jobs tab keeps its list; changing month reloads it
+  }, [from, to]);
+
   useEffect(() => {
     api.serviceLines()
       .then((r) => setServiceLines(r.serviceLines))
@@ -143,10 +161,8 @@ export default function FinancialsPage() {
     api.projects()
       .then((r) => setProjects(r.projects))
       .catch(() => setError('Could not load the contracts list. Reload the page before saving or moving a job.'));
-    api.unsortedJobs()
-      .then((r) => setUnsortedCount(r.jobs.length))
-      .catch(() => undefined); // the label goes without a count; the Sort jobs tab reports its own failed load
-  }, []);
+    refreshUnsortedCount();
+  }, [refreshUnsortedCount]);
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear((y) => y - 1); }
@@ -218,6 +234,7 @@ export default function FinancialsPage() {
         netCents: prev.netCents - job.netCents,
       } : prev);
       if (expandedJobId === job.id) setExpandedJobId(null);
+      if (job.placement === 'UNSORTED') refreshUnsortedCount();
     } catch {
       setError('Could not delete job.');
     } finally {
@@ -609,7 +626,10 @@ export default function FinancialsPage() {
             onDeleteExpense={(jobId, ex) => void handleDeleteExpense(jobId, ex)}
             onExpenseFormChange={setExpenseForm}
             projects={projects}
-            onJobMoved={(moved) => setJobs((prev) => prev.map((j) => (j.id === moved.id ? moved : j)))}
+            onJobMoved={(moved) => {
+              if (jobs.find((j) => j.id === moved.id)?.placement === 'UNSORTED') refreshUnsortedCount();
+              setJobs((prev) => prev.map((j) => (j.id === moved.id ? moved : j)));
+            }}
           />
         </>
       )}
@@ -735,7 +755,7 @@ export default function FinancialsPage() {
       )}
 
       {/* ── Tab: Sort jobs ─────────────────────────────────────────────────── */}
-      {tab === 'sort' && <SortJobs projects={projects} onCountChange={setUnsortedCount} />}
+      {tab === 'sort' && <SortJobs projects={projects} onCountChange={setUnsortedCount} onPlaced={refreshJobs} />}
 
       {/* ── Tab: Monthly trends ────────────────────────────────────────────── */}
       {tab === 'trends' && (

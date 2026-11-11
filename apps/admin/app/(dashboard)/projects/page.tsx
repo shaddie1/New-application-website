@@ -13,6 +13,7 @@ import type {
 
 import { ContractMoney } from '../../../src/components/project-money/ContractMoney';
 import { MoneyTable } from '../../../src/components/project-money/MoneyTable';
+import { refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { canViewProjectMoney } from '../../../src/lib/roles';
@@ -388,10 +389,9 @@ export default function ProjectsPage() {
                 if (!confirm(`Delete "${p.title}" and its checklist?`)) return;
                 try { await api.deleteProject(p.id); await load(); }
                 catch (err) {
-                  const refusal = err instanceof ApiError && err.status === 409
-                    ? (err.payload as { error?: unknown } | null)?.error
-                    : null;
-                  setError(typeof refusal === 'string' ? refusal : 'Could not delete the project.');
+                  // Only the "has jobs under it" refusal (409) carries words written for the owner.
+                  const fallback = 'Could not delete the project.';
+                  setError(err instanceof ApiError && err.status === 409 ? refusalMessage(err, fallback) : fallback);
                 }
               }}
               showMoney={showMoney}

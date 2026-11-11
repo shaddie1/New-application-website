@@ -133,26 +133,31 @@ export function contractBreakdown(jobs: MoneyJob[], projectId: string, opts: { b
   };
 }
 
+/**
+ * Ten years. A contract whose first and last job are further apart than this
+ * almost certainly holds a job with a mistyped year, and a row for every month
+ * in between would be thousands of empty rows.
+ */
+const MAX_MONTH_SPAN = 120;
+
 function monthRows(jobs: MoneyJob[]): MonthFigures[] {
   const monthOf = (j: MoneyJob) => isoDate(j).slice(0, 7);
-  const present = jobs.map(monthOf).sort();
+  const present = [...new Set(jobs.map(monthOf))].sort();
+  const first = present[0];
   const last = present.at(-1);
-  if (present[0] === undefined || last === undefined) return [];
+  if (first === undefined || last === undefined) return [];
 
-  const rows: MonthFigures[] = [];
-  let year = Number(present[0].slice(0, 4));
-  let month = Number(present[0].slice(5, 7));
-  for (;;) {
-    const key = `${year}-${String(month).padStart(2, '0')}`;
-    if (key > last) break;
-    rows.push({ month: key, ...add(jobs.filter((j) => monthOf(j) === key)) });
-    month += 1;
-    if (month > 12) {
-      month = 1;
-      year += 1;
-    }
-  }
-  return rows;
+  const row = (month: string): MonthFigures => ({ month, ...add(jobs.filter((j) => monthOf(j) === month)) });
+  // Months counted from year 0, so a span crossing a year end is plain arithmetic.
+  const count = (month: string) => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1;
+  const span = count(last) - count(first) + 1;
+  if (span > MAX_MONTH_SPAN) return present.map(row);
+
+  return Array.from({ length: span }, (_, i) => {
+    const n = count(first) + i;
+    // The year is padded like the job date's own text, so year 202 reads "0202" and still matches.
+    return row(`${String(Math.floor(n / 12)).padStart(4, '0')}-${String((n % 12) + 1).padStart(2, '0')}`);
+  });
 }
 
 export function allTimeTotalsOf(jobs: MoneyJob[]): AllTimeTotals {

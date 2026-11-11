@@ -198,6 +198,24 @@ describe('placing several jobs at once', () => {
   });
 });
 
+describe('a project that no longer exists', () => {
+  const gone = { placement: 'PROJECT', projectId: 'gone' };
+
+  it.each([
+    ['moving a job', 'PATCH', '/admin/financials/jobs/j1', { place: gone }],
+    ['approving a report', 'PATCH', '/admin/financials/reports/r1/approve', { place: gone }],
+    ['placing several jobs', 'POST', '/admin/financials/jobs/place', { jobIds: ['u1', 'u3'], place: gone }],
+  ] as const)('is refused when %s, and nothing changes', async (_name, method, url, payload) => {
+    const before = snapshot();
+
+    const res = await as('owner', method, url, payload);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'project not found' });
+    expect(snapshot()).toEqual(before);
+  });
+});
+
 describe.each(['admin', 'fm', 'coo'])('%s, who is not the owner', (userId) => {
   it.each([
     ['save a job', 'POST', '/admin/financials/jobs', newJob({ place: underA })],

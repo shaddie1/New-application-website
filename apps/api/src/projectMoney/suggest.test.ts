@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { suggestProjects } from './suggest.js';
+import { suggester, type JobClient, type ProjectClient } from './suggest.js';
 
 const project = (id: string, over: object = {}) => ({
   id, title: `Project ${id}`, clientName: null, clientPhone: null, stage: 'IN_PROGRESS' as const, ...over,
 });
 const noClient = { clientName: null, clientPhone: null };
+const suggestProjects = (job: JobClient, projects: ProjectClient[]) => suggester(projects)(job);
 
-describe('suggestProjects', () => {
+describe('suggester', () => {
   it('matches a phone typed with spaces to the same number with a country code', () => {
     const r = suggestProjects({ clientName: null, clientPhone: '0712 345 678' }, [project('a', { clientPhone: '+254712345678' })]);
 

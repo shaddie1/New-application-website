@@ -46,11 +46,13 @@ function matchNote(job: UnsortedJobDto): string | null {
  * saved by choosing: a job is placed only when "Save" or "Place N jobs" is pressed.
  */
 export function SortJobs({
-  projects, onCountChange,
+  projects, onCountChange, onPlaced,
 }: {
   projects: PlacementProject[];
   /** Told how many jobs remain after every load. Pass a stable function, such as a state setter. */
   onCountChange: (count: number) => void;
+  /** Called after jobs are placed, so the page can refresh any other list that shows a job's place. */
+  onPlaced?: () => void;
 }) {
   // null until the first load finishes, and again after a load fails.
   const [jobs, setJobs] = useState<UnsortedJobDto[] | null>(null);
@@ -126,6 +128,7 @@ export function SortJobs({
       setSavingJobId(null);
       return;
     }
+    onPlaced?.();
     await load(SAVED_BUT_NOT_RELOADED);
     setSavingJobId(null);
   };
@@ -143,6 +146,7 @@ export function SortJobs({
     }
     setTicked([]);
     setSharedPlace(null);
+    onPlaced?.();
     await load(SAVED_BUT_NOT_RELOADED);
     setPlacingTicked(false);
   };

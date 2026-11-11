@@ -23,11 +23,10 @@ const nameKey = (name: string | null) => (name ?? '').trim().toLowerCase() || nu
 
 const isOpen = (stage: ProjectStage) => stage !== 'COMPLETE' && stage !== 'CANCELLED';
 
-export function suggestProjects(job: JobClient, projects: ProjectClient[]): { matches: ProjectMatchDto[]; suggestedProjectId: string | null } {
-  return suggester(projects)(job);
-}
-
-/** Like `suggestProjects`, with each project's phone and name keys worked out once for many jobs. */
+/**
+ * Returns the function that finds a job's matches. Each project's phone and
+ * name keys are worked out once, however many jobs are then looked up.
+ */
 export function suggester(projects: ProjectClient[]) {
   const keyed = projects.map((p) => ({ p, phone: lastNine(p.clientPhone), name: nameKey(p.clientName) }));
 
