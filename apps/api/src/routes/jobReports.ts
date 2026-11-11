@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { ExpenseCategory, ClientSegment } from '@prisma/client';
+import { ExpenseCategory, ClientSegment, JobPlacement } from '@prisma/client';
 import type {
   ExpenseDto,
   JobDto,
@@ -42,6 +42,7 @@ export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
       include: {
         expenses: { orderBy: { date: 'desc' } },
         reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -67,7 +68,7 @@ export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
         createdById: req.auth!.sub,
         reportedById: req.auth!.sub,
       },
-      include: { expenses: true, reportedBy: { select: { fullName: true } } },
+      include: { expenses: true, reportedBy: { select: { fullName: true } }, project: { select: { title: true } } },
     });
     return reply.code(201).send({ report: toJobDto(row) });
   });
@@ -137,9 +138,12 @@ type JobRow = {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  placement: JobPlacement;
+  projectId: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
   reportedBy: { fullName: string } | null;
+  project: { title: string } | null;
 };
 
 type ExpenseRow = {
@@ -173,6 +177,9 @@ function toJobDto(row: JobRow): JobDto {
     region: row.region,
     clientSegment: row.clientSegment,
     notes: row.notes,
+    placement: row.placement,
+    projectId: row.projectId,
+    projectTitle: row.project?.title ?? null,
     expenses,
     totalExpensesCents,
     netCents: actualIncomeCents - totalExpensesCents,

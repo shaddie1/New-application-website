@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AllTimeTotals,
   ClientSegment,
@@ -8,9 +8,13 @@ import type {
   ExpenseDto,
   FinancialSummary,
   JobDto,
+  JobPlaceInput,
   MonthlyTrendItem,
+  ProjectDto,
 } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
+import { JobPlaceMover, PlacementPicker, refusalMessage } from '../../../src/components/project-money/PlacementPicker';
+import { SortJobs } from '../../../src/components/project-money/SortJobs';
 import { useRequireAdmin } from '../../../src/lib/auth';
 
 // How many months of history the Monthly trends tab can show at once.
@@ -59,7 +63,7 @@ const blankExpenseForm = () => ({
   date: todayIso(),
 });
 
-type Tab = 'jobs' | 'submissions' | 'trends';
+type Tab = 'jobs' | 'submissions' | 'sort' | 'trends';
 
 export default function FinancialsPage() {
   const session = useRequireAdmin();
@@ -87,6 +91,13 @@ export default function FinancialsPage() {
   // options cannot drift from what the business actually sells.
   const [serviceLines, setServiceLines] = useState<{ code: string; name: string }[]>([]);
   const [savingJob, setSavingJob] = useState(false);
+  // Every job sits under one contract or is marked one-off, so each picker needs the contracts.
+  const [projects, setProjects] = useState<ProjectDto[]>([]);
+  const [jobPlace, setJobPlace] = useState<JobPlaceInput | null>(null);
+  const [createJobRefusal, setCreateJobRefusal] = useState<string | null>(null);
+  const [reportPlaces, setReportPlaces] = useState<Record<string, JobPlaceInput>>({});
+  const [approveRefusal, setApproveRefusal] = useState<{ reportId: string; message: string } | null>(null);
+  const [unsortedCount, setUnsortedCount] = useState<number | null>(null);
 
   // Per-job expansion + expense form
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
@@ -125,11 +136,33 @@ export default function FinancialsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // The count on the "Sort jobs" tab label. Asked again whenever a job not yet sorted is moved or deleted.
+  const refreshUnsortedCount = useCallback(() => {
+    api.unsortedJobs()
+      .then((r) => setUnsortedCount(r.jobs.length))
+      .catch(() => undefined); // the label keeps its last count; the Sort jobs tab reports its own failed load
+  }, []);
+
+  // The month on screen, so a reply for a month the owner has since left is dropped.
+  const shownMonth = useRef(from);
+  shownMonth.current = from;
+
+  // After jobs are placed in the Sort jobs tab, the Jobs tab must show their new place.
+  const refreshJobs = useCallback(() => {
+    api.jobs(from, to)
+      .then((r) => { if (shownMonth.current === from) setJobs(r.jobs); })
+      .catch(() => undefined); // the Jobs tab keeps its list; changing month reloads it
+  }, [from, to]);
+
   useEffect(() => {
     api.serviceLines()
       .then((r) => setServiceLines(r.serviceLines))
       .catch(() => undefined); // classification stays optional if the catalog is unreachable
-  }, []);
+    api.projects()
+      .then((r) => setProjects(r.projects))
+      .catch(() => setError('Could not load the contracts list. Reload the page before saving or moving a job.'));
+    refreshUnsortedCount();
+  }, [refreshUnsortedCount]);
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear((y) => y - 1); }
@@ -148,9 +181,10 @@ export default function FinancialsPage() {
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
     const incomeKes = parseFloat(jobForm.incomeKes);
-    if (!jobForm.title.trim()) return;
+    if (!jobForm.title.trim() || !jobPlace) return;
     setSavingJob(true);
     setError(null);
+    setCreateJobRefusal(null);
     try {
       const res = await api.createJob({
         title: jobForm.title.trim(),
@@ -164,6 +198,7 @@ export default function FinancialsPage() {
         region: jobForm.region.trim() || undefined,
         clientSegment: jobForm.clientSegment || undefined,
         notes: jobForm.notes.trim() || undefined,
+        place: jobPlace,
       });
       setJobs((prev) => [res.job, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
       setSummary((prev) => prev ? {
@@ -174,11 +209,12 @@ export default function FinancialsPage() {
       setJobForm((f) => ({
         ...f, title: '', incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '',
       }));
+      setJobPlace(null);
       setShowJobForm(false);
       setExpandedJobId(res.job.id);
       setExpenseForm(blankExpenseForm());
     } catch (err) {
-      setError(err instanceof ApiError ? `Could not save job (${err.status}).` : 'Could not save job.');
+      setCreateJobRefusal(refusalMessage(err, 'Could not save job.'));
     } finally {
       setSavingJob(false);
     }
@@ -198,6 +234,7 @@ export default function FinancialsPage() {
         netCents: prev.netCents - job.netCents,
       } : prev);
       if (expandedJobId === job.id) setExpandedJobId(null);
+      if (job.placement === 'UNSORTED') refreshUnsortedCount();
     } catch {
       setError('Could not delete job.');
     } finally {
@@ -207,9 +244,18 @@ export default function FinancialsPage() {
 
   // ── Approve a pending submission ────────────────────────────────────────────
   const handleApprove = async (report: JobDto) => {
+    const place = reportPlaces[report.id];
+    if (!place) return;
     setApprovingId(report.id);
+    setApproveRefusal(null);
     try {
-      await api.approveReport(report.id);
+      await api.approveReport(report.id, { place });
+    } catch (err) {
+      setApproveRefusal({ reportId: report.id, message: refusalMessage(err, 'Could not approve report.') });
+      setApprovingId(null);
+      return;
+    }
+    try {
       setPendingReports((prev) => prev.filter((r) => r.id !== report.id));
       // Reload the jobs list and summary to reflect the newly approved job
       const [sumRes, jobsRes] = await Promise.all([
@@ -219,7 +265,7 @@ export default function FinancialsPage() {
       setSummary(sumRes.summary);
       setJobs(jobsRes.jobs);
     } catch {
-      setError('Could not approve report.');
+      setError('The report was approved, but the page could not refresh. Reload to see the job.');
     } finally {
       setApprovingId(null);
     }
@@ -372,10 +418,11 @@ export default function FinancialsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-border">
+      <div className="flex flex-wrap gap-1 mb-4 border-b border-border">
         {([
           { key: 'jobs', label: `Jobs — ${monthLabel}` },
           { key: 'submissions', label: `Submissions${pendingReports.length > 0 ? ` (${pendingReports.length})` : ''}` },
+          { key: 'sort', label: `Sort jobs${unsortedCount ? ` (${unsortedCount})` : ''}` },
           { key: 'trends', label: 'Monthly trends' },
         ] as { key: Tab; label: string }[]).map(({ key, label }) => (
           <button
@@ -529,6 +576,14 @@ export default function FinancialsPage() {
                   {REGIONS.map((r) => <option key={r} value={r} />)}
                 </datalist>
               </div>
+              <div className="col-span-2">
+                <PlacementPicker
+                  label="Contract or one-off"
+                  projects={projects}
+                  value={jobPlace}
+                  onChange={setJobPlace}
+                />
+              </div>
               <div className="col-span-full">
                 <label className="block text-xs text-text-muted mb-1">Notes (optional)</label>
                 <input
@@ -539,10 +594,15 @@ export default function FinancialsPage() {
                   onChange={(e) => setJobForm((f) => ({ ...f, notes: e.target.value }))}
                 />
               </div>
-              <div className="col-span-full flex justify-end">
+              <div className="col-span-full flex flex-wrap items-center justify-end gap-3">
+                {createJobRefusal ? (
+                  <p role="alert" className="text-xs text-danger">{createJobRefusal}</p>
+                ) : !jobPlace && (
+                  <p className="text-xs text-text-muted">Choose a contract or &ldquo;One-off job&rdquo; to save.</p>
+                )}
                 <button
                   type="submit"
-                  disabled={savingJob}
+                  disabled={savingJob || !jobPlace}
                   className="rounded-lg bg-navy text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
                 >
                   {savingJob ? 'Saving…' : 'Create job'}
@@ -565,6 +625,11 @@ export default function FinancialsPage() {
             onAddExpense={(e, id) => void handleAddExpense(e, id)}
             onDeleteExpense={(jobId, ex) => void handleDeleteExpense(jobId, ex)}
             onExpenseFormChange={setExpenseForm}
+            projects={projects}
+            onJobMoved={(moved) => {
+              if (jobs.find((j) => j.id === moved.id)?.placement === 'UNSORTED') refreshUnsortedCount();
+              setJobs((prev) => prev.map((j) => (j.id === moved.id ? moved : j)));
+            }}
           />
         </>
       )}
@@ -650,11 +715,25 @@ export default function FinancialsPage() {
                           </table>
                         </div>
                       )}
+                      <div className="mt-3 max-w-md">
+                        <PlacementPicker
+                          label="Contract or one-off (needed to approve)"
+                          projects={projects}
+                          value={reportPlaces[report.id] ?? null}
+                          onChange={(place) => {
+                            if (place) setReportPlaces((prev) => ({ ...prev, [report.id]: place }));
+                          }}
+                          disabled={approvingId === report.id}
+                        />
+                        {approveRefusal?.reportId === report.id && (
+                          <p role="alert" className="mt-1 text-xs text-danger">{approveRefusal.message}</p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-col gap-2 shrink-0">
                       <button
                         onClick={() => void handleApprove(report)}
-                        disabled={approvingId === report.id}
+                        disabled={approvingId === report.id || !reportPlaces[report.id]}
                         className="rounded-lg bg-success text-white px-4 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
                       >
                         {approvingId === report.id ? '…' : 'Approve'}
@@ -674,6 +753,9 @@ export default function FinancialsPage() {
           )}
         </div>
       )}
+
+      {/* ── Tab: Sort jobs ─────────────────────────────────────────────────── */}
+      {tab === 'sort' && <SortJobs projects={projects} onCountChange={setUnsortedCount} onPlaced={refreshJobs} />}
 
       {/* ── Tab: Monthly trends ────────────────────────────────────────────── */}
       {tab === 'trends' && (
@@ -811,7 +893,7 @@ export default function FinancialsPage() {
 function JobList({
   jobs, loading, monthLabel, expandedJobId, expenseForm, savingExpense,
   deletingJobId, deletingExpenseId, onToggleExpand, onDeleteJob,
-  onAddExpense, onDeleteExpense, onExpenseFormChange,
+  onAddExpense, onDeleteExpense, onExpenseFormChange, projects, onJobMoved,
 }: {
   jobs: JobDto[];
   loading: boolean;
@@ -826,6 +908,8 @@ function JobList({
   onAddExpense: (e: React.FormEvent, jobId: string) => void;
   onDeleteExpense: (jobId: string, expense: ExpenseDto) => void;
   onExpenseFormChange: React.Dispatch<React.SetStateAction<ReturnType<typeof blankExpenseForm>>>;
+  projects: ProjectDto[];
+  onJobMoved: (job: JobDto) => void;
 }) {
   if (loading) return (
     <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
@@ -938,6 +1022,9 @@ function JobList({
                   {isDeleting ? '…' : 'Delete'}
                 </button>
               </div>
+            </div>
+            <div className="px-5 pb-4">
+              <JobPlaceMover job={job} projects={projects} onMoved={onJobMoved} />
             </div>
 
             {isExpanded && (

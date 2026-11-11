@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ClientSegment, ExpenseCategory, JobStatus, ShareholderKind } from '@prisma/client';
+import { ClientSegment, ExpenseCategory, JobPlacement, JobStatus, ShareholderKind } from '@prisma/client';
 import type {
   ExpenseDto,
   FinancialSummary,
@@ -8,6 +8,9 @@ import type {
   JobDto,
   CreateJobInput,
   UpdateJobInput,
+  JobPlaceInput,
+  ApproveReportInput,
+  PlaceJobsInput,
   MonthlyTrendItem,
   ShareholderDto,
   CreateShareholderInput,
@@ -15,12 +18,13 @@ import type {
   ShareholderAllocation,
   AllTimeTotals,
   EquityOverview,
+  UnsortedJobDto,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
-
-const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
+import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
+import { suggester } from '../projectMoney/suggest.js';
 
 const DateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
@@ -28,6 +32,13 @@ const DateRangeSchema = z.object({
 });
 
 const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
+
+const PlaceSchema = z.discriminatedUnion('placement', [
+  z.object({ placement: z.literal('PROJECT'), projectId: z.string().trim().min(1) }).strict(),
+  z.object({ placement: z.literal('STANDALONE') }).strict(),
+]) satisfies z.ZodType<JobPlaceInput>;
+
+const CHOOSE_PLACE = 'choose a project or mark the job one-off';
 
 const CreateJobSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -41,6 +52,7 @@ const CreateJobSchema = z.object({
   serviceLineCode: z.string().trim().max(60).optional(),
   region: z.string().trim().max(120).optional(),
   clientSegment: z.enum(SEGMENTS).optional(),
+  place: PlaceSchema,
 }) satisfies z.ZodType<CreateJobInput>;
 
 const UpdateJobSchema = z.object({
@@ -54,7 +66,15 @@ const UpdateJobSchema = z.object({
   serviceLineCode: z.string().trim().max(60).nullable().optional(),
   region: z.string().trim().max(120).nullable().optional(),
   clientSegment: z.enum(SEGMENTS).nullable().optional(),
+  place: PlaceSchema.optional(),
 }) satisfies z.ZodType<UpdateJobInput>;
+
+const ApproveReportSchema = z.object({ place: PlaceSchema }) satisfies z.ZodType<ApproveReportInput>;
+
+const PlaceJobsSchema = z.object({
+  jobIds: z.array(z.string().min(1)).min(1),
+  place: PlaceSchema,
+}) satisfies z.ZodType<PlaceJobsInput>;
 
 const CreateExpenseSchema = z.object({
   category: z.enum(['MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS']),
@@ -194,6 +214,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       include: {
         expenses: { orderBy: { date: 'desc' } },
         reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
       },
       orderBy: { date: 'desc' },
     });
@@ -202,7 +223,10 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/jobs', async (req, reply) => {
     const parsed = CreateJobSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (!parsed.success) return reply.code(400).send(refusal(parsed.error));
+
+    const place = await resolvePlace(parsed.data.place);
+    if (!place) return reply.code(400).send({ error: 'project not found' });
 
     const row = await prisma.job.create({
       data: {
@@ -218,19 +242,23 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         serviceLineCode: parsed.data.serviceLineCode,
         region: parsed.data.region,
         clientSegment: parsed.data.clientSegment as ClientSegment | undefined,
+        ...place,
         createdById: req.auth!.sub,
       },
-      include: { expenses: true, reportedBy: { select: { fullName: true } } },
+      include: { expenses: true, reportedBy: { select: { fullName: true } }, project: { select: { title: true } } },
     });
     return reply.code(201).send({ job: toJobDto(row) });
   });
 
   app.patch<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
     const parsed = UpdateJobSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (!parsed.success) return reply.code(400).send(refusal(parsed.error));
 
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'job not found' });
+
+    const place = parsed.data.place && (await resolvePlace(parsed.data.place));
+    if (place === null) return reply.code(400).send({ error: 'project not found' });
 
     const row = await prisma.job.update({
       where: { id: req.params.id },
@@ -247,10 +275,40 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.clientSegment !== undefined && {
           clientSegment: parsed.data.clientSegment as ClientSegment | null,
         }),
+        ...place,
       },
-      include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
+      include: {
+        expenses: { orderBy: { date: 'desc' } },
+        reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
+      },
     });
     return reply.send({ job: toJobDto(row) });
+  });
+
+  // Sort several jobs into one place. Every job is checked before any is
+  // written, in one transaction, so a refusal changes nothing.
+  app.post('/jobs/place', async (req, reply) => {
+    const parsed = PlaceJobsSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send(refusal(parsed.error));
+
+    const place = await resolvePlace(parsed.data.place);
+    if (!place) return reply.code(400).send({ error: 'project not found' });
+
+    const { jobIds } = parsed.data;
+    const result = await prisma.$transaction(async (tx) => {
+      const found = await tx.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, status: true } });
+      const statusOf = new Map(found.map((j) => [j.id, j.status]));
+      for (const jobId of jobIds) {
+        const status = statusOf.get(jobId);
+        if (!status) return { error: 'job not found', jobId };
+        // A report's place is chosen when it is approved.
+        if (status === 'PENDING') return { error: 'job is waiting for approval', jobId };
+      }
+      const { count } = await tx.job.updateMany({ where: { id: { in: jobIds } }, data: place });
+      return { placed: count };
+    });
+    return reply.code('error' in result ? 400 : 200).send(result);
   });
 
   app.delete<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
@@ -300,6 +358,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       include: {
         expenses: { orderBy: { date: 'desc' } },
         reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -310,10 +369,21 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing || existing.status !== 'PENDING') return reply.code(404).send({ error: 'pending report not found' });
 
+    // The body holds the place and nothing else, so any bad body means no place was chosen.
+    const parsed = ApproveReportSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: CHOOSE_PLACE });
+
+    const place = await resolvePlace(parsed.data.place);
+    if (!place) return reply.code(400).send({ error: 'project not found' });
+
     const row = await prisma.job.update({
       where: { id: req.params.id },
-      data: { status: 'APPROVED' },
-      include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
+      data: { status: 'APPROVED', ...place },
+      include: {
+        expenses: { orderBy: { date: 'desc' } },
+        reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
+      },
     });
     return reply.send({ job: toJobDto(row) });
   });
@@ -323,6 +393,29 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     if (!existing || existing.status !== 'PENDING') return reply.code(404).send({ error: 'pending report not found' });
     await prisma.job.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
+  });
+
+  // ── Jobs still to sort ─────────────────────────────────────────────────────
+
+  app.get('/unsorted', async (_req, reply) => {
+    const [rows, projects] = await Promise.all([
+      prisma.job.findMany({
+        where: { placement: JobPlacement.UNSORTED, status: { in: COUNTED_STATUSES } },
+        select: { id: true, date: true, title: true, clientName: true, clientPhone: true, incomeCents: true, discountCents: true },
+        orderBy: { date: 'asc' },
+      }),
+      prisma.project.findMany({ select: { id: true, title: true, clientName: true, clientPhone: true, stage: true } }),
+    ]);
+    const suggest = suggester(projects);
+    const jobs: UnsortedJobDto[] = rows.map((j) => ({
+      jobId: j.id,
+      date: j.date.toISOString().slice(0, 10),
+      title: j.title,
+      clientName: j.clientName,
+      chargedCents: j.incomeCents - j.discountCents,
+      ...suggest(j),
+    }));
+    return reply.send({ jobs });
   });
 
   // ── All-time totals ────────────────────────────────────────────────────────
@@ -531,32 +624,14 @@ function allocate(
   return { shares, unallocatedCents: netCents - distributableCents };
 }
 
+// Adds up in the project-money module, so the contracts table's totals line
+// and these figures cannot drift apart.
 async function allTimeTotals(): Promise<AllTimeTotals> {
-  const [jobs, expenses] = await Promise.all([
-    prisma.job.aggregate({
-      where: { status: { in: COUNTED_STATUSES } },
-      _sum: { incomeCents: true, discountCents: true },
-      _min: { date: true },
-      _max: { date: true },
-      _count: { _all: true },
-    }),
-    prisma.expense.aggregate({
-      where: { job: { status: { in: COUNTED_STATUSES } } },
-      _sum: { amountCents: true },
-    }),
-  ]);
-
-  const totalIncomeCents = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
-  const totalExpensesCents = expenses._sum.amountCents ?? 0;
-
-  return {
-    totalProjects: jobs._count._all,
-    totalIncomeCents,
-    totalExpensesCents,
-    totalNetCents: totalIncomeCents - totalExpensesCents,
-    firstJobDate: jobs._min.date ? jobs._min.date.toISOString().slice(0, 10) : null,
-    lastJobDate: jobs._max.date ? jobs._max.date.toISOString().slice(0, 10) : null,
-  };
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: COUNTED_STATUSES } },
+    select: moneyJobSelect,
+  });
+  return allTimeTotalsOf(jobs);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -565,6 +640,19 @@ async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<v
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
   if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+}
+
+function refusal(error: z.ZodError) {
+  const onlyThePlace = error.issues.every((issue) => issue.path[0] === 'place');
+  return { error: onlyThePlace ? CHOOSE_PLACE : error.flatten() };
+}
+
+async function resolvePlace(
+  place: JobPlaceInput,
+): Promise<{ placement: 'PROJECT'; projectId: string } | { placement: 'STANDALONE'; projectId: null } | null> {
+  if (place.placement === 'STANDALONE') return { placement: 'STANDALONE', projectId: null };
+  const project = await prisma.project.findUnique({ where: { id: place.projectId }, select: { id: true } });
+  return project ? { placement: 'PROJECT', projectId: project.id } : null;
 }
 
 function dateRange(from: string, to: string) {
@@ -588,9 +676,12 @@ type JobRow = {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  placement: JobPlacement;
+  projectId: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
   reportedBy: { fullName: string } | null;
+  project: { title: string } | null;
 };
 
 type ExpenseRow = {
@@ -624,6 +715,9 @@ function toJobDto(row: JobRow): JobDto {
     serviceLineCode: row.serviceLineCode,
     region: row.region,
     clientSegment: row.clientSegment,
+    placement: row.placement,
+    projectId: row.projectId,
+    projectTitle: row.project?.title ?? null,
     expenses,
     totalExpensesCents,
     netCents: actualIncomeCents - totalExpensesCents,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ClientSegment,
   PaymentFrequency,
@@ -11,8 +11,12 @@ import type {
   ProjectStage,
 } from '@onyxhawk/types';
 
+import { ContractMoney } from '../../../src/components/project-money/ContractMoney';
+import { MoneyTable } from '../../../src/components/project-money/MoneyTable';
+import { refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { canViewProjectMoney } from '../../../src/lib/roles';
 
 const STAGE_LABELS: Record<ProjectStage, string> = {
   ENQUIRY: 'Enquiry',
@@ -118,6 +122,8 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [newQuestion, setNewQuestion] = useState('');
+  /** The project whose card should open on its Money tab; its card clears this once it has done so. */
+  const [moneyFocus, setMoneyFocus] = useState<string | null>(null);
   /**
    * Answers save the instant they are clicked, with no submit step. That is only
    * trustworthy if it is visible, so every write reports itself here.
@@ -207,6 +213,16 @@ export default function ProjectsPage() {
   const closed = projects.filter((p) => p.stage === 'COMPLETE' || p.stage === 'CANCELLED');
   const shown = showClosed ? closed : open;
   const blocked = open.filter((p) => p.blockerCount > 0);
+
+  // Only these people are ever shown project money, and only for them is it fetched.
+  const showMoney = canViewProjectMoney(session);
+  const openMoney = (projectId: string) => {
+    const p = projects.find((x) => x.id === projectId);
+    if (!p) return;
+    setShowClosed(p.stage === 'COMPLETE' || p.stage === 'CANCELLED');
+    setExpanded(projectId);
+    setMoneyFocus(projectId);
+  };
 
   return (
     <div>
@@ -315,6 +331,11 @@ export default function ProjectsPage() {
         </form>
       )}
 
+      {/* Mounted once the projects are in, so it loads again after one is created or deleted. */}
+      {showMoney && !loading && (
+        <MoneyTable projects={projects} isOwner={session.user.isOwner === true} onOpenProject={openMoney} />
+      )}
+
       <div className="mb-4 flex gap-1 border-b border-line">
         <button
           onClick={() => setShowClosed(false)}
@@ -367,8 +388,15 @@ export default function ProjectsPage() {
               onDelete={async () => {
                 if (!confirm(`Delete "${p.title}" and its checklist?`)) return;
                 try { await api.deleteProject(p.id); await load(); }
-                catch { setError('Could not delete the project.'); }
+                catch (err) {
+                  // Only the "has jobs under it" refusal (409) carries words written for the owner.
+                  const fallback = 'Could not delete the project.';
+                  setError(err instanceof ApiError && err.status === 409 ? refusalMessage(err, fallback) : fallback);
+                }
               }}
+              showMoney={showMoney}
+              focusMoney={moneyFocus === p.id}
+              onMoneyFocused={() => setMoneyFocus(null)}
             />
           ))}
         </div>
@@ -423,6 +451,7 @@ function ActivityLog({ projectId, reloadKey }: { projectId: string; reloadKey: n
 
 function ProjectCard({
   project: p, expanded, onToggle, onStage, onAnswer, saveState, onAddQuestion, newQuestion, setNewQuestion, onDelete,
+  showMoney, focusMoney, onMoneyFocused,
 }: {
   project: ProjectDto;
   expanded: boolean;
@@ -434,8 +463,19 @@ function ProjectCard({
   newQuestion: string;
   setNewQuestion: (v: string) => void;
   onDelete: () => void;
+  showMoney: boolean;
+  focusMoney: boolean;
+  onMoneyFocused: () => void;
 }) {
-  const [tab, setTab] = useState<'questions' | 'log'>('questions');
+  const [tab, setTab] = useState<'questions' | 'log' | 'money'>('questions');
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!focusMoney) return;
+    setTab('money');
+    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    onMoneyFocused();
+  }, [focusMoney, onMoneyFocused]);
 
   // Group the checklist by its section headings.
   const sections = new Map<string, ProjectCheckDto[]>();
@@ -445,7 +485,7 @@ function ProjectCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-white">
+    <div ref={cardRef} className="overflow-hidden rounded-xl border border-line bg-white">
       <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -524,7 +564,7 @@ function ProjectCard({
 
       {expanded && (
         <div className="border-t border-line bg-mist/60 px-5 py-4">
-          <div className="mb-4 flex items-center gap-1 border-b border-line">
+          <div className={`mb-4 flex items-center gap-1 border-b border-line ${showMoney ? 'flex-wrap' : ''}`}>
             <button
               onClick={() => setTab('questions')}
               className={`border-b-2 px-3 py-2 text-sm ${tab === 'questions' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
@@ -537,9 +577,19 @@ function ProjectCard({
             >
               Activity log ({p.eventCount})
             </button>
+            {showMoney && (
+              <button
+                onClick={() => setTab('money')}
+                className={`border-b-2 px-3 py-2 text-sm ${tab === 'money' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+              >
+                Money
+              </button>
+            )}
           </div>
 
-          {tab === 'log' ? (
+          {tab === 'money' ? (
+            <ContractMoney projectId={p.id} />
+          ) : tab === 'log' ? (
             <ActivityLog projectId={p.id} reloadKey={p.eventCount} />
           ) : (
         <>

@@ -258,6 +258,14 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>('/:id', async (req, reply) => {
     const existing = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'project not found' });
+    const jobCount = await prisma.job.count({ where: { projectId: req.params.id } });
+    if (jobCount > 0) {
+      const error =
+        jobCount === 1
+          ? 'This project has 1 job under it. Ask the owner to move it first.'
+          : `This project has ${jobCount} jobs under it. Ask the owner to move them first.`;
+      return reply.code(409).send({ error, jobCount });
+    }
     await prisma.project.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
   });
