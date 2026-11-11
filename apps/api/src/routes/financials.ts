@@ -19,8 +19,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
-
-const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
+import { COUNTED_STATUSES, allTimeTotalsOf } from '../projectMoney/figures.js';
 
 const DateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
@@ -531,32 +530,24 @@ function allocate(
   return { shares, unallocatedCents: netCents - distributableCents };
 }
 
+// Adds up in the project-money module, so the contracts table's totals line
+// and these figures cannot drift apart.
 async function allTimeTotals(): Promise<AllTimeTotals> {
-  const [jobs, expenses] = await Promise.all([
-    prisma.job.aggregate({
-      where: { status: { in: COUNTED_STATUSES } },
-      _sum: { incomeCents: true, discountCents: true },
-      _min: { date: true },
-      _max: { date: true },
-      _count: { _all: true },
-    }),
-    prisma.expense.aggregate({
-      where: { job: { status: { in: COUNTED_STATUSES } } },
-      _sum: { amountCents: true },
-    }),
-  ]);
-
-  const totalIncomeCents = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
-  const totalExpensesCents = expenses._sum.amountCents ?? 0;
-
-  return {
-    totalProjects: jobs._count._all,
-    totalIncomeCents,
-    totalExpensesCents,
-    totalNetCents: totalIncomeCents - totalExpensesCents,
-    firstJobDate: jobs._min.date ? jobs._min.date.toISOString().slice(0, 10) : null,
-    lastJobDate: jobs._max.date ? jobs._max.date.toISOString().slice(0, 10) : null,
-  };
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: COUNTED_STATUSES } },
+    select: {
+      id: true,
+      title: true,
+      date: true,
+      incomeCents: true,
+      discountCents: true,
+      status: true,
+      placement: true,
+      projectId: true,
+      expenses: { select: { category: true, amountCents: true } },
+    },
+  });
+  return allTimeTotalsOf(jobs);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
