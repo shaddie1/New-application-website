@@ -25,6 +25,7 @@ import type {
   ReplaceStakesInput,
   ReplaceStakesResult,
   EquityOverview,
+  EquityHistory,
   AllTimeTotals,
   MarketingSpendDto,
   CreateMarketingSpendInput,
@@ -346,6 +347,13 @@ export const api = {
   equity: (from: string, to: string) =>
     request<{ overview: EquityOverview }>(
       `/admin/financials/equity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  /** Each month's net profit split at today's stakes, oldest first, ending at the current month. */
+  equityHistory: (months = 12) =>
+    request<{ history: EquityHistory }>(
+      `/admin/financials/equity/history?months=${months}`,
       { method: 'GET', auth: true },
     ),
 

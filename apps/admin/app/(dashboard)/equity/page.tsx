@@ -1,32 +1,39 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Info, TrendingDown, TriangleAlert } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { ShareholderDto } from '@onyxhawk/types';
-import { api, ApiError } from '../../../src/lib/api';
+import { api } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
-import { CATEGORICAL, OTHER_GREY } from '../../../src/components/charts';
+import { cn } from '../../../src/lib/cn';
+import { money } from '../../../src/lib/money';
+import { BlockFailed, Skeleton } from '../../../src/components/dashboard/BlockState';
+import { useBlock } from '../../../src/components/dashboard/useBlock';
 import { EditDetails } from '../../../src/components/ownership/EditDetails';
 import { EditStakes } from '../../../src/components/ownership/EditStakes';
+import { Hero } from '../../../src/components/ownership/Hero';
+import { shapeHistory } from '../../../src/components/ownership/history';
+import { HistoryChart } from '../../../src/components/ownership/HistoryChart';
+import { HoldersTable } from '../../../src/components/ownership/HoldersTable';
 import {
   DEFAULT_SCOPE, nairobiMonth, scopeFigures, type OwnershipScope, type ReceivedEquityOverview,
 } from '../../../src/components/ownership/scope';
+import { ShareBar } from '../../../src/components/ownership/ShareBar';
+import { RETAINED_SEGMENT, splitSegments } from '../../../src/components/ownership/split';
 import { BASIS_POINTS_TOTAL, formatPercentShort as pct } from '../../../src/components/ownership/stakes';
+import { noSplitLine, scopeLine, shareHeadingParts } from '../../../src/components/ownership/wording';
 import { Button } from '../../../src/components/ui/button';
+import { Card } from '../../../src/components/ui/card';
 import { Segmented, type SegmentedOption } from '../../../src/components/ui/segmented';
-import { money as fmt } from '../../../src/lib/money';
-
-// Cap-table bar colours, in table order, from the chart palette. Holders past
-// the fifth share the neutral grey; every slice is still named in the legend
-// and the table.
-const COLOURED_HOLDERS = 5;
-function sliceColor(index: number) {
-  return index < COLOURED_HOLDERS ? CATEGORICAL[index]! : OTHER_GREY;
-}
+import { enoughToDraw } from '../../../src/components/stacked-bars';
 
 const SCOPES: SegmentedOption<OwnershipScope>[] = [
   { value: 'all-time', label: 'All time' },
   { value: 'this-month', label: 'This month' },
 ];
+
+const HISTORY_MONTHS = 12;
+const cardTitle = 'font-serif text-xl text-charcoal';
 
 export default function EquityPage() {
   const session = useRequireAdmin();
@@ -35,27 +42,19 @@ export default function EquityPage() {
   const month = useMemo(() => nairobiMonth(new Date()), []);
   const [scope, setScope] = useState<OwnershipScope>(DEFAULT_SCOPE);
 
-  const [overview, setOverview] = useState<ReceivedEquityOverview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const [stakesOpen, setStakesOpen] = useState(false);
   const [detailsFor, setDetailsFor] = useState<ShareholderDto | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.equity(month.from, month.to);
-      setOverview(res.overview);
-    } catch (err) {
-      setError(err instanceof ApiError ? `Could not load ownership (${err.status}).` : 'Could not load ownership.');
-    } finally {
-      setLoading(false);
-    }
-  }, [month]);
-
-  useEffect(() => { void load(); }, [load]);
+  // The page's two requests. Each feeds its own blocks, so a failed history
+  // leaves the figures and the split standing, and the other way round.
+  const overviewBlock = useBlock(
+    async (): Promise<ReceivedEquityOverview> => (await api.equity(month.from, month.to)).overview,
+    [month.from, month.to],
+  );
+  const historyBlock = useBlock(
+    async () => shapeHistory((await api.equityHistory(HISTORY_MONTHS)).history.months),
+    [],
+  );
 
   if (session === undefined) return <div className="text-text-muted">Loading…</div>;
   if (!session) return null;
@@ -63,215 +62,188 @@ export default function EquityPage() {
     return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Owner access required.</div>;
   }
 
+  // A holder's name and every stake appear in both requests.
+  const reload = () => {
+    overviewBlock.retry();
+    historyBlock.retry();
+  };
+
+  const overview = overviewBlock.status === 'loaded' ? overviewBlock.data : null;
+  const history = historyBlock.status === 'loaded' ? historyBlock.data : null;
+
   // Every figure below comes from here, so the control moves them together.
   const figures = overview ? scopeFigures(overview, scope) : null;
-  const shown = loading ? null : figures;
   const holders = figures?.holders ?? [];
   const totalBasisPoints = overview?.totalBasisPoints ?? 0;
-  const capTableBalanced = totalBasisPoints === BASIS_POINTS_TOTAL;
-  const allTimeScope = scope === 'all-time';
-  const canEdit = !loading && overview !== null;
+  const scopeWords = scope === 'all-time' ? 'all-time' : 'this month';
+  // With no holders yet, the prompt in the split card carries the one primary "Edit stakes".
+  const noHolders = overview !== null && holders.length === 0;
+  // The line that explains the bars is there while they load and once they are
+  // drawn. A single month of figures is a note, not a chart, and a failed
+  // request has no bars to explain.
+  const chartable = history ? enoughToDraw(history.columns) : historyBlock.status !== 'failed';
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-serif text-3xl">Ownership</h1>
         <div className="flex flex-wrap items-center gap-3">
           <Segmented legend="Figures shown" name="ownership-scope" options={SCOPES} value={scope} onChange={setScope} />
-          <Button onClick={() => setStakesOpen(true)} disabled={!canEdit}>Edit stakes</Button>
+          <Button variant={noHolders ? 'outline' : 'primary'} onClick={() => setStakesOpen(true)} disabled={!overview}>
+            Edit stakes
+          </Button>
         </div>
       </div>
 
-      {error && <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>}
-
-      {/* ── Totals for the chosen scope ──────────────────────────────────────── */}
-      <section className="mb-6">
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-xs text-text-muted uppercase tracking-widest">
-            {allTimeScope ? 'Since day one' : `This month · ${month.label}`}
-          </h2>
-          {allTimeScope && overview?.allTime.firstJobDate && (
-            <span className="text-xs text-text-muted">
-              First project {overview.allTime.firstJobDate} · latest {overview.allTime.lastJobDate}
-            </span>
-          )}
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Total projects" value={shown?.projects == null ? '—' : String(shown.projects)} />
-          <StatCard label="Income generated" value={shown?.incomeCents == null ? '—' : fmt(shown.incomeCents)} color="text-success" />
-          <StatCard label="Total expenses" value={shown?.expensesCents == null ? '—' : fmt(shown.expensesCents)} />
-          <StatCard
-            label="Net profit"
-            value={shown ? fmt(shown.netCents) : '—'}
-            color={!shown || shown.netCents >= 0 ? 'text-success' : 'text-danger'}
-            accent
-          />
-        </div>
-      </section>
-
-      {/* ── Cap table split bar ──────────────────────────────────────────────── */}
-      {!loading && holders.length > 0 && (
-        <section className="mb-6 rounded-xl border border-border bg-surface p-5">
-          <p className="text-xs text-text-muted uppercase tracking-widest mb-4">Share split</p>
-          <div className="flex h-6 w-full overflow-hidden rounded-full bg-bg-muted">
-            {holders.map(({ shareholder: s }, i) => (
-              <div
-                key={s.id}
-                title={`${s.name} — ${pct(s.basisPoints)}`}
-                style={{
-                  width: `${(s.basisPoints / BASIS_POINTS_TOTAL) * 100}%`,
-                  backgroundColor: sliceColor(i),
-                }}
-              />
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-            {holders.map(({ shareholder: s, shareCents }, i) => (
-              <div key={s.id} className="flex items-center gap-2 text-sm">
-                <span className="h-3 w-3 rounded-sm shrink-0" style={{ backgroundColor: sliceColor(i) }} />
-                <span>{s.name}</span>
-                <span className="figure text-text-muted">{pct(s.basisPoints)}</span>
-                <span className="figure text-text-muted">{fmt(shareCents)}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Cap table doesn't add up — say so plainly rather than quietly mis-splitting. */}
-      {!loading && overview && figures && !capTableBalanced && (
-        <div className="mb-6 rounded-lg bg-warning/10 border border-warning/30 px-4 py-3 text-sm">
-          <p className="text-warning font-medium">
-            The stakes add up to {pct(totalBasisPoints)}, not 100%.
-          </p>
-          <p className="text-text-muted mt-1">
-            {totalBasisPoints < BASIS_POINTS_TOTAL
-              ? `The remaining ${pct(BASIS_POINTS_TOTAL - totalBasisPoints)} (${fmt(figures.unallocatedCents)} ${allTimeScope ? 'all-time' : 'this month'}) is shown as retained by the business.`
-              : 'Shares are being over-allocated — the payouts below total more than the profit. Adjust the percentages so they sum to 100%.'}
-          </p>
-        </div>
-      )}
-
-      {/* ── Shareholder table ────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-4">
-        <span className="figure text-sm text-text-muted">
-          {figures && `${holders.length} shareholder${holders.length !== 1 ? 's' : ''}`}
-        </span>
-      </div>
-
-      {loading ? (
-        <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
-      ) : !figures ? (
-        // The load failed and the message above says so: an empty cap table is not known.
-        null
-      ) : holders.length === 0 ? (
-        <div className="rounded-xl border border-border bg-surface px-5 py-10 text-center text-text-muted text-sm">
-          <p>No shareholders yet. Add the holders and their stakes, which must total 100%.</p>
-          <Button className="mt-4" onClick={() => setStakesOpen(true)}>Edit stakes</Button>
-        </div>
+      {/* ── The figures and the split: the overview request ───────────────────── */}
+      {overviewBlock.status === 'failed' ? (
+        <Card className="p-6">
+          <BlockFailed what="the ownership figures" onRetry={overviewBlock.retry} />
+        </Card>
       ) : (
-        <div className="rounded-xl border border-border bg-surface overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border bg-bg-muted/30">
-                <th className="px-5 py-3 text-left font-normal">Shareholder</th>
-                <th className="px-5 py-3 text-right font-normal">Stake</th>
-                <th className="px-5 py-3 text-right font-normal">
-                  {allTimeScope ? 'Share all-time' : `Share of ${month.label}`}
-                </th>
-                <th className="px-5 py-3"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {holders.map(({ shareholder: s, shareCents }, i) => (
-                <tr key={s.id} className="hover:bg-bg-muted/30">
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <span className="h-3 w-3 rounded-sm shrink-0" style={{ backgroundColor: sliceColor(i) }} />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{s.name}</span>
-                          {s.kind === 'COMPANY' && (
-                            <span className="rounded-full bg-bg-muted text-text-muted text-xs px-2 py-0.5">Company</span>
-                          )}
-                        </div>
-                        {(s.title || s.userName) && (
-                          <p className="text-text-muted text-xs mt-0.5">
-                            {[s.title, s.userName].filter(Boolean).join(' · ')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="figure px-5 py-3 text-right font-medium">{pct(s.basisPoints)}</td>
-                  <td className={`figure px-5 py-3 text-right font-medium ${shareCents >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {fmt(shareCents)}
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <Button variant="outline" size="sm" onClick={() => setDetailsFor(s)}>
-                      Edit details<span className="sr-only"> of {s.name}</span>
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+        <>
+          <Hero figures={figures} scopeText={scopeLine(scope, overview?.allTime.firstJobDate ?? null, month.label)} />
 
-              {/* Only meaningful when the stakes don't cover 100%. */}
-              {figures.unallocatedCents !== 0 && (
-                <tr className="bg-bg-muted/20">
-                  <td className="px-5 py-3 text-text-muted italic">Retained by the business</td>
-                  <td className="figure px-5 py-3 text-right text-text-muted">
-                    {pct(BASIS_POINTS_TOTAL - totalBasisPoints)}
-                  </td>
-                  <td className="figure px-5 py-3 text-right text-text-muted">{fmt(figures.unallocatedCents)}</td>
-                  <td />
-                </tr>
-              )}
-            </tbody>
-            <tfoot className="border-t-2 border-border bg-bg-muted/30">
-              <tr>
-                <td className="px-5 py-3 font-medium">Net profit to split</td>
-                <td className={`figure px-5 py-3 text-right font-medium ${capTableBalanced ? '' : 'text-warning'}`}>
-                  {pct(totalBasisPoints)}
-                </td>
-                <td className={`figure px-5 py-3 text-right font-medium ${figures.footerNetCents >= 0 ? 'text-success' : 'text-danger'}`}>
-                  {fmt(figures.footerNetCents)}
-                </td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+          {!overview || !figures ? (
+            <Card className="p-5 sm:p-6" aria-busy="true">
+              <h2 className={cardTitle}>Share split</h2>
+              <Skeleton className="mt-5 h-11 w-full rounded-lg" />
+              <Skeleton className="mt-6 h-4 w-2/3" />
+              <Skeleton className="mt-4 h-4 w-1/2" />
+              <span className="sr-only" role="status">Loading the share split</span>
+            </Card>
+          ) : holders.length === 0 ? (
+            <Card className="p-5 sm:p-6">
+              <h2 className={cardTitle}>Share split</h2>
+              <div className="mt-5 rounded-lg bg-mist px-5 py-8 text-center text-sm text-charcoal-muted">
+                <p>No shareholders yet. Add the holders and their stakes, which must total 100%.</p>
+                <Button className="mt-4" onClick={() => setStakesOpen(true)}>Edit stakes</Button>
+              </div>
+            </Card>
+          ) : (
+            <Card className="overflow-hidden">
+              <div className="p-5 sm:p-6">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 className={cardTitle}>Share split</h2>
+                  <p className="figure text-sm text-charcoal-muted">
+                    {holders.length} shareholder{holders.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+
+                <div className="mt-5">
+                  <SplitBar
+                    netCents={figures.netCents}
+                    scope={scope}
+                    holders={holders}
+                    unallocatedCents={figures.unallocatedCents}
+                  />
+                </div>
+
+                {/* The stakes do not add up: say so plainly. */}
+                {totalBasisPoints !== BASIS_POINTS_TOTAL && (
+                  <div className="mt-5 flex gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
+                    <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+                    <div>
+                      <p className="figure font-medium text-warning">The stakes add up to {pct(totalBasisPoints)}, not 100%.</p>
+                      <p className="figure mt-1 text-charcoal-muted">
+                        {totalBasisPoints < BASIS_POINTS_TOTAL
+                          ? `The remaining ${pct(BASIS_POINTS_TOTAL - totalBasisPoints)} (${money(figures.unallocatedCents)} ${scopeWords}) is shown as retained by the business.`
+                          : 'Shares are over-allocated: the amounts below total more than the profit. Edit the stakes so they total 100%.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <HoldersTable
+                figures={figures}
+                totalBasisPoints={totalBasisPoints}
+                shareHeading={shareHeadingParts(scope, month.label)}
+                onEditDetails={setDetailsFor}
+                onEditStakes={() => setStakesOpen(true)}
+              />
+            </Card>
+          )}
+        </>
       )}
 
-      <p className="mt-4 text-xs text-text-muted">
-        Shares are calculated on net profit — income after expenses — for approved jobs only.
-      </p>
+      {/* ── Twelve months: the history request ────────────────────────────────── */}
+      {/* With no holders there is no split to draw, and the prompt above says what to do. */}
+      {!(history && history.series.length === 0) && (
+        <Card className="p-5 sm:p-6" aria-busy={historyBlock.status === 'loading'}>
+          <h2 className={cardTitle}>Last twelve months</h2>
+          {chartable && (
+            <p className="mt-1 max-w-prose text-sm text-charcoal-muted">
+              Each bar is a month’s net profit, split between the shareholders at today’s stakes.
+            </p>
+          )}
+          <div className="mt-5">
+            {history ? (
+              <HistoryChart history={history} />
+            ) : historyBlock.status === 'failed' ? (
+              <BlockFailed what="the twelve-month history" onRetry={historyBlock.retry} />
+            ) : (
+              <>
+                <Skeleton className="h-64 w-full rounded-lg" />
+                <span className="sr-only" role="status">Loading the twelve-month history</span>
+              </>
+            )}
+          </div>
+        </Card>
+      )}
+
+      <aside className="flex gap-3 rounded-xl border border-navy/15 bg-navy-soft/60 px-5 py-4">
+        <Info aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-navy" />
+        <div className="text-sm">
+          <h2 className="font-medium text-charcoal">How net profit is calculated</h2>
+          {/* The card is as wide as the page, so its two sentences use that width. */}
+          <p className="mt-1 leading-relaxed text-charcoal-muted">
+            Net profit is income after expenses, counted for approved jobs only. Each share is that holder’s stake of the net profit.
+          </p>
+        </div>
+      </aside>
 
       <EditStakes
         open={stakesOpen}
         onOpenChange={setStakesOpen}
         holders={holders.map((h) => h.shareholder)}
-        onStakesChanged={() => void load()}
+        onStakesChanged={reload}
       />
       <EditDetails
         holder={detailsFor}
         onOpenChange={(open) => { if (!open) setDetailsFor(null); }}
-        onSaved={() => void load()}
+        onSaved={reload}
       />
     </div>
   );
 }
 
-function StatCard({
-  label, value, color, accent,
+/** The share bar, or the one line that takes its place when there is no profit to split. */
+function SplitBar({
+  netCents, scope, holders, unallocatedCents,
 }: {
-  label: string; value: string; color?: string; accent?: boolean;
+  netCents: number;
+  scope: OwnershipScope;
+  holders: { shareholder: ShareholderDto; shareCents: number }[];
+  unallocatedCents: number;
 }) {
-  return (
-    <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
-      <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className={`figure mt-2 text-2xl ${color ?? ''}`}>{value}</p>
-    </div>
-  );
+  const line = noSplitLine(netCents, scope);
+  if (line !== null) {
+    const loss = netCents < 0;
+    return (
+      <p
+        className={cn(
+          'figure flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium',
+          loss ? 'bg-danger/10 text-danger' : 'bg-mist text-charcoal-muted',
+        )}
+      >
+        {loss && <TrendingDown aria-hidden="true" className="size-4 shrink-0" />}
+        {line}
+      </p>
+    );
+  }
+
+  const amounts = new Map(holders.map((h) => [h.shareholder.id, h.shareCents]));
+  amounts.set(RETAINED_SEGMENT, unallocatedCents);
+  return <ShareBar segments={splitSegments(holders.map((h) => h.shareholder))} amounts={amounts} />;
 }

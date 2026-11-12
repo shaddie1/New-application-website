@@ -19,11 +19,14 @@ import type {
   ShareholderAllocation,
   AllTimeTotals,
   EquityOverview,
+  EquityHistory,
+  EquityHistoryMonth,
   UnsortedJobDto,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { monthDays, nairobiToday } from '../finance/comparison.js';
 import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
 import { suggester } from '../projectMoney/suggest.js';
 
@@ -559,26 +562,13 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const parsed = DateRangeSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
-
-    const [shareholders, periodJobs, periodExpenses, allTime] = await Promise.all([
+    const [shareholders, figures, allTime] = await Promise.all([
       listShareholders(),
-      prisma.job.findMany({
-        where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
-        select: { incomeCents: true, discountCents: true },
-      }),
-      prisma.expense.findMany({
-        where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
-        select: { amountCents: true },
-      }),
+      periodFigures(parsed.data.from, parsed.data.to),
       allTimeTotals(),
     ]);
 
-    const periodIncomeCents = periodJobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-    const periodExpensesCents = periodExpenses.reduce((acc, e) => acc + e.amountCents, 0);
-    const periodNetCents = periodIncomeCents - periodExpensesCents;
-
-    const period = allocate(periodNetCents, shareholders);
+    const period = allocate(figures.netCents, shareholders);
     const lifetime = allocate(allTime.totalNetCents, shareholders);
 
     const allocations: ShareholderAllocation[] = shareholders.map((s, i) => ({
@@ -592,19 +582,102 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       totalBasisPoints: shareholders.reduce((acc, s) => acc + s.basisPoints, 0),
       unallocatedPeriodCents: period.unallocatedCents,
       unallocatedAllTimeCents: lifetime.unallocatedCents,
-      periodNetCents,
-      periodIncomeCents,
-      periodExpensesCents,
-      periodProjects: periodJobs.length,
+      periodNetCents: figures.netCents,
+      periodIncomeCents: figures.incomeCents,
+      periodExpensesCents: figures.expensesCents,
+      periodProjects: figures.jobCount,
       fromDate: parsed.data.from,
       toDate: parsed.data.to,
       allTime,
     };
     return reply.send({ overview });
   });
+
+  // ── Equity history ─────────────────────────────────────────────────────────
+  // Each of the last months' net profit split across the current holders at
+  // today's stakes: past stake changes are not stored. A month's figures are
+  // the equity overview's for that month, so its last entry matches the
+  // overview's "this month" to the cent.
+
+  app.get('/equity/history', async (req, reply) => {
+    const MonthsSchema = z.object({ months: z.coerce.number().int().min(1).max(24).default(12) });
+    const parsed = MonthsSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const [year, month] = nairobiToday().split('-').map(Number) as [number, number];
+    const slots = monthsEndingAt(year, month, parsed.data.months);
+
+    const [shareholders, figures] = await Promise.all([
+      listShareholders(),
+      Promise.all(
+        slots.map((slot) => {
+          const { from, to } = monthDays(slot.year, slot.month);
+          return periodFigures(from, to);
+        }),
+      ),
+    ]);
+
+    const months: EquityHistoryMonth[] = slots.map((slot, i) => {
+      const { netCents } = figures[i]!;
+      const split = allocate(netCents, shareholders);
+      return {
+        ...slot,
+        netCents,
+        shares: shareholders.map((s, k) => ({
+          shareholderId: s.id,
+          shareholderName: s.name,
+          basisPoints: s.basisPoints,
+          shareCents: split.shares[k]!,
+        })),
+        unallocatedCents: split.unallocatedCents,
+        // The current month is still running.
+        partial: i === slots.length - 1,
+      };
+    });
+
+    const history: EquityHistory = { months };
+    return reply.send({ history });
+  });
 };
 
 // ── Ownership helpers ──────────────────────────────────────────────────────
+
+/**
+ * What a period's net profit is made of: counted jobs dated `fromDate` to
+ * `toDate` (YYYY-MM-DD, both inclusive), their income less discounts, and the
+ * costs dated in the period on counted jobs. The equity overview and the
+ * equity history both split this net figure.
+ */
+async function periodFigures(fromDate: string, toDate: string) {
+  const { from, to } = dateRange(fromDate, toDate);
+
+  const [jobs, expenses] = await Promise.all([
+    prisma.job.findMany({
+      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+      select: { incomeCents: true, discountCents: true },
+    }),
+    prisma.expense.findMany({
+      where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
+      select: { amountCents: true },
+    }),
+  ]);
+
+  const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
+  const expensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+  return { incomeCents, expensesCents, netCents: incomeCents - expensesCents, jobCount: jobs.length };
+}
+
+/** The `count` calendar months ending at the given one, oldest first, each with a short label such as "Jun". */
+function monthsEndingAt(year: number, month: number, count: number) {
+  return Array.from({ length: count }, (_, i) => {
+    const first = new Date(Date.UTC(year, month - count + i, 1));
+    return {
+      year: first.getUTCFullYear(),
+      month: first.getUTCMonth() + 1,
+      label: first.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
+    };
+  });
+}
 
 /** The current holders, in table order. Removed holders are left out. */
 async function listShareholders(): Promise<ShareholderDto[]> {

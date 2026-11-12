@@ -10,6 +10,7 @@ import { useConfirm } from '../ui/confirm-dialog';
 import {
   Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
+import { SelectField } from './SelectField';
 import {
   balanceText, blankRow, confirmationSummary, formatPercent, readStakesForm, rowsFor, type StakeRow,
 } from './stakes';
@@ -146,8 +147,12 @@ function StakesForm({
             const nameId = `${id}-name-${row.key}`;
             const who = row.name.trim() || 'new shareholder';
 
+            // The stake and its button are two columns of a grid, so what is
+            // wrong with the stake can sit on the next row, under the field
+            // and starting at its left edge. On a phone the field takes the
+            // width its button leaves; from 640px it is a short field.
             const stakeField = (
-              <div className="w-28 shrink-0">
+              <div className="min-w-0">
                 <label htmlFor={stakeId} className={fieldLabel}>
                   Stake (%)<span className="sr-only"> of {who}</span>
                 </label>
@@ -167,28 +172,36 @@ function StakesForm({
               </div>
             );
 
+            // As "Enter a name." sits under Name: left-aligned, straight under its field.
+            const stakeReason = problems.stake ? <p id={`${stakeId}-reason`} className={reason}>{problems.stake}</p> : null;
+
             return (
               <li key={row.key} className={cn('rounded-lg border border-border p-3', row.removed && 'bg-bg-muted/30')}>
                 {row.id !== null ? (
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="min-w-0 flex-1 self-center">
-                      <p className={cn('font-medium', row.removed && 'text-text-muted line-through')}>{row.name}</p>
+                  // A phone stacks the card: who it is on the first line, the
+                  // stake and its button on the second. From 640px they share one line.
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="min-w-0 sm:flex-1 sm:self-center">
+                      <p className={cn('break-words font-medium', row.removed && 'text-text-muted line-through')}>{row.name}</p>
                       <p className="text-xs text-text-muted">
                         {row.removed
                           ? 'Will be removed when you save.'
                           : [row.title, row.kind === 'COMPANY' ? 'Company' : null].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                    {stakeField}
-                    {row.removed ? (
-                      <Button type="button" variant="outline" onClick={() => change(row.key, { removed: false })}>
-                        Undo<span className="sr-only"> removing {row.name}</span>
-                      </Button>
-                    ) : (
-                      <Button type="button" variant="ghost" onClick={() => change(row.key, { removed: true })}>
-                        Remove<span className="sr-only"> {row.name}</span>
-                      </Button>
-                    )}
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-3 sm:grid-cols-[7rem_auto]">
+                      {stakeField}
+                      {row.removed ? (
+                        <Button type="button" variant="outline" className="shrink-0" onClick={() => change(row.key, { removed: false })}>
+                          Undo<span className="sr-only"> removing {row.name}</span>
+                        </Button>
+                      ) : (
+                        <Button type="button" variant="ghost" className="shrink-0" onClick={() => change(row.key, { removed: true })}>
+                          Remove<span className="sr-only"> {row.name}</span>
+                        </Button>
+                      )}
+                      {stakeReason && <div className="col-span-2">{stakeReason}</div>}
+                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -221,31 +234,32 @@ function StakesForm({
                         onChange={(e) => change(row.key, { title: e.target.value })}
                       />
                     </div>
-                    <div className="flex flex-wrap items-end gap-3 sm:col-span-2">
-                      <div className="min-w-0 flex-1">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-3 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto]">
+                      {/* A line of its own on a phone, above the stake and its button. */}
+                      <div className="col-span-2 mb-3 min-w-0 sm:col-span-1 sm:mb-0">
                         <label htmlFor={`${id}-kind-${row.key}`} className={fieldLabel}>Type</label>
-                        <select
+                        <SelectField
                           id={`${id}-kind-${row.key}`}
-                          className={field}
                           value={row.kind}
                           onChange={(e) => change(row.key, { kind: e.target.value as ShareholderKind })}
                         >
                           <option value="INDIVIDUAL">Individual</option>
                           <option value="COMPANY">Company</option>
-                        </select>
+                        </SelectField>
                       </div>
                       {stakeField}
                       <Button
                         type="button"
                         variant="ghost"
+                        className="shrink-0"
                         onClick={() => setRows((all) => all.filter((r) => r.key !== row.key))}
                       >
                         Remove<span className="sr-only"> {who}</span>
                       </Button>
+                      {stakeReason && <div className="col-span-2 sm:col-start-2">{stakeReason}</div>}
                     </div>
                   </div>
                 )}
-                {problems.stake && <p id={`${stakeId}-reason`} className={cn(reason, 'text-right')}>{problems.stake}</p>}
               </li>
             );
           })}

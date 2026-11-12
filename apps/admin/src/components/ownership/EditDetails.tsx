@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { refusalMessage } from '../project-money/PlacementPicker';
 import { Button } from '../ui/button';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import { SelectField } from './SelectField';
 
 const field = 'w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm';
 const fieldLabel = 'block text-xs text-text-muted mb-1';
@@ -119,15 +120,10 @@ function DetailsForm({
         </div>
         <div>
           <label htmlFor={`${id}-kind`} className={fieldLabel}>Type</label>
-          <select
-            id={`${id}-kind`}
-            className={field}
-            value={kind}
-            onChange={(e) => setKind(e.target.value as ShareholderKind)}
-          >
+          <SelectField id={`${id}-kind`} value={kind} onChange={(e) => setKind(e.target.value as ShareholderKind)}>
             <option value="INDIVIDUAL">Individual</option>
             <option value="COMPANY">Company</option>
-          </select>
+          </SelectField>
         </div>
       </DialogBody>
 
