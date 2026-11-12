@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Block } from './block-state';
 import {
-  holderSlices,
-  profitShareView,
+  breakdownCards,
   revenueChartView,
   revenueSlices,
   revenueViews,
@@ -74,60 +74,68 @@ describe('revenueSlices', () => {
   });
 });
 
-describe('holderSlices', () => {
-  const holder = (id: string, name: string, periodShareCents: number) => ({
-    shareholder: { id, name },
-    periodShareCents,
-  });
+describe('breakdownCards', () => {
+  const lists = {
+    byServiceLine: [item('OFFICE', 4_500_000), unknown(900_000)],
+    bySegment: [item('CORPORATE', 5_400_000)],
+  };
+  const loaded = <T>(data: T): Block<T> => ({ status: 'loaded', data, refreshing: false });
+  const expenses = loaded({ expensesByCategoryCents: { MATERIALS: 840_000 } });
 
-  it('gives each holder the colour of their place in the table, whatever their share', () => {
-    // The third holder has the largest share and still takes the third colour.
-    const slices = holderSlices([
-      holder('h1', 'OnyxHawk Holdings', 1_000_000),
-      holder('h2', 'Amina Yusuf', 2_000_000),
-      holder('h3', 'Zed Otieno', 9_000_000),
+  it('draws the two revenue cards and puts the expenses card in its error state when only the expenses failed to load', () => {
+    expect(breakdownCards(loaded(lists), { status: 'failed', httpStatus: 500 })).toEqual([
+      { card: 'service-line', state: 'chart' },
+      { card: 'segment', state: 'chart' },
+      { card: 'expenses', state: 'failed' },
     ]);
+  });
 
-    expect(slices.map((s) => [s.key, s.color])).toEqual([
-      ['h1', 'var(--chart-1)'],
-      ['h2', 'var(--chart-2)'],
-      ['h3', 'var(--chart-3)'],
+  it('gives the revenue charts one error card between them, and still draws the expenses', () => {
+    expect(breakdownCards({ status: 'failed' }, expenses)).toEqual([
+      { card: 'revenue', state: 'failed' },
+      { card: 'expenses', state: 'chart' },
     ]);
-    expect(slices.map((s) => s.value)).toEqual([1_000_000, 2_000_000, 9_000_000]);
   });
 
-  it('labels a slice with the holder’s name and no percentage', () => {
-    const [slice] = holderSlices([holder('h1', 'OnyxHawk Holdings', 1_000_000)]);
-    expect(slice!.label).toBe('OnyxHawk Holdings');
+  it('holds each card’s place while its own request loads', () => {
+    expect(breakdownCards({ status: 'loading' }, { status: 'loading' })).toEqual([
+      { card: 'service-line', state: 'loading' },
+      { card: 'segment', state: 'loading' },
+      { card: 'expenses', state: 'loading' },
+    ]);
+    expect(breakdownCards(loaded(lists), { status: 'loading' })).toEqual([
+      { card: 'service-line', state: 'chart' },
+      { card: 'segment', state: 'chart' },
+      { card: 'expenses', state: 'loading' },
+    ]);
   });
 
-  it('gives holders past the fifth the neutral grey, as the Ownership page does', () => {
-    const slices = holderSlices(
-      ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => holder(id, id.toUpperCase(), 100)),
-    );
-    expect(slices[4]!.color).toBe('var(--chart-5)');
-    expect(slices[5]!.color).toBe('var(--chart-other)');
-    expect(slices[6]!.color).toBe('var(--chart-other)');
-  });
-});
-
-describe('profitShareView', () => {
-  const allocations = [{ shareholder: { id: 'h1', name: 'OnyxHawk Holdings' }, periodShareCents: 1_552_000 }];
-
-  it('is a chart in a month with a profit', () => {
-    expect(profitShareView({ periodNetCents: 3_880_000, allocations })).toBe('chart');
+  it('gives one nudge card when neither revenue list is classified', () => {
+    const unclassified = { byServiceLine: [unknown(5_400_000)], bySegment: [unknown(5_400_000)] };
+    expect(breakdownCards(loaded(unclassified), expenses)).toEqual([
+      { card: 'revenue', state: 'nudge' },
+      { card: 'expenses', state: 'chart' },
+    ]);
   });
 
-  it('says there is no profit to share in a loss month', () => {
-    expect(profitShareView({ periodNetCents: -1_200_000, allocations })).toBe('no-profit');
+  it('gives the client-segment card the nudge when all of its revenue is unspecified, and a chart when it is all Corporate', () => {
+    const unspecified = { byServiceLine: lists.byServiceLine, bySegment: [unknown(5_400_000, 'Unspecified')] };
+    expect(breakdownCards(loaded(unspecified), expenses)[1]).toEqual({ card: 'segment', state: 'nudge' });
+    expect(breakdownCards(loaded(lists), expenses)[1]).toEqual({ card: 'segment', state: 'chart' });
   });
 
-  it('says there is no profit to share when the month broke even', () => {
-    expect(profitShareView({ periodNetCents: 0, allocations })).toBe('no-profit');
+  it('says a month with no revenue has none, and never nudges for it', () => {
+    expect(breakdownCards(loaded({ byServiceLine: [], bySegment: [] }), expenses)).toEqual([
+      { card: 'service-line', state: 'empty' },
+      { card: 'segment', state: 'empty' },
+      { card: 'expenses', state: 'chart' },
+    ]);
   });
 
-  it('says so when a profit has nobody to go to', () => {
-    expect(profitShareView({ periodNetCents: 3_880_000, allocations: [] })).toBe('no-holders');
+  it('keeps every card drawn while its request is asked again', () => {
+    const revenueAgain: Block<typeof lists> = { status: 'loaded', data: lists, refreshing: true };
+    const expensesAgain: Block<unknown> = { status: 'loaded', data: {}, refreshing: true };
+    expect(breakdownCards(revenueAgain, expensesAgain).map((c) => c.state)).toEqual(['chart', 'chart', 'chart']);
   });
 });
 

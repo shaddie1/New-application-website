@@ -42,6 +42,8 @@ import type {
   MonthlyTargetDto,
   SetMonthlyTargetInput,
   DashboardOverview,
+  DashboardAccess,
+  OwnershipSummary,
   ProjectDto,
   ProjectEventDto,
   CreateProjectInput,
@@ -471,6 +473,17 @@ export const api = {
 
   overview: (year: number, month: number) =>
     request<{ overview: DashboardOverview }>(`/admin/finance/overview?year=${year}&month=${month}`, {
+      method: 'GET',
+      auth: true,
+    }),
+
+  /** Which Dashboard sections this account has, and what it may do there. Asked before any section's data. */
+  dashboardAccess: () =>
+    request<{ access: DashboardAccess }>('/admin/dashboard/access', { method: 'GET', auth: true }),
+
+  /** One calendar month's net profit split between the current holders, with each holder's all-time share. */
+  ownershipSummary: (year: number, month: number) =>
+    request<{ summary: OwnershipSummary }>(`/admin/financials/ownership-summary?year=${year}&month=${month}`, {
       method: 'GET',
       auth: true,
     }),

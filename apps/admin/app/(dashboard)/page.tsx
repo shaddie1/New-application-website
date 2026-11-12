@@ -1,20 +1,27 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CalendarCheck, Clock, FileText, RotateCw } from 'lucide-react';
+import { RotateCw } from 'lucide-react';
 
 import { api } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
 import { greeting } from '../../src/lib/greeting';
-import { ActionCard } from '../../src/components/dashboard/ActionCard';
-import { ExpensesChart, ProfitShareChart, RevenueCharts } from '../../src/components/dashboard/Breakdowns';
-import { MonthFigures } from '../../src/components/dashboard/MonthFigures';
+import {
+  useAttention,
+  useExpenseSummary,
+  useMonthOverview,
+  useOwnershipSummary,
+  useRevenueBreakdown,
+  useSavedTargets,
+  useTrend,
+} from '../../src/components/dashboard/hooks';
 import { MonthSelector } from '../../src/components/dashboard/MonthSelector';
-import { StatusStrip } from '../../src/components/dashboard/StatusStrip';
-import { TextLink } from '../../src/components/dashboard/TextLink';
-import { isSameMonth, monthLabel, nairobiYearMonth, type YearMonth } from '../../src/components/dashboard/month';
-import { activeBookings, noActiveJobs } from '../../src/components/dashboard/status';
-import { useBlock } from '../../src/components/dashboard/useBlock';
+import { nairobiYearMonth, type YearMonth } from '../../src/components/dashboard/month';
+import { AttentionSection } from '../../src/components/dashboard/sections/AttentionSection';
+import { BreakdownSection } from '../../src/components/dashboard/sections/BreakdownSection';
+import { MonthSection } from '../../src/components/dashboard/sections/MonthSection';
+import { OwnershipSummarySection } from '../../src/components/dashboard/sections/OwnershipSummarySection';
+import { TrendSection } from '../../src/components/dashboard/sections/TrendSection';
 import { Button } from '../../src/components/ui/button';
 import { Card } from '../../src/components/ui/card';
 
@@ -26,13 +33,19 @@ type OtpRow = { phone: string; email: string | null; purpose: string; codePlain:
 
 /**
  * The landing page, top to bottom: a greeting and the month selector; what
- * needs doing right now; the month's figures and targets; where the month's
- * money came from and went. Every block loads by itself (see `useBlock`), and
- * a block the signed-in role may not see is absent, not empty:
+ * needs attention right now; the month's figures and targets; the trend to
+ * that month; where the month's money came from and went; how its profit is
+ * split. Every section draws the blocks it is handed and loads, fails and
+ * retries by itself. A section the signed-in role may not see is absent, not
+ * empty:
  *
- *   everyone signed in      status strip, action cards
- *   owner and finance roles the month's tiles, targets and revenue charts
- *   owner only              "Where the money went" and "Profit share"
+ *   everyone signed in      needs attention
+ *   owner and finance roles the month, the trend and the breakdown
+ *   owner only              the ownership summary
+ *
+ * Each section's request is made by a small wrapper below, which is mounted
+ * only for those who see the section, so nothing is asked for on behalf of an
+ * account that may not have it.
  */
 export default function DashboardPage() {
   const { session } = useAuth();
@@ -40,17 +53,13 @@ export default function DashboardPage() {
   // and the month the selector stops at cannot disagree.
   const [now] = useState(() => new Date());
   const [current] = useState<YearMonth>(() => nairobiYearMonth(now));
-  // The month on screen. It drives the figures, targets, sparklines and
-  // breakdown charts; the strip and the action cards always show the present.
+  // The month on screen. It drives the figures, targets, trend, breakdown and
+  // ownership summary; "Needs attention" always shows the present.
   const [month, setMonth] = useState<YearMonth>(current);
-
-  const stats = useBlock(() => api.stats().then((res) => res.stats), [], noActiveJobs);
-  const counts = stats.status === 'loaded' || stats.status === 'empty' ? stats.data : null;
 
   const user = session?.user;
   const isOwner = user?.isOwner === true;
   const canSeeFinance = !!user && (isOwner || FINANCE_ROLES.includes(user.role));
-  const onCurrentMonth = isSameMonth(month, current);
 
   return (
     <div>
@@ -71,74 +80,69 @@ export default function DashboardPage() {
         {canSeeFinance && <MonthSelector value={month} current={current} onChange={setMonth} />}
       </header>
 
-      <section className="mt-7" aria-label="Jobs and requests right now">
-        {/* The counts below are always today's. Say so once a past month is on
-            screen, so they are not read as that month's. */}
-        {!onCurrentMonth && (
-          <p className="mb-2.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-charcoal-muted">
-            <Clock className="size-3.5" aria-hidden="true" />
-            Right now
-          </p>
+      <div className="mt-8 space-y-10">
+        <Attention />
+        {canSeeFinance && (
+          <>
+            <MonthAndTrend month={month} current={current} />
+            <Breakdown month={month} current={current} canOpenJobsAndCosts={isOwner} />
+          </>
         )}
-
-        <StatusStrip stats={stats} />
-
-        {/* Side by side only from 1024px. From 768px the side menu takes its
-            share of the width, and two cards in what is left wrap their
-            titles and descriptions badly, so there they stack as on a phone. */}
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <ActionCard
-            href="/bookings"
-            icon={CalendarCheck}
-            title="Bookings"
-            description="Review the schedule, assign crews and leads."
-            count={counts ? activeBookings(counts) : undefined}
-            countLoading={stats.status === 'loading'}
-            countLabel="active bookings"
-          />
-          <ActionCard
-            href="/quotes"
-            icon={FileText}
-            title="Quote requests"
-            description="Respond to walkthrough requests with a price."
-            count={counts?.pendingQuotes}
-            countLoading={stats.status === 'loading'}
-            countLabel="pending quotes"
-          />
-        </div>
-      </section>
-
-      {canSeeFinance && user && (
-        <section className="mt-10" aria-labelledby="month-heading">
-          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 id="month-heading" className="font-serif text-2xl text-charcoal">
-              {monthLabel(month)}
-              {onCurrentMonth && <span className="ml-2.5 font-sans text-sm text-charcoal-muted">so far</span>}
-            </h2>
-            {/* Insights is the owner's page, as in the side menu. */}
-            {isOwner && <TextLink href="/insights">Full insights</TextLink>}
-          </div>
-
-          <MonthFigures month={month} current={current} user={user} />
-
-          {/* Part-to-whole views of the month. Each child is one grid cell and
-              carries `min-w-0`, so a long legend label wraps inside its card. */}
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <RevenueCharts month={month} isCurrentMonth={onCurrentMonth} isOwner={isOwner} />
-            {isOwner && (
-              <>
-                <ExpensesChart month={month} />
-                <ProfitShareChart month={month} isCurrentMonth={onCurrentMonth} />
-              </>
-            )}
-          </div>
-        </section>
-      )}
+        {isOwner && <OwnershipSummary month={month} current={current} />}
+      </div>
 
       {/* Dev sign-in codes: the server decides whether this exists (404 when dev tools are off). */}
       {isOwner && <LiveOtpPanel />}
     </div>
   );
+}
+
+// ── A section and its request ───────────────────────────────────────────────
+// Each wrapper calls its section's hook once and hands the block down.
+// Mounting a wrapper is what sends the request.
+
+function Attention() {
+  return <AttentionSection stats={useAttention()} />;
+}
+
+/**
+ * Sections 2 and 3 read one overview answer, so one call of its hook feeds
+ * both. Everyone shown the month may set its targets; the server refuses a
+ * save from anyone else.
+ */
+function MonthAndTrend({ month, current }: { month: YearMonth; current: YearMonth }) {
+  const overview = useMonthOverview(month);
+  const trend = useTrend(overview);
+  const savedTargets = useSavedTargets();
+  return (
+    <>
+      <MonthSection overview={overview} savedTargets={savedTargets} month={month} current={current} canSetTargets />
+      <TrendSection trend={trend} month={month} />
+    </>
+  );
+}
+
+function Breakdown({
+  month, current, canOpenJobsAndCosts,
+}: {
+  month: YearMonth;
+  current: YearMonth;
+  canOpenJobsAndCosts: boolean;
+}) {
+  return (
+    <BreakdownSection
+      revenue={useRevenueBreakdown(month)}
+      expenses={useExpenseSummary(month)}
+      month={month}
+      current={current}
+      canOpenJobsAndCosts={canOpenJobsAndCosts}
+    />
+  );
+}
+
+/** Mounted for the owner alone, who is also the one who manages ownership. */
+function OwnershipSummary({ month, current }: { month: YearMonth; current: YearMonth }) {
+  return <OwnershipSummarySection summary={useOwnershipSummary(month)} month={month} current={current} canManageOwnership />;
 }
 
 function LiveOtpPanel() {

@@ -6,8 +6,10 @@ import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { money } from '../lib/money';
 import { donutLayout, type Slice } from './chart-geometry';
 import { ACCENT, EDGE_PX, colourOfFill, edgedFill, sliceColour, type ChartColour } from './chart-palette';
-import { changeTone } from './dashboard/change-tone';
+import { changeChipClass, changeTone } from './dashboard/change-tone';
+import { hasFigures, type TrendPoint } from './dashboard/sections/trend';
 import { sparklineLayout, type SparklineGeometry, type SparklineMonth } from './sparkline';
+import { Card, type CardAccent } from './ui/card';
 
 /**
  * Charts for the admin dashboard.
@@ -63,6 +65,9 @@ export type ChangeUnit = '%' | 'pts';
  * Below 640px a tile with a sparkline is compact, so a column of them stays
  * short: the label, figure and chip on the left, the sparkline on the right,
  * and the foot caption left to screen readers.
+ *
+ * The frame is the admin's one `Card`; `accent` gives it the thin top line of
+ * the Dashboard section it sits in.
  */
 export function StatTile({
   label,
@@ -73,6 +78,7 @@ export function StatTile({
   sparkline,
   context,
   loss = false,
+  accent,
 }: {
   label: string;
   value: string;
@@ -88,6 +94,8 @@ export function StatTile({
   context?: string;
   /** The figure is a loss, so it is drawn in red. */
   loss?: boolean;
+  /** The Dashboard section the tile belongs to. */
+  accent?: CardAccent;
 }) {
   const compared = delta !== undefined || deltaLabel !== undefined;
   const hasFigure = changeTone(delta) !== 'none';
@@ -95,8 +103,9 @@ export function StatTile({
   const compact = !!sparkline;
 
   return (
-    <div
-      className={`min-w-0 rounded-xl border border-line bg-surface sm:flex sm:flex-col sm:p-5 ${
+    <Card
+      accent={accent}
+      className={`min-w-0 sm:flex sm:flex-col sm:p-5 ${
         compact ? 'grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-center gap-x-3 p-4 sm:items-stretch' : 'flex flex-col p-5'
       }`}
     >
@@ -147,14 +156,15 @@ export function StatTile({
           &nbsp;
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 
 /**
  * The change from the earlier period as a rounded pill, coloured by
- * `changeTone`: a rise is teal, a decline is amber (it needs attention; red is
- * kept for a loss or an error), and no change is neutral with no arrow. With
+ * `changeTone`: a rise is teal, a fall is coral (red is kept for a loss or an
+ * error), and no change is neutral with no arrow. Each is a light tint with
+ * the deep shade of the same colour as its text. With
  * no earlier figure there is nothing to give, so the pill says so instead of
  * leaving a bare label. The arrow is decoration; "Up" and "Down" are there for
  * screen readers.
@@ -163,11 +173,11 @@ function ChangeChip({ change, unit }: { change: number | null | undefined; unit:
   const pill = 'figure inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 align-middle font-medium leading-4';
   const tone = changeTone(change);
   if (tone === 'none') {
-    return <span className={`${pill} bg-mist text-charcoal-muted`}>No earlier figure to compare</span>;
+    return <span className={`${pill} ${changeChipClass(tone)}`}>No earlier figure to compare</span>;
   }
   if (tone === 'flat') {
     return (
-      <span className={`${pill} bg-mist text-charcoal-muted`}>
+      <span className={`${pill} ${changeChipClass(tone)}`}>
         <ChangeSize size={0} unit={unit} />
       </span>
     );
@@ -175,7 +185,7 @@ function ChangeChip({ change, unit }: { change: number | null | undefined; unit:
   const up = tone === 'up';
   const Arrow = up ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={`${pill} ${up ? 'bg-aqua-soft text-success' : 'bg-warning/10 text-warning'}`}>
+    <span className={`${pill} ${changeChipClass(tone)}`}>
       <Arrow className="size-3.5" aria-hidden="true" />
       <span className="sr-only">{up ? 'Up' : 'Down'}</span>
       <ChangeSize size={Math.abs(change as number)} unit={unit} />
@@ -481,14 +491,26 @@ export function TargetMeter({
 
 // ── Monthly trend: income area + net profit line ────────────────────────────
 
-export type TrendPoint = {
-  label: string;
-  incomeCents: number;
-  netCents: number;
-};
-
 /** How strongly the income area is filled: pale, so the net-profit line and the gridlines read through it. */
 const AREA_OPACITY = 0.18;
+
+/**
+ * The plot's two sizes, in the units of its own viewBox. The wide one is for
+ * a card with room. The compact one is drawn at about a phone's width, so its
+ * labels are the size they are given, where the wide plot's would shrink with
+ * it to a third; with more months than it has room to name, it names every
+ * other one, always ending at the last.
+ */
+const TREND_PLOTS = {
+  wide: {
+    width: 760, height: 280, pad: { top: 18, right: 18, bottom: 38, left: 56 },
+    tickFont: 10, monthFont: 11, monthsNamed: Infinity, incomeStroke: 2.5, netStroke: 2, dot: 4,
+  },
+  compact: {
+    width: 320, height: 220, pad: { top: 12, right: 10, bottom: 30, left: 56 },
+    tickFont: 10, monthFont: 10, monthsNamed: 7, incomeStroke: 2, netStroke: 1.5, dot: 3,
+  },
+};
 
 /**
  * Income as a flat, pale teal area under a deep teal line, which is the
@@ -497,17 +519,58 @@ const AREA_OPACITY = 0.18;
  * Both series share ONE axis deliberately. They are the same unit (KSh) and net
  * profit is a component of income, so a second y-scale could render the profit
  * line above the income area — stating something false.
+ *
+ * The frame is the admin's one `Card`; `accent` gives it the thin top line of
+ * the Dashboard section it sits in. The plot is drawn at two sizes and the
+ * card's own width, not the screen's, picks the one that shows, so the chart
+ * also holds beside a side menu.
  */
-export function TrendChart({ data }: { data: TrendPoint[] }) {
+export function TrendChart({ data, accent }: { data: TrendPoint[]; accent?: CardAccent }) {
+  const hasData = hasFigures(data);
+
+  return (
+    <Card accent={accent} className="min-w-0 p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+        <span className="text-sm font-medium text-charcoal">Income and net profit by month</span>
+        {!hasData && (
+          <span className="text-xs text-charcoal-muted">
+            Awaiting data — the dashed line marks the zero baseline
+          </span>
+        )}
+      </div>
+
+      <div className="[container-type:inline-size]">
+        <div className="relative [@container_(min-width:34rem)]:hidden">
+          <TrendPlot data={data} hasData={hasData} size="compact" />
+        </div>
+        <div className="relative hidden [@container_(min-width:34rem)]:block">
+          <TrendPlot data={data} hasData={hasData} size="wide" />
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-4 text-xs text-charcoal-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm" style={edgedFill(ACCENT)} /> Income
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-[2px] w-4" style={{ backgroundColor: 'var(--chart-ink)' }} /> Net profit
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+/** The plot at one of its two sizes, with the figures of the month under the pointer. */
+function TrendPlot({ data, hasData, size }: { data: TrendPoint[]; hasData: boolean; size: keyof typeof TREND_PLOTS }) {
   const [hover, setHover] = useState<number | null>(null);
 
-  const width = 760;
-  const height = 280;
-  const pad = { top: 18, right: 18, bottom: 38, left: 56 };
+  const { width, height, pad, tickFont, monthFont, monthsNamed, incomeStroke, netStroke, dot } = TREND_PLOTS[size];
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
+  // Counted back from the last month, so the month the chart ends at is always named.
+  const monthEvery = data.length > monthsNamed ? 2 : 1;
+  const named = (i: number) => (data.length - 1 - i) % monthEvery === 0;
 
-  const hasData = data.some((d) => d.incomeCents !== 0 || d.netCents !== 0);
   const values = data.flatMap((d) => [d.incomeCents, d.netCents]);
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
@@ -533,16 +596,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
   const active = hover !== null ? data[hover] : null;
 
   return (
-    <figure className="relative rounded-xl border border-line bg-white p-5">
-      <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-        <span className="text-sm font-medium text-charcoal">Income and net profit by month</span>
-        {!hasData && (
-          <span className="text-xs text-charcoal-muted">
-            Awaiting data — the dashed line marks the zero baseline
-          </span>
-        )}
-      </figcaption>
-
+    <>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="w-full"
@@ -560,9 +614,12 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
               stroke="var(--chart-grid)"
               strokeWidth="1"
             />
-            <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="var(--chart-muted)" className="figure">
-              {moneyShort(t)}
-            </text>
+            {/* With nothing to plot the lines keep the plot's shape, and only the baseline is given a figure. */}
+            {(hasData || t === 0) && (
+              <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize={tickFont} fill="var(--chart-muted)" className="figure">
+                {moneyShort(t)}
+              </text>
+            )}
           </g>
         ))}
 
@@ -586,7 +643,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
               points={data.map((d, i) => `${cx(i)},${y(Math.max(d.incomeCents, 0))}`).join(' ')}
               fill="none"
               stroke={ACCENT.edge}
-              strokeWidth="2.5"
+              strokeWidth={incomeStroke}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
@@ -594,7 +651,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
               points={data.map((d, i) => `${cx(i)},${y(d.netCents)}`).join(' ')}
               fill="none"
               stroke="var(--chart-ink)"
-              strokeWidth="2"
+              strokeWidth={netStroke}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
@@ -602,10 +659,12 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
         )}
 
         {data.map((d, i) => (
-          <g key={d.label}>
-            <text x={cx(i)} y={height - 14} textAnchor="middle" fontSize="11" fill="var(--chart-muted)">
-              {d.label}
-            </text>
+          <g key={`${d.label}-${i}`}>
+            {named(i) && (
+              <text x={cx(i)} y={height - 14} textAnchor="middle" fontSize={monthFont} fill="var(--chart-muted)">
+                {d.label}
+              </text>
+            )}
             {hover === i && hasData && (
               <line
                 x1={cx(i)}
@@ -633,10 +692,10 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
         {hasData &&
           data.map((d, i) => (
             <circle
-              key={`${d.label}-pt`}
+              key={`${d.label}-${i}-pt`}
               cx={cx(i)}
               cy={y(d.netCents)}
-              r={hover === i ? 5.5 : 4}
+              r={hover === i ? dot + 1.5 : dot}
               fill="var(--chart-ink)"
               stroke="var(--chart-surface)"
               strokeWidth="2"
@@ -646,8 +705,14 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
 
       {active && hasData && (
         <div
-          className="pointer-events-none absolute top-16 z-10 rounded-lg border border-line bg-white px-3 py-2 shadow-lg"
-          style={{ left: `${(cx(hover!) / width) * 100}%`, transform: 'translateX(-50%)' }}
+          // As wide as its longest line, whatever room is left beside it:
+          // near the right edge it would otherwise fold every figure in two.
+          className="pointer-events-none absolute top-4 z-10 w-max rounded-lg border border-line bg-surface px-3 py-2 shadow-lg"
+          // Over its month, and held inside the plot at either end.
+          style={{
+            left: `clamp(6rem, ${(cx(hover!) / width) * 100}%, calc(100% - 6rem))`,
+            transform: 'translateX(-50%)',
+          }}
         >
           <p className="text-xs font-semibold text-charcoal">{active.label}</p>
           <dl className="mt-1 space-y-0.5 text-xs">
@@ -674,16 +739,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
           </dl>
         </div>
       )}
-
-      <div className="mt-3 flex items-center gap-4 text-xs text-charcoal-muted">
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm" style={edgedFill(ACCENT)} /> Income
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-[2px] w-4" style={{ backgroundColor: 'var(--chart-ink)' }} /> Net profit
-        </span>
-      </div>
-    </figure>
+    </>
   );
 }
 

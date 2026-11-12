@@ -1,11 +1,10 @@
 'use client';
 
-import { Info, TrendingDown, TriangleAlert } from 'lucide-react';
+import { Info, TriangleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { ShareholderDto } from '@onyxhawk/types';
 import { api } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
-import { cn } from '../../../src/lib/cn';
 import { money } from '../../../src/lib/money';
 import { BlockFailed, Skeleton } from '../../../src/components/dashboard/BlockState';
 import { useBlock } from '../../../src/components/dashboard/useBlock';
@@ -18,8 +17,7 @@ import { HoldersTable } from '../../../src/components/ownership/HoldersTable';
 import {
   DEFAULT_SCOPE, nairobiMonth, scopeFigures, type OwnershipScope, type ReceivedEquityOverview,
 } from '../../../src/components/ownership/scope';
-import { ShareBar } from '../../../src/components/ownership/ShareBar';
-import { RETAINED_SEGMENT, splitSegments } from '../../../src/components/ownership/split';
+import { SplitBar } from '../../../src/components/ownership/SplitBar';
 import { BASIS_POINTS_TOTAL, formatPercentShort as pct } from '../../../src/components/ownership/stakes';
 import { noSplitLine, scopeLine, shareHeadingParts } from '../../../src/components/ownership/wording';
 import { Button } from '../../../src/components/ui/button';
@@ -133,8 +131,8 @@ export default function EquityPage() {
                 <div className="mt-5">
                   <SplitBar
                     netCents={figures.netCents}
-                    scope={scope}
-                    holders={holders}
+                    noSplitLine={noSplitLine(figures.netCents, scope)}
+                    holders={holders.map((h) => ({ ...h.shareholder, shareCents: h.shareCents }))}
                     unallocatedCents={figures.unallocatedCents}
                   />
                 </div>
@@ -217,34 +215,4 @@ export default function EquityPage() {
       />
     </div>
   );
-}
-
-/** The share bar, or the one line that takes its place when there is no profit to split. */
-function SplitBar({
-  netCents, scope, holders, unallocatedCents,
-}: {
-  netCents: number;
-  scope: OwnershipScope;
-  holders: { shareholder: ShareholderDto; shareCents: number }[];
-  unallocatedCents: number;
-}) {
-  const line = noSplitLine(netCents, scope);
-  if (line !== null) {
-    const loss = netCents < 0;
-    return (
-      <p
-        className={cn(
-          'figure flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium',
-          loss ? 'bg-danger/10 text-danger' : 'bg-mist text-charcoal-muted',
-        )}
-      >
-        {loss && <TrendingDown aria-hidden="true" className="size-4 shrink-0" />}
-        {line}
-      </p>
-    );
-  }
-
-  const amounts = new Map(holders.map((h) => [h.shareholder.id, h.shareCents]));
-  amounts.set(RETAINED_SEGMENT, unallocatedCents);
-  return <ShareBar segments={splitSegments(holders.map((h) => h.shareholder))} amounts={amounts} />;
 }
