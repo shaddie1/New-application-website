@@ -47,11 +47,8 @@ export function ActionCard({
 }) {
   return (
     <div className="min-w-0 [container-type:inline-size]">
-      {/* The thin top line of the "Needs attention" section, kept through the hover that darkens the outline. */}
-      <ClickableCard
-        asChild
-        className="group h-full border-t-[3px] border-t-section-attention-strong hover:border-t-section-attention-strong"
-      >
+      {/* No accent line: the status strip above carries the section's one, and the icon tile its colour. */}
+      <ClickableCard asChild className="group h-full">
         <Link
           href={href}
           // The rows keep to the top, so cards of unequal text line up along their icons and titles.

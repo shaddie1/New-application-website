@@ -6,8 +6,15 @@ import { cn } from '../../lib/cn';
 import { Button } from '../ui/button';
 
 /**
+ * The quiet panel inside a white card that holds a message where the card's
+ * content would be: near-white, the page's own colour, with a hairline round
+ * it. A failed block and a block with nothing to show both use it.
+ */
+export const QUIET_PANEL = 'rounded-lg border border-line/70 bg-page';
+
+/**
  * A block whose request failed: what could not be loaded, and a way to ask
- * again. It is the same centred, tinted panel as a block with nothing to show,
+ * again. It is the same centred, quiet panel as a block with nothing to show,
  * so a failed card is filled and not left blank; what tells the two apart is
  * the alert mark, the words "Could not load" and the Retry button, which an
  * empty block never has. Give it a `min-h-*` to fill a taller card.
@@ -17,7 +24,8 @@ export function BlockFailed({ what, onRetry, className }: { what: string; onRetr
     <div
       role="alert"
       className={cn(
-        'flex flex-wrap content-center items-center justify-center gap-x-4 gap-y-3 rounded-lg bg-mist px-5 py-4 text-sm text-charcoal',
+        QUIET_PANEL,
+        'flex flex-wrap content-center items-center justify-center gap-x-4 gap-y-3 px-5 py-4 text-sm text-charcoal',
         className,
       )}
     >

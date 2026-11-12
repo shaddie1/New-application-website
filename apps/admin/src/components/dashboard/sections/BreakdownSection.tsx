@@ -8,9 +8,10 @@ import { money } from '../../../lib/money';
 import { DonutChart } from '../../charts';
 import { Card } from '../../ui/card';
 import type { BlockResult } from '../block-state';
-import { BlockFailed, Skeleton } from '../BlockState';
+import { BlockFailed, QUIET_PANEL, Skeleton } from '../BlockState';
 import {
   breakdownCards,
+  hasExpenses,
   revenueSlices,
   unclassifiedNote,
   type RevenueChartView,
@@ -48,8 +49,9 @@ function ChartNote({ children }: { children: React.ReactNode }) {
   return (
     <div
       className={cn(
+        QUIET_PANEL,
         // Balanced lines, so a sentence a word too long does not leave that word alone on a second line.
-        'flex flex-col items-center justify-center gap-3 text-balance rounded-lg bg-mist px-6 py-8 text-center text-sm text-charcoal-muted',
+        'flex flex-col items-center justify-center gap-3 text-balance px-6 py-8 text-center text-sm text-charcoal-muted',
         CHART_HEIGHT,
       )}
     >
@@ -63,10 +65,10 @@ function ChartFailed({ what, onRetry }: { what: string; onRetry: () => void }) {
   return <BlockFailed what={what} onRetry={onRetry} className={cn('py-8', CHART_HEIGHT)} />;
 }
 
-function ChartLoading({ title, className }: { title: string; className?: string }) {
+function ChartLoading({ title, className, chartClassName }: { title: string; className?: string; chartClassName?: string }) {
   return (
     <ChartCard title={title} className={className}>
-      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-5" aria-busy="true">
+      <div className={cn('flex flex-wrap items-center justify-center gap-x-4 gap-y-5', chartClassName)} aria-busy="true">
         {/* A ring, like the donut it stands for: the card shows through its middle. */}
         <span
           aria-hidden="true"
@@ -98,6 +100,12 @@ const MISSING_NOUN = { 'service-line': 'service line', segment: 'client segment'
 const EXPENSES_TITLE = 'Where the money went';
 /** The expenses card has a row to itself, so it takes the row's whole width. */
 const FULL_ROW = 'lg:col-span-2';
+/**
+ * A chart in a card that takes the whole row keeps the width it has in a card
+ * that takes half of it, in the middle of the card. Left to fill the row, the
+ * legend's amounts end up far from the names they belong to.
+ */
+const CHART_IN_FULL_ROW = 'mx-auto max-w-md';
 
 function RevenueChart({
   chart, view, items, month, isCurrentMonth, canOpenJobsAndCosts,
@@ -215,19 +223,31 @@ export function BreakdownSection({
           }
 
           if (card.card === 'expenses') {
-            if (card.state === 'loading') return <ChartLoading key="expenses" title={EXPENSES_TITLE} className={FULL_ROW} />;
+            if (card.state === 'loading') {
+              return (
+                <ChartLoading
+                  key="expenses"
+                  title={EXPENSES_TITLE}
+                  className={FULL_ROW}
+                  chartClassName={CHART_IN_FULL_ROW}
+                />
+              );
+            }
             return (
               <ChartCard key="expenses" title={EXPENSES_TITLE} className={FULL_ROW}>
                 {card.state === 'failed' || !summary ? (
                   <ChartFailed what={`the expenses for ${label}`} onRetry={expenses.retry} />
+                ) : !hasExpenses(summary.expensesByCategoryCents) ? (
+                  <ChartNote>No expenses recorded in {label}.</ChartNote>
                 ) : (
-                  <DonutChart
-                    slices={(Object.entries(summary.expensesByCategoryCents) as [ExpenseCategory, number][]).map(
-                      ([category, cents]) => ({ key: category, label: EXPENSE_LABELS[category], value: cents }),
-                    )}
-                    centreLabel="total expenses"
-                    emptyLabel={`No expenses recorded in ${label}.`}
-                  />
+                  <div className={CHART_IN_FULL_ROW}>
+                    <DonutChart
+                      slices={(Object.entries(summary.expensesByCategoryCents) as [ExpenseCategory, number][]).map(
+                        ([category, cents]) => ({ key: category, label: EXPENSE_LABELS[category], value: cents }),
+                      )}
+                      centreLabel="total expenses"
+                    />
+                  </div>
                 )}
               </ChartCard>
             );

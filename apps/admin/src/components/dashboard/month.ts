@@ -1,5 +1,17 @@
+import type { DashboardSection } from '@onyxhawk/types';
+
 /** The month on screen, and the steps the Dashboard's month selector takes. */
 export type YearMonth = { year: number; month: number }; // month is 1 to 12
+
+/**
+ * Whether any section on screen shows the selected month, which is when the
+ * month selector is there to move it. The month's figures, the breakdown and
+ * the ownership summary do, and the trend comes with the month's figures.
+ * "Needs attention" always shows the present.
+ */
+export function followsMonth(sections: readonly DashboardSection[]): boolean {
+  return sections.some((section) => section === 'month' || section === 'breakdown' || section === 'ownership');
+}
 
 /** The month `now` falls in on the Nairobi calendar, which is the business's. */
 export function nairobiYearMonth(now: Date): YearMonth {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Block } from './block-state';
 import {
   breakdownCards,
+  hasExpenses,
   revenueChartView,
   revenueSlices,
   revenueViews,
@@ -71,6 +72,17 @@ describe('revenueSlices', () => {
       { key: 'OFFICE', label: 'Office & commercial', value: 4_500_000 },
       { key: UNKNOWN_KEY, label: 'Unclassified', value: 900_000, color: 'var(--chart-other)' },
     ]);
+  });
+});
+
+describe('hasExpenses', () => {
+  it('is true when any category has an amount', () => {
+    expect(hasExpenses({ MATERIALS: 840_000, TRANSPORT: 0 })).toBe(true);
+  });
+
+  it('is false for a month with nothing spent, so the card says so and draws no chart', () => {
+    expect(hasExpenses({ MATERIALS: 0, TRANSPORT: 0 })).toBe(false);
+    expect(hasExpenses({})).toBe(false);
   });
 });
 

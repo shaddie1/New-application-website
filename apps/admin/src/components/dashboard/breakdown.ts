@@ -74,6 +74,14 @@ export function revenueSlices(items: RevenueItem[]): ChartSlice[] {
   }));
 }
 
+/**
+ * Whether anything was spent: a month with no expense in any category has no
+ * whole to take shares of, so its card says so and draws no chart.
+ */
+export function hasExpenses(byCategoryCents: Record<string, number>): boolean {
+  return Object.values(byCategoryCents).some((cents) => cents > 0);
+}
+
 // ── The section's cards ─────────────────────────────────────────────────────
 
 /** One card of the breakdown section, and what it holds. */
