@@ -64,7 +64,7 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
+      <h1 className="font-serif text-3xl">
         Today at a glance
       </h1>
 
@@ -79,11 +79,11 @@ export default function DashboardPage() {
 
       <div className="mt-8 grid md:grid-cols-2 gap-4">
         <Link href="/bookings" className="rounded-xl border border-border bg-surface p-5 hover:border-aqua">
-          <h2 className="text-xl" style={{ fontFamily: 'Georgia, serif' }}>Bookings</h2>
+          <h2 className="font-serif text-xl">Bookings</h2>
           <p className="text-text-muted text-sm mt-1">Review schedule, assign crews and leads.</p>
         </Link>
         <Link href="/quotes" className="rounded-xl border border-border bg-surface p-5 hover:border-aqua">
-          <h2 className="text-xl" style={{ fontFamily: 'Georgia, serif' }}>Quote requests</h2>
+          <h2 className="font-serif text-xl">Quote requests</h2>
           <p className="text-text-muted text-sm mt-1">Respond to walkthrough requests with a price.</p>
         </Link>
       </div>
@@ -150,7 +150,7 @@ function LiveOtpPanel() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-text-muted">Dev · Live OTP Codes</p>
-          <p className="text-lg mt-0.5" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="font-serif text-lg mt-0.5">
             Active verification codes
           </p>
         </div>
@@ -218,7 +218,7 @@ function StatCard({ label, value, href, accent }: { label: string; value?: numbe
   return (
     <Link href={href} className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className="mt-2 text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
+      <p className="figure mt-2 text-3xl">
         {value ?? '—'}
       </p>
     </Link>
@@ -279,7 +279,7 @@ function FinanceSnapshot() {
   return (
     <section className="mt-10">
       <div className="mb-4 flex items-baseline justify-between gap-3">
-        <h2 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>
+        <h2 className="font-serif text-2xl">
           This month
         </h2>
         <Link href="/insights" className="text-sm font-medium text-aqua-deep hover:underline">

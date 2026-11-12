@@ -2,37 +2,28 @@
 
 import { useState, type ReactNode } from 'react';
 
+import { money } from '../lib/money';
 import { OTHER_KEY, donutLayout, type Slice } from './chart-geometry';
 
 /**
  * Charts for the admin dashboard.
  *
- * Colours come from CSS variables (--chart-*) declared in globals.css, not from
- * hard-coded hex, so a second theme can re-skin every chart from one block.
+ * Every colour is a CSS variable (--chart-*) declared in app/globals.css, the
+ * admin's one token file; nothing here names a colour itself.
  *
- * Palette decision (validated, not eyeballed): magnitude is SINGLE-HUE aqua
- * #0D9488, which passes every check on white (3.7:1, inside the lightness band,
- * above the chroma floor). The one two-series chart pairs aqua against the ink
- * (ΔE 38.9 normal, 37.7 deutan) and separates them by mark type as well —
- * area for income, line for net profit.
+ * A single series (bars, rings, the income area) is drawn in one colour, the
+ * teal `--chart-accent`, which measures 3.7:1 on the white card. The one
+ * two-series chart sets that teal against the ink and separates the two by
+ * mark as well: an area for income, a line for net profit.
  *
- * Charts still carry visible numeric labels, so no value relies on fill alone.
+ * Charts carry visible numeric labels, so no value is read from fill alone.
  */
 
-const ACCENT = '#0D9488';
-const INK = '#0F1C2E';
+export { money };
 
-export function money(cents: number): string {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
-}
-
-/** Compact money for axis/inline labels: KSh 1.2M, KSh 340k. */
+/** Compact money for axis and inline labels: KSh 1.2M, KSh 340k. */
 export function moneyShort(cents: number): string {
-  const v = cents / 100;
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000) return `KSh ${(v / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `KSh ${Math.round(v / 1_000)}k`;
-  return `KSh ${Math.round(v)}`;
+  return money(cents, { compact: true });
 }
 
 // ── Stat tile ───────────────────────────────────────────────────────────────
@@ -69,13 +60,13 @@ export function StatTile({
     <div className="rounded-xl border border-line bg-white p-5">
       <p className="text-xs uppercase tracking-widest text-charcoal-muted">{label}</p>
 
-      <p className="mt-2 text-3xl font-bold tracking-tight text-charcoal tabular-nums">{value}</p>
+      <p className="figure mt-2 text-3xl font-bold tracking-tight text-charcoal">{value}</p>
 
       {/* Delta stays small and secondary — it supports the headline, never competes. */}
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         {showDelta && (
           <span
-            className="font-medium tabular-nums"
+            className="figure font-medium"
             style={{ color: delta >= 0 ? 'var(--chart-positive)' : 'var(--chart-negative)' }}
           >
             {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}%
@@ -95,7 +86,7 @@ export function StatTile({
               }}
             />
           </div>
-          {progressLabel && <p className="mt-1 text-xs text-charcoal-muted">{progressLabel}</p>}
+          {progressLabel && <p className="figure mt-1 text-xs text-charcoal-muted">{progressLabel}</p>}
         </div>
       )}
 
@@ -157,7 +148,7 @@ export function AchievementRing({
 
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           {hasTarget ? (
-            <span className="text-lg font-bold tabular-nums text-charcoal">{Math.round(shown)}%</span>
+            <span className="figure text-lg font-bold text-charcoal">{Math.round(shown)}%</span>
           ) : onSetTarget ? (
             <button
               onClick={onSetTarget}
@@ -214,7 +205,7 @@ export function TargetMeter({
         <p className="text-xs uppercase tracking-widest text-charcoal-muted">{label}</p>
         {hasTarget && (
           <span
-            className={`text-xs font-medium ${
+            className={`figure text-xs font-medium ${
               percent >= 100 ? 'text-success' : percent >= 70 ? 'text-charcoal' : 'text-warning'
             }`}
           >
@@ -223,12 +214,12 @@ export function TargetMeter({
         )}
       </div>
 
-      <p className="mt-2 text-2xl font-bold tracking-tight text-charcoal">{format(actual)}</p>
+      <p className="figure mt-2 text-2xl font-bold tracking-tight text-charcoal">{format(actual)}</p>
 
       <div className="relative mt-3 h-3 rounded-pill bg-mist">
         <div
           className="h-3 rounded-pill"
-          style={{ width: `${barPct}%`, backgroundColor: ACCENT }}
+          style={{ width: `${barPct}%`, backgroundColor: 'var(--chart-accent)' }}
           role="img"
           aria-label={`${format(actual)}${hasTarget ? ` of ${format(target)} target` : ''}`}
         />
@@ -236,8 +227,8 @@ export function TargetMeter({
           // Target notch, drawn over the bar with a surface-coloured gap so the
           // two marks never blend into one another.
           <span
-            className="absolute top-[-3px] h-[18px] w-[3px] rounded-sm border-x border-white"
-            style={{ left: `calc(${targetPct}% - 1.5px)`, backgroundColor: INK }}
+            className="absolute top-[-3px] h-[18px] w-[3px] rounded-sm border-x border-surface"
+            style={{ left: `calc(${targetPct}% - 1.5px)`, backgroundColor: 'var(--chart-ink)' }}
             aria-hidden="true"
           />
         )}
@@ -337,7 +328,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
               stroke="var(--chart-grid)"
               strokeWidth="1"
             />
-            <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="var(--chart-muted)">
+            <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="var(--chart-muted)" className="figure">
               {moneyShort(t)}
             </text>
           </g>
@@ -433,25 +424,25 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
                 <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: 'var(--chart-accent)' }} />
                 Income
               </dt>
-              <dd className="tabular-nums font-medium text-charcoal">{money(active.incomeCents)}</dd>
+              <dd className="figure font-medium text-charcoal">{money(active.incomeCents)}</dd>
             </div>
             <div className="flex items-center justify-between gap-5">
               <dt className="flex items-center gap-1.5 text-charcoal-muted">
                 <span className="h-[2px] w-3" style={{ backgroundColor: 'var(--chart-ink)' }} />
                 Net profit
               </dt>
-              <dd className="tabular-nums font-medium text-charcoal">{money(active.netCents)}</dd>
+              <dd className="figure font-medium text-charcoal">{money(active.netCents)}</dd>
             </div>
             <div className="flex items-center justify-between gap-5">
               <dt className="text-charcoal-muted">Margin</dt>
-              <dd className="tabular-nums font-medium text-charcoal">
+              <dd className="figure font-medium text-charcoal">
                 {active.incomeCents > 0 ? `${Math.round((active.netCents / active.incomeCents) * 100)}%` : '—'}
               </dd>
             </div>
             {typeof active.jobCount === 'number' && (
               <div className="flex items-center justify-between gap-5">
                 <dt className="text-charcoal-muted">Jobs</dt>
-                <dd className="tabular-nums font-medium text-charcoal">{active.jobCount}</dd>
+                <dd className="figure font-medium text-charcoal">{active.jobCount}</dd>
               </div>
             )}
           </dl>
@@ -507,7 +498,7 @@ export function RankedBars({
               <li key={item.key}>
                 <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="truncate text-charcoal">{item.label}</span>
-                  <span className="shrink-0 font-medium text-charcoal">
+                  <span className="figure shrink-0 font-medium text-charcoal">
                     {format(item.value)}
                     <span className="ml-2 text-xs font-normal text-charcoal-muted">{share}%</span>
                   </span>
@@ -515,7 +506,7 @@ export function RankedBars({
                 <div className="mt-1.5 h-2.5 overflow-hidden rounded-pill bg-mist">
                   <div
                     className="h-full rounded-pill"
-                    style={{ width: `${Math.max(2, (item.value / max) * 100)}%`, backgroundColor: ACCENT }}
+                    style={{ width: `${Math.max(2, (item.value / max) * 100)}%`, backgroundColor: 'var(--chart-accent)' }}
                   />
                 </div>
                 {item.sub && <p className="mt-1 text-xs text-charcoal-muted">{item.sub}</p>}
@@ -539,21 +530,42 @@ function ChartEmpty({ children }: { children: React.ReactNode }) {
 // ── Donut (part-to-whole) ───────────────────────────────────────────────────
 
 /**
- * Categorical palette for part-to-whole charts, validated against the white
- * surface (#FFFFFF) on the adjacent-pair gate — a donut is a stacked bar wrapped
- * into a circle, so adjacent segments are what must separate.
+ * The six colours for parts of a whole, in their fixed order: blue (from the
+ * navy), teal, old gold, plum, terracotta and slate violet. The values are
+ * `--chart-1` to `--chart-6` in app/globals.css. A slice takes the colour of
+ * its position; colours are never generated or cycled.
  *
- * Order matters: it is the colourblind-safety mechanism, not decoration. Green
- * leads by request; orange took the old bronze slot, and this ordering still
- * passes all five checks with no warnings (worst adjacent CVD ΔE 22.7,
- * normal-vision ΔE 29.0, all slots ≥ 3:1 contrast). Do not reorder or extend
- * without re-running the validator — orange or red beside green both fail.
+ * The values were chosen with the dataviz palette validator against the white
+ * card, and pass all five of its checks for EVERY pair, not only for
+ * neighbours: every colour sits in the lightness band and above the chroma
+ * floor, the closest pair for a red-green colour-blind reader is slate violet
+ * and teal (ΔE 8.6, target 8), the closest pair in full colour is terracotta
+ * and plum (ΔE 15.7, floor 15), and each is at least 3:1 on the card (3.4 to
+ * 8.2). Because every pair passes, the order can change and a donut of any
+ * size can wrap its last slice round to its first. Changing a VALUE needs the
+ * validator run again: the brand navy itself is too dark for its lightness
+ * band, the logo gold too pale to be a mark at all, and a greyer slate cannot
+ * be told from teal.
+ *
+ * src/lib/contrast.test.ts holds each colour to 3:1 on the card.
  */
-export const CATEGORICAL = ['#008300', '#2a78d6', '#eb6834', '#4a3aa7', '#e34948'] as const;
+export const CATEGORICAL = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--chart-6)',
+] as const;
 
-/** "Other" is a residual, not a category — it takes a neutral, never a hue. */
-export const OTHER_GREY = '#8A94A3';
-const SURFACE = '#FFFFFF';
+/**
+ * "Other" is a remainder, not a category, so it takes a neutral and never a
+ * hue. It is deliberately a light grey (2.3:1 on the card): a mid grey, at 3:1
+ * or more, is the same colour as the teal to a red-green colour-blind reader.
+ * Its slice always carries a label and a gap, so it is never read by fill alone.
+ */
+export const OTHER_GREY = 'var(--chart-other)';
+const SURFACE = 'var(--chart-surface)';
 
 export type { Slice } from './chart-geometry';
 
@@ -620,7 +632,7 @@ export function DonutChart({
             <title>{`${s.label}: ${format(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
           </path>
         ))}
-        <text x={cx} y={cy - 4} textAnchor="middle" className="fill-charcoal text-[15px] font-bold">
+        <text x={cx} y={cy - 4} textAnchor="middle" className="figure fill-charcoal text-[15px] font-bold">
           {format(total)}
         </text>
         {centreLabel && (
@@ -640,10 +652,10 @@ export function DonutChart({
               style={{ backgroundColor: s.color, boxShadow: `0 0 0 2px ${SURFACE}` }}
             />
             <span className="min-w-0 flex-1 truncate text-charcoal">{s.label}</span>
-            <span className="shrink-0 tabular-nums text-charcoal-muted">
+            <span className="figure shrink-0 text-charcoal-muted">
               {Math.round((s.value / total) * 100)}%
             </span>
-            <span className="w-24 shrink-0 text-right tabular-nums font-medium text-charcoal">
+            <span className="figure w-24 shrink-0 text-right font-medium text-charcoal">
               {format(s.value)}
             </span>
           </li>

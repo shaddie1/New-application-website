@@ -13,7 +13,11 @@ import type {
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { changeLabel, overviewChanges } from '../../../src/lib/change';
-import { DonutChart, StatTile, TargetMeter, TrendChart, money, moneyShort } from '../../../src/components/charts';
+import { DonutChart, StatTile, TargetMeter, TrendChart, moneyShort } from '../../../src/components/charts';
+import { money as formatMoney } from '../../../src/lib/money';
+
+/** This page shows whole shillings. */
+const money = (cents: number) => formatMoney(cents, { whole: true });
 
 const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -139,7 +143,7 @@ export default function InsightsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Insights</h1>
+          <h1 className="font-serif text-3xl">Insights</h1>
           <p className="mt-1 text-sm text-charcoal-muted">Targets, trends and where the money comes from.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -261,8 +265,8 @@ export default function InsightsPage() {
           </div>
 
           <p className="mt-4 text-xs text-charcoal-muted">
-            Donut colours are a colourblind-safe set validated against this page’s background; every segment is also
-            named with its value and share, so nothing is read by colour alone.
+            Any two of the donut colours can be told apart by a colour-blind reader, measured against the white
+            card they sit on. Every segment is also named with its value and share, so nothing is read by colour alone.
           </p>
         </>
       )}

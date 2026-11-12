@@ -82,7 +82,7 @@ export default function LoginPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-16 w-auto mb-4" />
         <p className="text-text-muted text-xs uppercase tracking-[0.2em]">OnyxHawk</p>
-        <h1 className="text-4xl mt-2" style={{ fontFamily: 'Georgia, serif' }}>
+        <h1 className="font-serif text-4xl mt-2">
           Back-office<span className="text-aqua-deep italic">.</span>
         </h1>
         <p className="text-text-muted text-sm mt-2">Sign in with your staff email — we’ll send you a 6-digit code.</p>

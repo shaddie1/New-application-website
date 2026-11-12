@@ -144,7 +144,7 @@ export default function DocumentsPage() {
   if (forbidden) {
     return (
       <div className="rounded-xl border border-line bg-white p-8 text-center">
-        <h1 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>Shareholders only</h1>
+        <h1 className="font-serif text-2xl">Shareholders only</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-charcoal-muted">
           Company documents are visible only to the owner and people on the cap table.
         </p>
@@ -162,7 +162,7 @@ export default function DocumentsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Company documents</h1>
+          <h1 className="font-serif text-3xl">Company documents</h1>
           <p className="mt-1 text-sm text-charcoal-muted">
             Incorporation, tax, licences, insurance and contracts — visible to shareholders only.
           </p>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ExpenseCategory, ExpenseDto, JobDto } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { money as fmt } from '../../../src/lib/money';
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -21,10 +22,6 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   PENDING:  { label: 'Pending review', cls: 'bg-warning/15 text-warning' },
   APPROVED: { label: 'Approved',       cls: 'bg-success/15 text-success' },
 };
-
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
-}
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 
@@ -170,7 +167,7 @@ export default function JobReportsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Job Reports</h1>
+          <h1 className="font-serif text-3xl">Job Reports</h1>
           <p className="text-text-muted text-sm mt-1">Submit job details after each completed job. The owner reviews and approves them.</p>
         </div>
         <button
@@ -335,7 +332,7 @@ export default function JobReportsPage() {
                       </span>
                       <span>
                         <span className="text-text-muted text-xs">Expenses </span>
-                        <span className="text-danger font-medium">{fmt(report.totalExpensesCents)}</span>
+                        <span className="font-medium">{fmt(report.totalExpensesCents)}</span>
                       </span>
                     </div>
                   </div>

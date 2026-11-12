@@ -13,17 +13,14 @@ import {
 import { BASIS_POINTS_TOTAL, formatPercentShort as pct } from '../../../src/components/ownership/stakes';
 import { Button } from '../../../src/components/ui/button';
 import { Segmented, type SegmentedOption } from '../../../src/components/ui/segmented';
+import { money as fmt } from '../../../src/lib/money';
 
-// Cap-table bar colours, in table order, from the validated categorical set.
-// Cycling would put a sixth holder's green beside the fifth's red, which fails
-// colourblind separation, so holders past five share the neutral grey — every
-// slice is still named in the legend and the table.
+// Cap-table bar colours, in table order, from the chart palette. Holders past
+// the fifth share the neutral grey; every slice is still named in the legend
+// and the table.
+const COLOURED_HOLDERS = 5;
 function sliceColor(index: number) {
-  return CATEGORICAL[index] ?? OTHER_GREY;
-}
-
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
+  return index < COLOURED_HOLDERS ? CATEGORICAL[index]! : OTHER_GREY;
 }
 
 const SCOPES: SegmentedOption<OwnershipScope>[] = [
@@ -79,7 +76,7 @@ export default function EquityPage() {
     <div>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Ownership</h1>
+        <h1 className="font-serif text-3xl">Ownership</h1>
         <div className="flex flex-wrap items-center gap-3">
           <Segmented legend="Figures shown" name="ownership-scope" options={SCOPES} value={scope} onChange={setScope} />
           <Button onClick={() => setStakesOpen(true)} disabled={!canEdit}>Edit stakes</Button>
@@ -103,7 +100,7 @@ export default function EquityPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard label="Total projects" value={shown?.projects == null ? '—' : String(shown.projects)} />
           <StatCard label="Income generated" value={shown?.incomeCents == null ? '—' : fmt(shown.incomeCents)} color="text-success" />
-          <StatCard label="Total expenses" value={shown?.expensesCents == null ? '—' : fmt(shown.expensesCents)} color="text-danger" />
+          <StatCard label="Total expenses" value={shown?.expensesCents == null ? '—' : fmt(shown.expensesCents)} />
           <StatCard
             label="Net profit"
             value={shown ? fmt(shown.netCents) : '—'}
@@ -134,8 +131,8 @@ export default function EquityPage() {
               <div key={s.id} className="flex items-center gap-2 text-sm">
                 <span className="h-3 w-3 rounded-sm shrink-0" style={{ backgroundColor: sliceColor(i) }} />
                 <span>{s.name}</span>
-                <span className="text-text-muted">{pct(s.basisPoints)}</span>
-                <span className="text-text-muted">{fmt(shareCents)}</span>
+                <span className="figure text-text-muted">{pct(s.basisPoints)}</span>
+                <span className="figure text-text-muted">{fmt(shareCents)}</span>
               </div>
             ))}
           </div>
@@ -158,7 +155,7 @@ export default function EquityPage() {
 
       {/* ── Shareholder table ────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-text-muted">
+        <span className="figure text-sm text-text-muted">
           {figures && `${holders.length} shareholder${holders.length !== 1 ? 's' : ''}`}
         </span>
       </div>
@@ -207,8 +204,8 @@ export default function EquityPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-right font-medium">{pct(s.basisPoints)}</td>
-                  <td className={`px-5 py-3 text-right font-medium ${shareCents >= 0 ? 'text-success' : 'text-danger'}`}>
+                  <td className="figure px-5 py-3 text-right font-medium">{pct(s.basisPoints)}</td>
+                  <td className={`figure px-5 py-3 text-right font-medium ${shareCents >= 0 ? 'text-success' : 'text-danger'}`}>
                     {fmt(shareCents)}
                   </td>
                   <td className="px-5 py-3 text-right">
@@ -223,10 +220,10 @@ export default function EquityPage() {
               {figures.unallocatedCents !== 0 && (
                 <tr className="bg-bg-muted/20">
                   <td className="px-5 py-3 text-text-muted italic">Retained by the business</td>
-                  <td className="px-5 py-3 text-right text-text-muted">
+                  <td className="figure px-5 py-3 text-right text-text-muted">
                     {pct(BASIS_POINTS_TOTAL - totalBasisPoints)}
                   </td>
-                  <td className="px-5 py-3 text-right text-text-muted">{fmt(figures.unallocatedCents)}</td>
+                  <td className="figure px-5 py-3 text-right text-text-muted">{fmt(figures.unallocatedCents)}</td>
                   <td />
                 </tr>
               )}
@@ -234,10 +231,10 @@ export default function EquityPage() {
             <tfoot className="border-t-2 border-border bg-bg-muted/30">
               <tr>
                 <td className="px-5 py-3 font-medium">Net profit to split</td>
-                <td className={`px-5 py-3 text-right font-medium ${capTableBalanced ? '' : 'text-warning'}`}>
+                <td className={`figure px-5 py-3 text-right font-medium ${capTableBalanced ? '' : 'text-warning'}`}>
                   {pct(totalBasisPoints)}
                 </td>
-                <td className={`px-5 py-3 text-right font-medium ${figures.footerNetCents >= 0 ? 'text-success' : 'text-danger'}`}>
+                <td className={`figure px-5 py-3 text-right font-medium ${figures.footerNetCents >= 0 ? 'text-success' : 'text-danger'}`}>
                   {fmt(figures.footerNetCents)}
                 </td>
                 <td />
@@ -274,7 +271,7 @@ function StatCard({
   return (
     <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className={`mt-2 text-2xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>{value}</p>
+      <p className={`figure mt-2 text-2xl ${color ?? ''}`}>{value}</p>
     </div>
   );
 }

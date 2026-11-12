@@ -18,12 +18,9 @@ import type {
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { downloadCsv, csvMoney } from '../../../src/lib/csv';
+import { money as fmt } from '../../../src/lib/money';
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
-
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
-}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -89,7 +86,7 @@ export default function FinancePage() {
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Finance</h1>
+          <h1 className="font-serif text-3xl">Finance</h1>
           <p className="mt-1 text-sm text-text-muted">
             Every entry carries a source reference and shows who recorded it.
           </p>
@@ -550,7 +547,7 @@ function AssetsTab({ onError }: TabProps) {
                 </div>
                 <div className="flex flex-wrap items-center gap-5 text-sm">
                   <Stat label="Cost" value={fmt(r.costCents)} />
-                  <Stat label="Depreciated" value={fmt(r.accumulatedDepreciationCents)} tone="text-danger" />
+                  <Stat label="Depreciated" value={fmt(r.accumulatedDepreciationCents)} />
                   <Stat label="Book value" value={fmt(r.bookValueCents)} tone="text-success" />
                   {r.totalMaintenanceCents > 0 && <Stat label="Maintenance" value={fmt(r.totalMaintenanceCents)} />}
                   <button className={btnGhost} onClick={() => setExpanded(expanded === r.id ? null : r.id)}>

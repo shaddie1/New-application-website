@@ -94,7 +94,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <span className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-8 w-auto" />
-          <span className="text-base" style={{ fontFamily: 'Georgia, serif' }}>
+          <span className="font-serif text-base">
             OnyxHawk <span className="text-aqua-deep">Admin</span>
           </span>
         </span>
@@ -118,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/" className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="OnyxHawk Cleaning Service" className="h-9 w-auto" />
-            <span className="text-base leading-tight" style={{ fontFamily: 'Georgia, serif' }}>
+            <span className="font-serif text-base leading-tight">
               OnyxHawk <span className="text-aqua-deep">Admin</span>
             </span>
           </Link>

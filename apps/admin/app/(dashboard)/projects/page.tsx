@@ -17,6 +17,7 @@ import { refusalMessage } from '../../../src/components/project-money/PlacementP
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { canViewProjectMoney } from '../../../src/lib/roles';
+import { money as formatMoney } from '../../../src/lib/money';
 
 const STAGE_LABELS: Record<ProjectStage, string> = {
   ENQUIRY: 'Enquiry',
@@ -63,9 +64,8 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function money(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
-}
+/** This page shows whole shillings. */
+const money = (cents: number) => formatMoney(cents, { whole: true });
 
 /** Colour of the timeline dot, by what kind of change it was. */
 const EVENT_TONE: Record<ProjectEventKind, string> = {
@@ -228,7 +228,7 @@ export default function ProjectsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Projects</h1>
+          <h1 className="font-serif text-3xl">Projects</h1>
           <p className="mt-1 text-sm text-charcoal-muted">
             Each project carries a checklist of questions. Answering them is what moves the tracker.
           </p>
