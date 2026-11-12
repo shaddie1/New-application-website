@@ -21,6 +21,19 @@ const users: Record<string, { role: string; isOwner: boolean }> = {
   owner: { role: 'ADMIN', isOwner: true },
   admin: { role: 'ADMIN', isOwner: false },
 };
+// One user for every other role, none of them the owner. The user's id is the role's name.
+const OTHER_ROLES = [
+  'COO',
+  'FINANCIAL_MANAGER',
+  'SHAREHOLDER',
+  'SUPPORT',
+  'CLEANING_SUPERVISOR',
+  'MARKETING',
+  'CREW_LEAD',
+  'CREW',
+  'CUSTOMER',
+];
+for (const role of OTHER_ROLES) users[role] = { role, isOwner: false };
 userFindUnique.mockImplementation(async ({ where }: { where: { id: string } }) => users[where.id] ?? null);
 
 type OtpRow = {
@@ -122,6 +135,18 @@ describe('GET /admin/otps/recent', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'owner access required' });
+    expect(otpFindMany).not.toHaveBeenCalled();
+  });
+
+  // The codes sign anyone in, so no role but the owner's reads them: not the
+  // other staff roles, and not an account that is not staff at all.
+  it.each(OTHER_ROLES)('refuses a %s account in development and reads no codes', async (role) => {
+    env.NODE_ENV = 'development';
+    storeCodes([otpRow()]);
+
+    const res = await getCodes(role);
+
+    expect(res.statusCode).toBe(403);
     expect(otpFindMany).not.toHaveBeenCalled();
   });
 

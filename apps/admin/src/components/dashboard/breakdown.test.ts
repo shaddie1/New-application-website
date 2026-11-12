@@ -73,6 +73,13 @@ describe('revenueSlices', () => {
       { key: UNKNOWN_KEY, label: 'Unclassified', value: 900_000, color: 'var(--chart-other)' },
     ]);
   });
+
+  it('gives a chart of one slice when all the revenue is in one real segment', () => {
+    // All of the month is "Corporate": a chart, drawn as one full ring, and no nudge.
+    const corporate = [item('CORPORATE', 5_400_000, 'Corporate')];
+    expect(revenueChartView(corporate)).toBe('chart');
+    expect(revenueSlices(corporate)).toEqual([{ key: 'CORPORATE', label: 'Corporate', value: 5_400_000 }]);
+  });
 });
 
 describe('hasExpenses', () => {
