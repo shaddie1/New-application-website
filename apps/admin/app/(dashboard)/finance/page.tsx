@@ -18,12 +18,9 @@ import type {
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { downloadCsv, csvMoney } from '../../../src/lib/csv';
+import { money as fmt } from '../../../src/lib/money';
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
-
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
-}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -89,7 +86,7 @@ export default function FinancePage() {
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Finance</h1>
+          <h1 className="font-serif text-3xl">Company finance</h1>
           <p className="mt-1 text-sm text-text-muted">
             Every entry carries a source reference and shows who recorded it.
           </p>
@@ -355,7 +352,7 @@ function MarketingTab({ from, to, onError }: TabProps & { from: string; to: stri
       {loading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
         <Empty>No marketing spend recorded in this range.</Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="overflow-x-auto rounded-xl border border-border bg-surface">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">
@@ -550,7 +547,7 @@ function AssetsTab({ onError }: TabProps) {
                 </div>
                 <div className="flex flex-wrap items-center gap-5 text-sm">
                   <Stat label="Cost" value={fmt(r.costCents)} />
-                  <Stat label="Depreciated" value={fmt(r.accumulatedDepreciationCents)} tone="text-danger" />
+                  <Stat label="Depreciated" value={fmt(r.accumulatedDepreciationCents)} />
                   <Stat label="Book value" value={fmt(r.bookValueCents)} tone="text-success" />
                   {r.totalMaintenanceCents > 0 && <Stat label="Maintenance" value={fmt(r.totalMaintenanceCents)} />}
                   <button className={btnGhost} onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
@@ -724,7 +721,7 @@ function InvestmentsTab({ onError }: TabProps) {
       {loading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
         <Empty>No capital injections recorded yet.</Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="overflow-x-auto rounded-xl border border-border bg-surface">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">
@@ -968,7 +965,7 @@ function ReceiptsTab({ from, to, onError }: TabProps & { from: string; to: strin
       {loading ? <Empty>Loading…</Empty> : items.length === 0 ? (
         <Empty>Everything in this range is reconciled. </Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="overflow-x-auto rounded-xl border border-border bg-surface">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-bg-muted/30 text-xs uppercase tracking-widest text-text-muted">

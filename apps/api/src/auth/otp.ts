@@ -13,6 +13,15 @@ const MIN_RESEND_INTERVAL_MS = 30 * 1000; // anti-spam: 30s between OTP sends to
 type Purpose = 'SIGN_IN' | 'ADMIN_SIGN_IN';
 
 /**
+ * Whether dev tools are on: codes are stored in readable form, and
+ * `GET /admin/otps/recent` exists to show them. Read on every call, never
+ * cached, so the answer follows the environment the server is running in.
+ */
+export function devToolsEnabled(): boolean {
+  return env.NODE_ENV !== 'production';
+}
+
+/**
  * Generate and store a code for the phone + purpose. Invalidates any prior
  * unused codes for the pair, so only the latest one works.
  */
@@ -30,13 +39,12 @@ async function createOtp(phone: string, purpose: Purpose, email: string | null):
   });
 
   const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
-  const isDev = env.NODE_ENV !== 'production';
   await prisma.otpCode.create({
     data: {
       phone,
       email,
       codeHash: sha256(code),
-      codePlain: isDev ? code : null,
+      codePlain: devToolsEnabled() ? code : null,
       purpose,
       expiresAt: new Date(Date.now() + OTP_TTL_MS),
     },
@@ -50,7 +58,7 @@ export async function issueSignInOtp(phone: string, log: SmsLogger): Promise<{ d
   await sendSms(phone, `Your OnyxHawk code is ${code}. It expires in 10 minutes.`, log);
 
   // In dev we return the OTP for easy testing; never in production.
-  return env.NODE_ENV === 'production' ? {} : { devOtp: code };
+  return devToolsEnabled() ? { devOtp: code } : {};
 }
 
 /**
@@ -65,7 +73,7 @@ export async function issueAdminSignInOtp(
   const code = await createOtp(user.phone, 'ADMIN_SIGN_IN', user.email);
   await sendEmail(user.email, signInCodeEmail(code), log);
   const maskedEmail = maskEmail(user.email);
-  return env.NODE_ENV === 'production' ? { maskedEmail } : { maskedEmail, devOtp: code };
+  return devToolsEnabled() ? { maskedEmail, devOtp: code } : { maskedEmail };
 }
 
 /** Verify a code for the phone + purpose. Consumes it on success. Returns true if valid. */

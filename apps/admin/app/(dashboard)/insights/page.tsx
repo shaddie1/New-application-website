@@ -12,7 +12,11 @@ import type {
 
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
-import { DonutChart, StatTile, TargetMeter, TrendChart, money, moneyShort } from '../../../src/components/charts';
+import { changeLabel, overviewChanges } from '../../../src/lib/change';
+import { DonutChart, StatTile, TargetMeter, TrendChart, moneyShort } from '../../../src/components/charts';
+import { money as formatMoney } from '../../../src/lib/money';
+
+const money = (cents: number) => formatMoney(cents, { whole: true });
 
 const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -30,11 +34,6 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
       {children}
     </div>
   );
-}
-
-function pctChange(current: number, previous: number): number | null {
-  if (previous === 0) return null;
-  return Math.round(((current - previous) / Math.abs(previous)) * 100);
 }
 
 function monthRange(year: number, month: number) {
@@ -143,7 +142,7 @@ export default function InsightsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Insights</h1>
+          <h1 className="font-serif text-3xl">Insights</h1>
           <p className="mt-1 text-sm text-charcoal-muted">Targets, trends and where the money comes from.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -203,15 +202,15 @@ export default function InsightsPage() {
 
           {/* Month-on-month */}
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            <StatTile label="Revenue vs last month" value={money(overview?.revenue.actual ?? 0)}
-              delta={pctChange(overview?.revenue.actual ?? 0, overview?.previousRevenueCents ?? 0)}
-              deltaLabel={`vs ${moneyShort(overview?.previousRevenueCents ?? 0)} last month`} />
-            <StatTile label="Net profit vs last month" value={money(overview?.netProfit.actual ?? 0)}
-              delta={pctChange(overview?.netProfit.actual ?? 0, overview?.previousNetCents ?? 0)}
-              deltaLabel={`vs ${moneyShort(overview?.previousNetCents ?? 0)} last month`} />
-            <StatTile label="Jobs vs last month" value={String(overview?.jobs.actual ?? 0)}
-              delta={pctChange(overview?.jobs.actual ?? 0, overview?.previousJobCount ?? 0)}
-              deltaLabel={`vs ${overview?.previousJobCount ?? 0} last month`} />
+            <StatTile label="Revenue" value={money(overview?.revenue.actual ?? 0)}
+              delta={overviewChanges(overview).revenue}
+              deltaLabel={changeLabel(overviewChanges(overview).mode, moneyShort(overview?.previousRevenueCents ?? 0))} />
+            <StatTile label="Net profit" value={money(overview?.netProfit.actual ?? 0)}
+              delta={overviewChanges(overview).netProfit}
+              deltaLabel={changeLabel(overviewChanges(overview).mode, moneyShort(overview?.previousNetCents ?? 0))} />
+            <StatTile label="Jobs" value={String(overview?.jobs.actual ?? 0)}
+              delta={overviewChanges(overview).jobs}
+              deltaLabel={changeLabel(overviewChanges(overview).mode, String(overview?.previousJobCount ?? 0))} />
           </div>
 
           {/* Trend */}
@@ -254,7 +253,7 @@ export default function InsightsPage() {
                 <DonutChart
                   slices={equity.allocations.map((a) => ({
                     key: a.shareholder.id,
-                    label: `${a.shareholder.name} (${(a.shareholder.basisPoints / 100).toFixed(0)}%)`,
+                    label: a.shareholder.name,
                     value: Math.max(0, a.periodShareCents),
                   }))}
                   centreLabel="net profit shared"
@@ -265,8 +264,8 @@ export default function InsightsPage() {
           </div>
 
           <p className="mt-4 text-xs text-charcoal-muted">
-            Donut colours are a colourblind-safe set validated against this page’s background; every segment is also
-            named with its value and share, so nothing is read by colour alone.
+            Any two of the donut colours can be told apart by a colour-blind reader, measured against the white
+            card they sit on. Every segment is also named with its value and share, so nothing is read by colour alone.
           </p>
         </>
       )}

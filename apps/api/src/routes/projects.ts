@@ -39,7 +39,7 @@ const DEFAULT_QUESTIONS: { question: string; section: string }[] = [
   { section: 'Handover', question: 'Has the client walked the site and signed off?' },
   { section: 'Handover', question: 'Have all snags raised by the client been closed?' },
   { section: 'Closing', question: 'Has payment been received in full?' },
-  { section: 'Closing', question: 'Has the job been recorded in Financials with its expenses?' },
+  { section: 'Closing', question: 'Has the job been recorded in Jobs & costs with its expenses?' },
 ];
 
 const CreateSchema = z.object({

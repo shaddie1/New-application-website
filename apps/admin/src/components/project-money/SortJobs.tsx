@@ -4,13 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import type { JobPlaceInput, UnsortedJobDto } from '@onyxhawk/types';
 import { api } from '../../lib/api';
 import { PlacementPicker, refusalMessage, type PlacementProject } from './PlacementPicker';
+import { money as fmt } from '../../lib/money';
 
 const LOAD_FAILED = 'Could not load the jobs to sort.';
 const SAVED_BUT_NOT_RELOADED = 'Your choice was saved, but the list could not be reloaded.';
-
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
-}
 
 function suggestedPlace(job: UnsortedJobDto): JobPlaceInput | null {
   return job.suggestedProjectId ? { placement: 'PROJECT', projectId: job.suggestedProjectId } : null;

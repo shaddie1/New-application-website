@@ -32,6 +32,7 @@ import type {
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { canApproveEstimate, canViewEstimate } from '../../../src/lib/roles';
+import { money as formatMoney } from '../../../src/lib/money';
 
 // ── Labels ───────────────────────────────────────────────────────────────────
 
@@ -76,9 +77,7 @@ const tab = (on: boolean) =>
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
-function money(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
-}
+const money = (cents: number) => formatMoney(cents, { whole: true });
 function when(iso: string) {
   return new Date(iso).toLocaleString('en-KE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -156,7 +155,7 @@ export default function QuotesPage() {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Quote requests</h1>
+          <h1 className="font-serif text-3xl">Quote requests</h1>
           <p className="mt-1 text-sm text-charcoal-muted">
             Survey the site, build the estimate, get it approved, then send the client quotation.
           </p>
@@ -256,7 +255,7 @@ function QuoteCard({
               <span className="rounded-full bg-mist px-2 py-0.5 text-xs text-charcoal-muted">Surveyed</span>
             )}
           </div>
-          <p className="mt-1 text-lg" style={{ fontFamily: 'Georgia, serif' }}>{q.siteType}</p>
+          <p className="font-serif mt-1 text-lg">{q.siteType}</p>
           <p className="mt-0.5 text-sm text-charcoal-muted">
             {[q.approxSqm ? `~${q.approxSqm.toLocaleString()} m²` : null, q.floors ? `${q.floors} floors` : null, FREQ_LABEL[q.frequency]]
               .filter(Boolean).join(' · ')}
@@ -1179,7 +1178,7 @@ function QuotationPanel({ quoteId }: { quoteId: string }) {
       </div>
       <div className="rounded-xl border border-line bg-white p-6">
         <p className="text-xs uppercase tracking-[0.2em] text-charcoal-muted">OnyxHawk Cleaning Service · Quotation</p>
-        <h3 className="mt-2 text-2xl" style={{ fontFamily: 'Georgia, serif' }}>{doc.siteType}</h3>
+        <h3 className="font-serif mt-2 text-2xl">{doc.siteType}</h3>
         <p className="mt-1 text-sm text-charcoal-muted">
           Prepared for {doc.customerName} · {doc.serviceLineName} · {new Date(doc.issuedAt).toLocaleDateString('en-KE', { day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
@@ -1309,7 +1308,7 @@ function RespondModal({ quote, onClose, onDone }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 px-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-cream p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>Respond to quote</h2>
+        <h2 className="font-serif text-2xl">Respond to quote</h2>
         <p className="mt-1 text-sm text-charcoal-muted">{quote.serviceLineName} · {quote.siteType}</p>
 
         {error && <div className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
@@ -1326,7 +1325,7 @@ function RespondModal({ quote, onClose, onDone }: {
         {status === 'QUOTED' && (
           <div className="mt-4 rounded-lg border border-success/40 bg-success/5 px-4 py-3">
             <p className="text-xs uppercase tracking-widest text-charcoal-muted">Approved price</p>
-            <p className="mt-1 text-2xl" style={{ fontFamily: 'Georgia, serif' }}>
+            <p className="figure mt-1 text-2xl">
               {canQuote ? approvedPrice(quote) : '—'}
             </p>
             <p className="mt-1 text-xs text-charcoal-muted">
@@ -1409,7 +1408,7 @@ function NewQuoteModal({ options, onClose, onCreated }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 px-4" onClick={onClose}>
       <form onSubmit={(e) => void submit(e)} className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-cream p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>New quote</h2>
+        <h2 className="font-serif text-2xl">New quote</h2>
         <p className="mt-1 text-sm text-charcoal-muted">For a client who called, was referred or sent a tender. It opens with a site visit scheduled.</p>
 
         {error && <div className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>}
@@ -1505,7 +1504,7 @@ function Stat({ label, value, hint, accent, tone }: {
   return (
     <div className={`rounded-xl border p-4 ${accent ? 'border-aqua/40 bg-aqua-soft' : 'border-line bg-white'}`}>
       <p className="text-xs uppercase tracking-widest text-charcoal-muted">{label}</p>
-      <p className={`mt-1 text-xl ${tone ? toneText[tone] : ''}`} style={{ fontFamily: 'Georgia, serif' }}>{value}</p>
+      <p className={`figure mt-1 text-xl ${tone ? toneText[tone] : ''}`}>{value}</p>
       {hint && <p className="mt-1 text-xs text-charcoal-muted">{hint}</p>}
     </div>
   );

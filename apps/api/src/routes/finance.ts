@@ -25,12 +25,21 @@ import type {
   RevenueBreakdownItem,
   UnreconciledItem,
   MonthlyTargetDto,
+  ComparisonFigures,
   DashboardOverview,
   TargetProgress,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import {
+  comparisonWindow,
+  monthDays,
+  monthsEndingAt,
+  nairobiToday,
+  utcBounds,
+  type DayRange,
+} from '../finance/comparison.js';
 
 const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
 const BASIS_POINTS_TOTAL = 10_000;
@@ -437,13 +446,26 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const { year, month } = parsed.data;
 
-    const prev = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+    // The headline is always the whole month: the last month of the series.
+    // The change figures compare the window's two ranges. Unless this month
+    // is still running those are two whole months, the last two of the
+    // series, so their totals are used again and not added up twice.
+    const window = comparisonWindow(year, month, nairobiToday());
+    const seriesMonths = monthsEndingAt(year, month, SERIES_MONTHS);
+    const wholeMonths = window.mode === 'full-month';
 
-    const [current, previous, target] = await Promise.all([
-      monthTotals(year, month),
-      monthTotals(prev.year, prev.month),
+    // Every query sits directly in this one Promise.all, so a query that
+    // fails is always caught here and answered as an error. A promise made
+    // on the side and then left unused would take the whole server down.
+    const [monthly, currentRange, previousRange, target] = await Promise.all([
+      Promise.all(seriesMonths.map((m) => monthTotals(m.year, m.month))),
+      wholeMonths ? null : rangeTotals(window.current),
+      wholeMonths ? null : rangeTotals(window.previous),
       prisma.monthlyTarget.findUnique({ where: { year_month: { year, month } } }),
     ]);
+    const current = monthly[monthly.length - 1]!;
+    const currentSide = currentRange ?? current;
+    const previousSide = previousRange ?? monthly[monthly.length - 2]!;
 
     const progress = (actual: number, goal: number): TargetProgress => ({
       actual,
@@ -458,9 +480,16 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
       revenue: progress(current.incomeCents, target?.revenueTargetCents ?? 0),
       netProfit: progress(current.netCents, target?.netProfitTargetCents ?? 0),
       jobs: progress(current.jobCount, target?.jobsTarget ?? 0),
-      previousRevenueCents: previous.incomeCents,
-      previousNetCents: previous.netCents,
-      previousJobCount: previous.jobCount,
+      previousRevenueCents: previousSide.incomeCents,
+      previousNetCents: previousSide.netCents,
+      previousJobCount: previousSide.jobCount,
+      comparison: {
+        mode: window.mode,
+        cutoffDay: window.cutoffDay,
+        current: toComparisonFigures(currentSide),
+        previous: toComparisonFigures(previousSide),
+      },
+      series: seriesMonths.map((m, i) => ({ ...m, ...toComparisonFigures(monthly[i]!) })),
       hasTargets: Boolean(target),
     };
     return reply.send({ overview });
@@ -481,9 +510,9 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
 
   /**
    * Declare a period: computes net profit for the range, splits it across the
-   * current cap table, and writes one row per shareholder. The stake and the
-   * profit figure are snapshotted so later cap-table edits cannot rewrite a
-   * declared payout.
+   * current cap table, and writes one row per current shareholder (a removed
+   * holder gets none). The stake and the profit figure are snapshotted so
+   * later cap-table edits cannot rewrite a declared payout.
    */
   app.post('/distributions/declare', { preHandler: requireEquityAccess }, async (req, reply) => {
     const parsed = DeclareDistributionSchema.safeParse(req.body);
@@ -502,6 +531,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const shareholders = await prisma.shareholder.findMany({
+      where: { removedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
     if (shareholders.length === 0) {
@@ -647,10 +677,16 @@ function toTargetDto(row: {
 }
 
 /** Income, net and job count for one calendar month. */
-async function monthTotals(year: number, month: number) {
-  const from = new Date(year, month - 1, 1);
-  const to = new Date(year, month, 0);
-  to.setHours(23, 59, 59, 999);
+function monthTotals(year: number, month: number) {
+  return rangeTotals(monthDays(year, month));
+}
+
+/** How many months an overview's series covers, the requested month included. */
+const SERIES_MONTHS = 6;
+
+/** Income, net and job count over a range of calendar days. */
+async function rangeTotals(range: DayRange) {
+  const { from, to } = utcBounds(range);
 
   const [jobs, expenses] = await Promise.all([
     prisma.job.aggregate({
@@ -670,6 +706,10 @@ async function monthTotals(year: number, month: number) {
     netCents: incomeCents - (expenses._sum.amountCents ?? 0),
     jobCount: jobs._count._all,
   };
+}
+
+function toComparisonFigures(totals: Awaited<ReturnType<typeof rangeTotals>>): ComparisonFigures {
+  return { revenueCents: totals.incomeCents, netCents: totals.netCents, jobCount: totals.jobCount };
 }
 
 /** Net profit (counted job income less discounts and expenses) over a period. */

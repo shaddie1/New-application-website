@@ -4,8 +4,11 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { CostLineDto, ExpenseCategory, ProjectMoneyDetail, ProjectMoneyJobDto } from '@onyxhawk/types';
 
 import { api } from '../../lib/api';
-import { money } from '../charts';
+import { money as formatMoney } from '../../lib/money';
 import { Figure, Profit } from './MoneyTable';
+
+/** Project money shows whole shillings. */
+const money = (cents: number) => formatMoney(cents, { whole: true });
 
 const GROUP_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',

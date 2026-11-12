@@ -122,7 +122,7 @@ export default function TeamPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
+        <h1 className="font-serif text-3xl">
           Team
         </h1>
         <p className="text-text-muted text-sm mt-1">Add or remove admins and support staff. Only you (owner) can do this.</p>
@@ -185,7 +185,7 @@ export default function TeamPage() {
       </form>
 
       {/* Current team */}
-      <div className="rounded-xl border border-border bg-surface overflow-hidden">
+      <div className="rounded-xl border border-border bg-surface overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-bg-muted text-text-muted">
             <tr>

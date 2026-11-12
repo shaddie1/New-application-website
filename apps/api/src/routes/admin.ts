@@ -26,6 +26,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { devToolsEnabled } from '../auth/otp.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
 import { STAFF_ROLES } from '../auth/staff.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
@@ -304,8 +305,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ ok: true });
   });
 
-  // Dev-only: live OTP codes for the admin dashboard. Returns [] in production or if migration not yet applied.
+  // Dev-only: live OTP codes for the admin dashboard. Where dev tools are off
+  // (production) the route answers 404, so the dashboard asks once and stops.
+  // Returns [] if the migration is not yet applied.
   app.get('/otps/recent', { preHandler: requireOwner }, async (_req, reply) => {
+    if (!devToolsEnabled()) return reply.code(404).send({ error: 'not found' });
     try {
       const codes = await prisma.otpCode.findMany({
         where: {

@@ -4,7 +4,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { MoneyFiguresDto, PaymentFrequency, ProjectDto, ProjectMoneyTable } from '@onyxhawk/types';
 
 import { api } from '../../lib/api';
-import { money } from '../charts';
+import { money as formatMoney } from '../../lib/money';
+
+/** Project money shows whole shillings. */
+const money = (cents: number) => formatMoney(cents, { whole: true });
 
 /** The same suffixes the project card uses, so the agreed price reads the same in both places. */
 const FREQUENCY_SUFFIX: Record<PaymentFrequency, string> = {
@@ -142,7 +145,7 @@ export function MoneyTable({
                   Not yet sorted ({unsortedCount} job{unsortedCount === 1 ? '' : 's'})
                   {isOwner && (
                     <span className="mt-0.5 block text-xs text-charcoal-muted">
-                      Sort these in Financials, under Sort jobs.
+                      Sort these in Jobs &amp; costs, under Sort jobs.
                     </span>
                   )}
                 </>

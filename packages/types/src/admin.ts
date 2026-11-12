@@ -467,17 +467,60 @@ export interface TargetProgress {
   percent: number;
 }
 
+/**
+ * Which ranges an overview's change figures compare. `same-period`: the month
+ * is the current one in Nairobi, so days 1 to today are set against the same
+ * days of the month before. `full-month`: whole month against whole month.
+ */
+export type ComparisonMode = 'same-period' | 'full-month';
+
+/** Revenue, net profit and job count over one side of a comparison. */
+export interface ComparisonFigures {
+  revenueCents: number;
+  netCents: number;
+  jobCount: number;
+}
+
+export interface OverviewComparison {
+  mode: ComparisonMode;
+  /** Today's day of the month in Nairobi for `same-period`; null for `full-month`. */
+  cutoffDay: number | null;
+  /** The requested month's side: days 1 to `cutoffDay`, or the whole month. */
+  current: ComparisonFigures;
+  /** The month before: the same days (stopping at its last day), or the whole month. */
+  previous: ComparisonFigures;
+}
+
+/** One whole calendar month of an overview's `series`. */
+export interface OverviewSeriesMonth {
+  year: number;
+  month: number; // 1 to 12
+  label: string; // e.g. "Jun"
+  revenueCents: number;
+  netCents: number;
+  jobCount: number;
+}
+
 export interface DashboardOverview {
   year: number;
   month: number;
   monthLabel: string;
+  /** Whole-month figures, whatever the comparison below covers. */
   revenue: TargetProgress;
   netProfit: TargetProgress;
   jobs: TargetProgress;
-  /** Same month last period, for the "vs last month" line. */
+  /** The previous side of `comparison`, kept under their earlier names. */
   previousRevenueCents: number;
   previousNetCents: number;
   previousJobCount: number;
+  /** A server older than this field does not send it, so the admin reads it as optional. */
+  comparison: OverviewComparison;
+  /**
+   * The six months ending at the requested one, oldest first, each a whole
+   * month: the last entry equals the headline figures above. A server older
+   * than this field does not send it, so the admin reads it as optional.
+   */
+  series: OverviewSeriesMonth[];
   hasTargets: boolean;
 }
 
@@ -686,23 +729,46 @@ export interface ShareholderDto {
   sortOrder: number;
 }
 
-export interface CreateShareholderInput {
-  name: string;
-  title?: string | null;
-  kind: ShareholderKind;
-  basisPoints: number;
-  notes?: string;
-  userId?: string | null;
-}
-
+/** A holder's details. A stake is not among them: stakes change only through `ReplaceStakesInput`. */
 export interface UpdateShareholderInput {
   name?: string;
   title?: string | null;
   kind?: ShareholderKind;
-  basisPoints?: number;
   notes?: string | null;
   userId?: string | null;
   sortOrder?: number;
+}
+
+/** One current holder's stake, by id. */
+export interface HolderStake {
+  id: string;
+  basisPoints: number;
+}
+
+/** A holder the Edit stakes form adds. They start with no notes and no linked account. */
+export interface NewHolderStake {
+  name: string;
+  title?: string | null;
+  kind: ShareholderKind;
+  basisPoints: number;
+}
+
+/**
+ * Every stake at once: the only request that adds a holder, removes one or
+ * changes a stake. `expected` is every current holder's stake as the form
+ * opened with it; the save is refused if the stored stakes differ. `holders`
+ * is the full new set and must total 10000. A current holder left out of
+ * `holders` is removed.
+ */
+export interface ReplaceStakesInput {
+  expected: HolderStake[];
+  holders: Array<HolderStake | NewHolderStake>;
+}
+
+/** The current holders after the save, in table order. */
+export interface ReplaceStakesResult {
+  shareholders: ShareholderDto[];
+  totalBasisPoints: number;
 }
 
 // One shareholder's cut of the profit, for a period and for all time.
@@ -734,7 +800,41 @@ export interface EquityOverview {
   unallocatedAllTimeCents: number;
   // Net profit being split, for the requested period.
   periodNetCents: number;
+  // What periodNetCents is made of: income less expenses, and the number of
+  // counted jobs dated in the period (the period's "Total projects"). A server
+  // older than these fields leaves them out, so the admin reads them as optional.
+  periodIncomeCents: number;
+  periodExpensesCents: number;
+  periodProjects: number;
   fromDate: string;
   toDate: string;
   allTime: AllTimeTotals;
+}
+
+/** One current holder's cut of one month's net profit, at today's stake. */
+export interface EquityHistoryShare {
+  shareholderId: string;
+  shareholderName: string;
+  basisPoints: number;
+  shareCents: number; // negative in a loss month
+}
+
+/** One calendar month of the ownership history. */
+export interface EquityHistoryMonth {
+  year: number;
+  month: number; // 1 to 12
+  label: string; // e.g. "Jun"
+  // Net profit of the whole calendar month, as the equity overview gives it for that month.
+  netCents: number;
+  // Every current holder, in table order, the same holders in every month. A removed holder is in none.
+  shares: EquityHistoryShare[];
+  // Net profit the stakes do not cover; the shares and this add up to netCents.
+  unallocatedCents: number;
+  // True for the last month only: it is the current month in Nairobi and still running.
+  partial: boolean;
+}
+
+/** Each month's net profit split at today's stakes, oldest first, ending at the current month. */
+export interface EquityHistory {
+  months: EquityHistoryMonth[];
 }

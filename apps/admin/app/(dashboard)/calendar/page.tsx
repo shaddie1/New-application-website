@@ -111,7 +111,7 @@ export default function CalendarPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>
+          <h1 className="font-serif text-3xl">
             Calendar
           </h1>
           <p className="text-text-muted text-sm mt-1">Every booking, by date and time — shared across the team.</p>

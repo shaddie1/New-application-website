@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ClientSegment, ExpenseCategory, JobPlacement, JobStatus, ShareholderKind } from '@prisma/client';
+import { ClientSegment, ExpenseCategory, JobPlacement, JobStatus, Prisma, ShareholderKind } from '@prisma/client';
 import type {
   ExpenseDto,
   FinancialSummary,
@@ -13,16 +13,20 @@ import type {
   PlaceJobsInput,
   MonthlyTrendItem,
   ShareholderDto,
-  CreateShareholderInput,
   UpdateShareholderInput,
+  ReplaceStakesInput,
+  ReplaceStakesResult,
   ShareholderAllocation,
   AllTimeTotals,
   EquityOverview,
+  EquityHistory,
+  EquityHistoryMonth,
   UnsortedJobDto,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
 import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
 import { suggester } from '../projectMoney/suggest.js';
 
@@ -86,24 +90,38 @@ const CreateExpenseSchema = z.object({
 // 10000 basis points = 100.00%.
 const BASIS_POINTS_TOTAL = 10_000;
 
-const CreateShareholderSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  title: z.string().trim().max(100).nullable().optional(),
-  kind: z.enum(['COMPANY', 'INDIVIDUAL']),
-  basisPoints: z.number().int().min(0).max(BASIS_POINTS_TOTAL),
-  notes: z.string().trim().max(500).optional(),
-  userId: z.string().trim().min(1).nullable().optional(),
-}) satisfies z.ZodType<CreateShareholderInput>;
-
+// A holder's details. Stakes are not among them: they change only through the
+// replace-all request.
 const UpdateShareholderSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   title: z.string().trim().max(100).nullable().optional(),
   kind: z.enum(['COMPANY', 'INDIVIDUAL']).optional(),
-  basisPoints: z.number().int().min(0).max(BASIS_POINTS_TOTAL).optional(),
   notes: z.string().trim().max(500).nullable().optional(),
   userId: z.string().trim().min(1).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 }) satisfies z.ZodType<UpdateShareholderInput>;
+
+const HolderStakeSchema = z.object({ id: z.string().min(1), basisPoints: z.number() }).strict();
+
+// The shape only. What a stake may be, a blank name and the total are judged
+// inside the save's transaction, after the check that the form is not stale,
+// so each refusal can say what is wrong in a sentence.
+const ReplaceStakesSchema = z.object({
+  expected: z.array(HolderStakeSchema),
+  holders: z.array(
+    z.union([
+      HolderStakeSchema,
+      z.object({
+        name: z.string().trim().max(200, 'A name can be at most 200 characters.'),
+        title: z.string().trim().max(100, 'A title can be at most 100 characters.').nullable().optional(),
+        kind: z.enum(['COMPANY', 'INDIVIDUAL']),
+        basisPoints: z.number(),
+      }).strict(),
+    ]),
+  ),
+}) satisfies z.ZodType<ReplaceStakesInput>;
+
+const STAKES_CHANGED = 'The stakes changed since you opened this form. Reload and try again.';
 
 export const financialsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
@@ -435,39 +453,86 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  app.post('/shareholders', async (req, reply) => {
-    const parsed = CreateShareholderSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  // Every stake at once: the only request that adds a holder, removes one or
+  // changes a stake. Everything is checked before anything is written, in one
+  // serializable transaction, so a refusal changes nothing and two saves that
+  // arrive together cannot both write.
+  app.put('/shareholders/stakes', async (req, reply) => {
+    const parsed = ReplaceStakesSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]!.message });
+    const { expected, holders } = parsed.data;
 
-    if (parsed.data.userId) {
-      const linkErr = await checkLinkableUser(parsed.data.userId);
-      if (linkErr) return reply.code(400).send({ error: linkErr });
+    let refused: StakesRefusal | null;
+    try {
+      refused = await prisma.$transaction(
+        async (tx) => {
+          const active = await tx.shareholder.findMany({
+            where: { removedAt: null },
+            select: { id: true, basisPoints: true },
+          });
+          const problem = stakesRefusal(active, expected, holders);
+          if (problem) return problem;
+
+          // New holders go to the end of the table, removed rows counted.
+          const last = await tx.shareholder.findFirst({ orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } });
+          let nextOrder = (last?.sortOrder ?? -1) + 1;
+          const kept = new Set<string>();
+          for (const holder of holders) {
+            if ('id' in holder) {
+              kept.add(holder.id);
+              await tx.shareholder.update({ where: { id: holder.id }, data: { basisPoints: holder.basisPoints } });
+            } else {
+              await tx.shareholder.create({
+                data: {
+                  name: holder.name,
+                  title: holder.title ?? null,
+                  kind: holder.kind as ShareholderKind,
+                  basisPoints: holder.basisPoints,
+                  sortOrder: nextOrder,
+                },
+              });
+              nextOrder += 1;
+            }
+          }
+
+          // A removed holder keeps their row, so declared payouts keep their
+          // name. Clearing the link ends the access it gave the account.
+          const removedAt = new Date();
+          for (const holder of active) {
+            if (!kept.has(holder.id)) {
+              await tx.shareholder.update({ where: { id: holder.id }, data: { removedAt, userId: null } });
+            }
+          }
+          return null;
+        },
+        { isolationLevel: 'Serializable' },
+      );
+    } catch (err) {
+      // The database stopped this save because another one wrote first.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
+        return reply.code(409).send({ error: STAKES_CHANGED });
+      }
+      throw err;
     }
+    if (refused) return reply.code(refused.status).send({ error: refused.error });
 
-    // Append to the end of the table.
-    const last = await prisma.shareholder.findFirst({ orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } });
-
-    const row = await prisma.shareholder.create({
-      data: {
-        name: parsed.data.name,
-        title: parsed.data.title ?? null,
-        kind: parsed.data.kind as ShareholderKind,
-        basisPoints: parsed.data.basisPoints,
-        notes: parsed.data.notes,
-        userId: parsed.data.userId ?? null,
-        sortOrder: (last?.sortOrder ?? -1) + 1,
-      },
-      include: { user: { select: { fullName: true } } },
-    });
-    return reply.code(201).send({ shareholder: toShareholderDto(row) });
+    const rows = await listShareholders();
+    const result: ReplaceStakesResult = {
+      shareholders: rows,
+      totalBasisPoints: rows.reduce((acc, s) => acc + s.basisPoints, 0),
+    };
+    return reply.send(result);
   });
 
   app.patch<{ Params: { id: string } }>('/shareholders/:id', async (req, reply) => {
+    if (typeof req.body === 'object' && req.body !== null && 'basisPoints' in req.body) {
+      return reply.code(400).send({ error: 'Stakes change only through Edit stakes.' });
+    }
     const parsed = UpdateShareholderSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
     const existing = await prisma.shareholder.findUnique({ where: { id: req.params.id } });
-    if (!existing) return reply.code(404).send({ error: 'shareholder not found' });
+    if (!existing || existing.removedAt) return reply.code(404).send({ error: 'shareholder not found' });
 
     if (parsed.data.userId) {
       const linkErr = await checkLinkableUser(parsed.data.userId, req.params.id);
@@ -480,7 +545,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.name !== undefined && { name: parsed.data.name }),
         ...(parsed.data.title !== undefined && { title: parsed.data.title }),
         ...(parsed.data.kind !== undefined && { kind: parsed.data.kind as ShareholderKind }),
-        ...(parsed.data.basisPoints !== undefined && { basisPoints: parsed.data.basisPoints }),
         ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
         ...(parsed.data.userId !== undefined && { userId: parsed.data.userId }),
         ...(parsed.data.sortOrder !== undefined && { sortOrder: parsed.data.sortOrder }),
@@ -488,13 +552,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       include: { user: { select: { fullName: true } } },
     });
     return reply.send({ shareholder: toShareholderDto(row) });
-  });
-
-  app.delete<{ Params: { id: string } }>('/shareholders/:id', async (req, reply) => {
-    const existing = await prisma.shareholder.findUnique({ where: { id: req.params.id } });
-    if (!existing) return reply.code(404).send({ error: 'shareholder not found' });
-    await prisma.shareholder.delete({ where: { id: req.params.id } });
-    return reply.send({ ok: true });
   });
 
   // ── Equity overview ────────────────────────────────────────────────────────
@@ -505,26 +562,13 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const parsed = DateRangeSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
-
-    const [shareholders, periodJobs, periodExpenses, allTime] = await Promise.all([
+    const [shareholders, figures, allTime] = await Promise.all([
       listShareholders(),
-      prisma.job.findMany({
-        where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
-        select: { incomeCents: true, discountCents: true },
-      }),
-      prisma.expense.findMany({
-        where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
-        select: { amountCents: true },
-      }),
+      periodFigures(parsed.data.from, parsed.data.to),
       allTimeTotals(),
     ]);
 
-    const periodIncomeCents = periodJobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-    const periodExpensesCents = periodExpenses.reduce((acc, e) => acc + e.amountCents, 0);
-    const periodNetCents = periodIncomeCents - periodExpensesCents;
-
-    const period = allocate(periodNetCents, shareholders);
+    const period = allocate(figures.netCents, shareholders);
     const lifetime = allocate(allTime.totalNetCents, shareholders);
 
     const allocations: ShareholderAllocation[] = shareholders.map((s, i) => ({
@@ -538,19 +582,95 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       totalBasisPoints: shareholders.reduce((acc, s) => acc + s.basisPoints, 0),
       unallocatedPeriodCents: period.unallocatedCents,
       unallocatedAllTimeCents: lifetime.unallocatedCents,
-      periodNetCents,
+      periodNetCents: figures.netCents,
+      periodIncomeCents: figures.incomeCents,
+      periodExpensesCents: figures.expensesCents,
+      periodProjects: figures.jobCount,
       fromDate: parsed.data.from,
       toDate: parsed.data.to,
       allTime,
     };
     return reply.send({ overview });
   });
+
+  // ── Equity history ─────────────────────────────────────────────────────────
+  // Each of the last months' net profit split across the current holders at
+  // today's stakes: past stake changes are not stored. A month's figures are
+  // the equity overview's for that month, so its last entry matches the
+  // overview's "this month" to the cent.
+
+  app.get('/equity/history', async (req, reply) => {
+    const MonthsSchema = z.object({ months: z.coerce.number().int().min(1).max(24).default(12) });
+    const parsed = MonthsSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const [year, month] = nairobiToday().split('-').map(Number) as [number, number];
+    const slots = monthsEndingAt(year, month, parsed.data.months);
+
+    const [shareholders, figures] = await Promise.all([
+      listShareholders(),
+      Promise.all(
+        slots.map((slot) => {
+          const { from, to } = monthDays(slot.year, slot.month);
+          return periodFigures(from, to);
+        }),
+      ),
+    ]);
+
+    const months: EquityHistoryMonth[] = slots.map((slot, i) => {
+      const { netCents } = figures[i]!;
+      const split = allocate(netCents, shareholders);
+      return {
+        ...slot,
+        netCents,
+        shares: shareholders.map((s, k) => ({
+          shareholderId: s.id,
+          shareholderName: s.name,
+          basisPoints: s.basisPoints,
+          shareCents: split.shares[k]!,
+        })),
+        unallocatedCents: split.unallocatedCents,
+        // The current month is still running.
+        partial: i === slots.length - 1,
+      };
+    });
+
+    const history: EquityHistory = { months };
+    return reply.send({ history });
+  });
 };
 
 // ── Ownership helpers ──────────────────────────────────────────────────────
 
+/**
+ * What a period's net profit is made of: counted jobs dated `fromDate` to
+ * `toDate` (YYYY-MM-DD, both inclusive), their income less discounts, and the
+ * costs dated in the period on counted jobs. The equity overview and the
+ * equity history both split this net figure.
+ */
+async function periodFigures(fromDate: string, toDate: string) {
+  const { from, to } = dateRange(fromDate, toDate);
+
+  const [jobs, expenses] = await Promise.all([
+    prisma.job.findMany({
+      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+      select: { incomeCents: true, discountCents: true },
+    }),
+    prisma.expense.findMany({
+      where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
+      select: { amountCents: true },
+    }),
+  ]);
+
+  const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
+  const expensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+  return { incomeCents, expensesCents, netCents: incomeCents - expensesCents, jobCount: jobs.length };
+}
+
+/** The current holders, in table order. Removed holders are left out. */
 async function listShareholders(): Promise<ShareholderDto[]> {
   const rows = await prisma.shareholder.findMany({
+    where: { removedAt: null },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     include: { user: { select: { fullName: true } } },
   });
@@ -581,14 +701,56 @@ function toShareholderDto(row: {
   };
 }
 
-// A shareholder may be linked to at most one staff account, and vice versa.
-async function checkLinkableUser(userId: string, selfId?: string): Promise<string | null> {
+// A current shareholder may be linked to at most one staff account, and vice versa.
+async function checkLinkableUser(userId: string, selfId: string): Promise<string | null> {
   const user = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
-    select: { id: true, shareholder: { select: { id: true } } },
+    select: { id: true, shareholder: { select: { id: true, removedAt: true } } },
   });
   if (!user) return 'user not found';
-  if (user.shareholder && user.shareholder.id !== selfId) return 'that user is already on the cap table';
+  const holder = user.shareholder;
+  if (holder && !holder.removedAt && holder.id !== selfId) return 'that user is already on the cap table';
+  return null;
+}
+
+type StakesRefusal = { status: 400 | 409; error: string };
+
+// Judges a whole set of stakes against the current holders, before anything
+// is written. Null when the set may be saved.
+function stakesRefusal(
+  active: { id: string; basisPoints: number }[],
+  expected: ReplaceStakesInput['expected'],
+  holders: ReplaceStakesInput['holders'],
+): StakesRefusal | null {
+  // The form must have opened with exactly the current holders at their stored stakes.
+  const opened = new Map(expected.map((e) => [e.id, e.basisPoints]));
+  const upToDate =
+    expected.length === active.length &&
+    opened.size === active.length &&
+    active.every((a) => opened.get(a.id) === a.basisPoints);
+  if (!upToDate) return { status: 409, error: STAKES_CHANGED };
+
+  const refuse = (error: string): StakesRefusal => ({ status: 400, error });
+
+  if (holders.length === 0) return refuse('At least one shareholder must remain.');
+  if (holders.some((h) => !Number.isInteger(h.basisPoints) || h.basisPoints < 1 || h.basisPoints > BASIS_POINTS_TOTAL)) {
+    return refuse('Each stake must be between 0.01% and 100%, with at most two decimal places.');
+  }
+  if (holders.some((h) => !('id' in h) && h.name === '')) return refuse('Every new shareholder needs a name.');
+
+  // A holder listed twice would count twice in the total and be written once.
+  const keptIds = holders.flatMap((h) => ('id' in h ? [h.id] : []));
+  if (new Set(keptIds).size !== keptIds.length) {
+    return refuse('A shareholder appears twice in this form. Reload and try again.');
+  }
+  if (keptIds.some((id) => !opened.has(id))) {
+    return refuse('This form names a shareholder who is not on the cap table. Reload and try again.');
+  }
+
+  const total = holders.reduce((acc, h) => acc + h.basisPoints, 0);
+  if (total !== BASIS_POINTS_TOTAL) {
+    return refuse(`Stakes must add up to exactly 100%. These add up to ${(total / 100).toFixed(2)}%.`);
+  }
   return null;
 }
 

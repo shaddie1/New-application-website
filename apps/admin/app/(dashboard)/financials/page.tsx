@@ -16,6 +16,7 @@ import { api, ApiError } from '../../../src/lib/api';
 import { JobPlaceMover, PlacementPicker, refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { SortJobs } from '../../../src/components/project-money/SortJobs';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { money as fmt } from '../../../src/lib/money';
 
 // How many months of history the Monthly trends tab can show at once.
 const TREND_RANGES = [6, 12, 24];
@@ -42,10 +43,6 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
 const CATEGORIES: ExpenseCategory[] = [
   'MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS',
 ];
-
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
-}
 
 function monthRange(year: number, month: number) {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -369,7 +366,7 @@ export default function FinancialsPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Financials</h1>
+        <h1 className="font-serif text-3xl">Jobs &amp; costs</h1>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">←</button>
           <span className="text-sm font-medium w-36 text-center">{monthLabel}</span>
@@ -383,19 +380,19 @@ export default function FinancialsPage() {
       <div className="mb-6 rounded-xl border border-border bg-surface-dark px-5 py-4 flex flex-wrap items-center gap-x-10 gap-y-3">
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Projects so far</p>
-          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="figure mt-1 text-2xl text-text-on-dark">
             {loading || !totals ? '—' : totals.totalProjects}
           </p>
         </div>
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Income generated so far</p>
-          <p className="mt-1 text-2xl text-aqua-light" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="figure mt-1 text-2xl text-aqua-light">
             {loading || !totals ? '—' : fmt(totals.totalIncomeCents)}
           </p>
         </div>
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Net profit so far</p>
-          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="figure mt-1 text-2xl text-text-on-dark">
             {loading || !totals ? '—' : fmt(totals.totalNetCents)}
           </p>
         </div>
@@ -405,9 +402,9 @@ export default function FinancialsPage() {
       </div>
 
       {/* Summary cards — the selected month */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <SummaryCard label="Income" cents={summary?.incomeCents} color="text-success" loading={loading} />
-        <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} color="text-danger" loading={loading} />
+        <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} loading={loading} />
         <SummaryCard
           label="Net profit"
           cents={summary?.netCents}
@@ -682,7 +679,7 @@ export default function FinancialsPage() {
                         </span>
                         <span>
                           <span className="text-text-muted text-xs">Expenses </span>
-                          <span className="text-danger font-medium">{fmt(report.totalExpensesCents)}</span>
+                          <span className="font-medium">{fmt(report.totalExpensesCents)}</span>
                         </span>
                         <span>
                           <span className="text-text-muted text-xs">Net </span>
@@ -854,7 +851,7 @@ export default function FinancialsPage() {
                         <td className="px-5 py-3">{t.label}</td>
                         <td className="px-5 py-3 text-right text-text-muted">{t.jobCount}</td>
                         <td className="px-5 py-3 text-right text-success">{fmt(t.incomeCents)}</td>
-                        <td className="px-5 py-3 text-right text-danger">{fmt(t.totalExpensesCents)}</td>
+                        <td className="px-5 py-3 text-right">{fmt(t.totalExpensesCents)}</td>
                         <td className={`px-5 py-3 text-right font-medium ${t.netCents >= 0 ? 'text-success' : 'text-danger'}`}>
                           {fmt(t.netCents)}
                         </td>
@@ -870,7 +867,7 @@ export default function FinancialsPage() {
                       <td className="px-5 py-3 text-right font-medium text-success">
                         {fmt(trends.reduce((acc, t) => acc + t.incomeCents, 0))}
                       </td>
-                      <td className="px-5 py-3 text-right font-medium text-danger">
+                      <td className="px-5 py-3 text-right font-medium">
                         {fmt(trends.reduce((acc, t) => acc + t.totalExpensesCents, 0))}
                       </td>
                       <td className={`px-5 py-3 text-right font-medium ${trends.reduce((acc, t) => acc + t.netCents, 0) >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -996,7 +993,7 @@ function JobList({
                   <span className="text-border">|</span>
                   <span>
                     <span className="text-text-muted text-xs">Expenses </span>
-                    <span className="text-danger font-medium">{fmt(job.totalExpensesCents)}</span>
+                    <span className="font-medium">{fmt(job.totalExpensesCents)}</span>
                   </span>
                   <span className="text-border">|</span>
                   <span>
@@ -1140,7 +1137,7 @@ function SummaryCard({
   return (
     <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className={`mt-2 text-3xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>
+      <p className={`figure mt-2 text-3xl ${color ?? ''}`}>
         {loading || cents === undefined ? '—' : fmt(cents)}
       </p>
     </div>
