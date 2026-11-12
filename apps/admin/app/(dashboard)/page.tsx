@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DashboardSection } from '@onyxhawk/types';
 
 import { useAuth } from '../../src/lib/auth';
 import { greeting } from '../../src/lib/greeting';
+import { hashScrollStep } from '../../src/lib/hash-scroll';
 import {
   accessView,
   NO_SECTION_RE_ASKED,
@@ -88,6 +89,17 @@ export default function DashboardPage() {
     if (refused) void signOut();
   }, [refused, signOut]);
 
+  // The sections above the trend that have left loading, as their wrappers
+  // report it: the jump to `#trend` waits for them.
+  const [leftLoading, setLeftLoading] = useState(NONE_LEFT_LOADING);
+  const onLeftLoading = useCallback((section: DashboardSection) => {
+    setLeftLoading((had) => (had.has(section) ? had : new Set([...had, section])));
+  }, []);
+  useTrendFragment(
+    view.kind === 'sections' ? view.sections : view.kind === 'not-linked' ? NO_SECTIONS : null,
+    leftLoading,
+  );
+
   const user = session?.user;
   const has = (section: DashboardSection) => view.kind === 'sections' && view.sections.includes(section);
 
@@ -123,7 +135,7 @@ export default function DashboardPage() {
 
         {view.kind === 'sections' && (
           <div className="space-y-12">
-            {has('attention') && <Attention refusals={refusals} />}
+            {has('attention') && <Attention refusals={refusals} onLeftLoading={onLeftLoading} />}
             {has('month') && (
               <MonthAndTrend
                 month={month}
@@ -131,6 +143,7 @@ export default function DashboardPage() {
                 canSetTargets={view.canSetTargets}
                 withTrend={has('trend')}
                 refusals={refusals}
+                onLeftLoading={onLeftLoading}
               />
             )}
             {has('breakdown') && (
@@ -200,14 +213,78 @@ function useReAskOnRefusal(
       : block;
 }
 
+// ── Arriving at /#trend ─────────────────────────────────────────────────────
+
+const NONE_LEFT_LOADING: ReadonlySet<DashboardSection> = new Set<DashboardSection>();
+/** What an account with no section has built. */
+const NO_SECTIONS: readonly DashboardSection[] = [];
+
+/** How a wrapper tells the page that its section has left loading. */
+type OnLeftLoading = (section: DashboardSection) => void;
+
+/**
+ * Reports a section once its block has left loading: its figures, or its
+ * error, are on screen and it has the height it will keep. A refused block
+ * that reads as loading while the access list is asked again has not left.
+ */
+function useReportLeftLoading(section: DashboardSection, block: BlockResult<unknown>, onLeftLoading: OnLeftLoading) {
+  const left = block.status !== 'loading';
+  useEffect(() => {
+    if (left) onLeftLoading(section);
+  }, [left, onLeftLoading, section]);
+}
+
+/**
+ * `/insights` sends its visitors to `/#trend`. `hashScrollStep` says what to
+ * do about that fragment and when; this does it, once in a visit. `sections`
+ * is what the page has built, or null while the access list has not said.
+ */
+function useTrendFragment(
+  sections: readonly DashboardSection[] | null,
+  leftLoading: ReadonlySet<DashboardSection>,
+) {
+  const done = useRef(false);
+  useEffect(() => {
+    const answer = hashScrollStep({
+      fragment: window.location.hash,
+      sections,
+      settled: leftLoading,
+      done: done.current,
+    });
+    done.current = answer.done;
+
+    if (answer.step === 'scroll') {
+      document.getElementById('trend')?.scrollIntoView();
+      // Focus follows, so the next Tab starts from the trend and a screen
+      // reader says where the page has gone. The heading takes focus from
+      // here only, as a dialog's title does: -1 keeps it out of the Tab
+      // order, and it is not a control, so it shows no focus ring.
+      const heading = document.getElementById('trend-heading');
+      if (heading) {
+        heading.tabIndex = -1;
+        heading.classList.add('outline-none');
+        heading.focus({ preventScroll: true });
+      }
+    }
+
+    if (answer.step === 'drop-fragment') {
+      // Next.js watches this call and takes the new address as its own, so
+      // the fragment does not come back with the next thing the router does.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [sections, leftLoading]);
+}
+
 // ── A section and its request ───────────────────────────────────────────────
 // Each wrapper calls its section's hooks once and hands the blocks down.
 // Mounting a wrapper is what sends the requests.
 
-function Attention({ refusals }: { refusals: Refusals }) {
-  const stats = useAttention();
-  const settled = useReAskOnRefusal('attention', [stats], refusals);
-  return <AttentionSection stats={settled(stats)} />;
+function Attention({ refusals, onLeftLoading }: { refusals: Refusals; onLeftLoading: OnLeftLoading }) {
+  const asked = useAttention();
+  const settled = useReAskOnRefusal('attention', [asked], refusals);
+  const stats = settled(asked);
+  useReportLeftLoading('attention', stats, onLeftLoading);
+  return <AttentionSection stats={stats} />;
 }
 
 /**
@@ -216,17 +293,19 @@ function Attention({ refusals }: { refusals: Refusals }) {
  * together.
  */
 function MonthAndTrend({
-  month, current, canSetTargets, withTrend, refusals,
+  month, current, canSetTargets, withTrend, refusals, onLeftLoading,
 }: {
   month: YearMonth;
   current: YearMonth;
   canSetTargets: boolean;
   withTrend: boolean;
   refusals: Refusals;
+  onLeftLoading: OnLeftLoading;
 }) {
   const asked = useMonthOverview(month);
   const settled = useReAskOnRefusal('month', [asked], refusals);
   const overview = settled(asked);
+  useReportLeftLoading('month', overview, onLeftLoading);
   const trend = useTrend(overview);
   const savedTargets = useSavedTargets();
   return (

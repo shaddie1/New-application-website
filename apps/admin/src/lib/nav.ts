@@ -16,7 +16,6 @@ export const OPERATIONS: NavItem[] = [
 export const JOB_REPORTS: NavItem = { href: '/job-reports', label: 'Job reports' };
 
 export const OWNER_FINANCE: NavItem[] = [
-  { href: '/insights', label: 'Insights' },
   // Per-job income and expenses. The address keeps its old name.
   { href: '/financials', label: 'Jobs & costs' },
   // Marketing, assets, investments and payouts.

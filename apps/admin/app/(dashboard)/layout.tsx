@@ -3,7 +3,6 @@
 import {
   Briefcase,
   CalendarDays,
-  ChartColumn,
   ChartPie,
   ClipboardCheck,
   ClipboardList,
@@ -41,7 +40,6 @@ const ICONS: Record<string, LucideIcon> = {
   '/bookings': ClipboardList,
   '/quotes': FileText,
   '/job-reports': ClipboardCheck,
-  '/insights': ChartColumn,
   '/financials': Receipt,
   '/finance': Landmark,
   '/rates': Tags,
