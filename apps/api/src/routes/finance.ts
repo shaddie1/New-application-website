@@ -439,14 +439,17 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const { year, month } = parsed.data;
 
-    // The headline is always the whole month. The change figures compare the
-    // window's two ranges, which are whole months too unless this month is
-    // still running.
+    // The headline is always the whole month: the last month of the series.
+    // The change figures compare the window's two ranges, which are whole
+    // months too unless this month is still running.
     const window = comparisonWindow(year, month, nairobiToday());
-    const wholeMonth = monthTotals(year, month);
+    const seriesMonths = monthsEndingAt(year, month, SERIES_MONTHS);
+    const seriesTotals = Promise.all(seriesMonths.map((m) => monthTotals(m.year, m.month)));
+    const wholeMonth = seriesTotals.then((totals) => totals[totals.length - 1]!);
 
-    const [current, currentSide, previousSide, target] = await Promise.all([
+    const [current, monthly, currentSide, previousSide, target] = await Promise.all([
       wholeMonth,
+      seriesTotals,
       window.mode === 'full-month' ? wholeMonth : rangeTotals(window.current),
       rangeTotals(window.previous),
       prisma.monthlyTarget.findUnique({ where: { year_month: { year, month } } }),
@@ -474,6 +477,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
         current: toComparisonFigures(currentSide),
         previous: toComparisonFigures(previousSide),
       },
+      series: seriesMonths.map((m, i) => ({ ...m, ...toComparisonFigures(monthly[i]!) })),
       hasTargets: Boolean(target),
     };
     return reply.send({ overview });
@@ -663,6 +667,21 @@ function toTargetDto(row: {
 /** Income, net and job count for one calendar month. */
 function monthTotals(year: number, month: number) {
   return rangeTotals(monthDays(year, month));
+}
+
+/** How many months an overview's series covers, the requested month included. */
+const SERIES_MONTHS = 6;
+
+/** The `count` calendar months ending at the given one, oldest first, each with a short label such as "Jun". */
+function monthsEndingAt(year: number, month: number, count: number) {
+  return Array.from({ length: count }, (_, i) => {
+    const first = new Date(Date.UTC(year, month - count + i, 1));
+    return {
+      year: first.getUTCFullYear(),
+      month: first.getUTCMonth() + 1,
+      label: first.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
+    };
+  });
 }
 
 /** Income, net and job count over a range of calendar days. */

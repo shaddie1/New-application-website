@@ -254,7 +254,7 @@ export default function InsightsPage() {
                 <DonutChart
                   slices={equity.allocations.map((a) => ({
                     key: a.shareholder.id,
-                    label: `${a.shareholder.name} (${(a.shareholder.basisPoints / 100).toFixed(0)}%)`,
+                    label: a.shareholder.name,
                     value: Math.max(0, a.periodShareCents),
                   }))}
                   centreLabel="net profit shared"

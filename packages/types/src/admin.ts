@@ -491,6 +491,16 @@ export interface OverviewComparison {
   previous: ComparisonFigures;
 }
 
+/** One whole calendar month of an overview's `series`. */
+export interface OverviewSeriesMonth {
+  year: number;
+  month: number; // 1 to 12
+  label: string; // e.g. "Jun"
+  revenueCents: number;
+  netCents: number;
+  jobCount: number;
+}
+
 export interface DashboardOverview {
   year: number;
   month: number;
@@ -505,6 +515,12 @@ export interface DashboardOverview {
   previousJobCount: number;
   /** A server older than this field does not send it, so the admin reads it as optional. */
   comparison: OverviewComparison;
+  /**
+   * The six months ending at the requested one, oldest first, each a whole
+   * month: the last entry equals the headline figures above. A server older
+   * than this field does not send it, so the admin reads it as optional.
+   */
+  series: OverviewSeriesMonth[];
   hasTargets: boolean;
 }
 
@@ -793,4 +809,32 @@ export interface EquityOverview {
   fromDate: string;
   toDate: string;
   allTime: AllTimeTotals;
+}
+
+/** One current holder's cut of one month's net profit, at today's stake. */
+export interface EquityHistoryShare {
+  shareholderId: string;
+  shareholderName: string;
+  basisPoints: number;
+  shareCents: number; // negative in a loss month
+}
+
+/** One calendar month of the ownership history. */
+export interface EquityHistoryMonth {
+  year: number;
+  month: number; // 1 to 12
+  label: string; // e.g. "Jun"
+  // Net profit of the whole calendar month, as the equity overview gives it for that month.
+  netCents: number;
+  // Every current holder, in table order, the same holders in every month. A removed holder is in none.
+  shares: EquityHistoryShare[];
+  // Net profit the stakes do not cover; the shares and this add up to netCents.
+  unallocatedCents: number;
+  // True for the last month only: it is the current month in Nairobi and still running.
+  partial: boolean;
+}
+
+/** Each month's net profit split at today's stakes, oldest first, ending at the current month. */
+export interface EquityHistory {
+  months: EquityHistoryMonth[];
 }

@@ -1,43 +1,22 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import type {
-  AdminStats,
-  DashboardOverview,
-  EquityOverview,
-  ExpenseCategory,
-  FinancialSummary,
-  RevenueBreakdown,
-} from '@onyxhawk/types';
-import { api, ApiError } from '../../src/lib/api';
+import { CalendarCheck, Clock, FileText, RotateCw } from 'lucide-react';
+
+import { api } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
-import { changeLabel, overviewChanges } from '../../src/lib/change';
-import {
-  AchievementRing,
-  AchievementRow,
-  DonutChart,
-  StatTile,
-  money,
-} from '../../src/components/charts';
-
-const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
-  MATERIALS: 'Materials',
-  TRANSPORT: 'Transport',
-  EMPLOYEE_PAY: 'Employee pay',
-  LUNCH: 'Lunch',
-  MISCELLANEOUS: 'Miscellaneous',
-};
-
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-line bg-white p-5">
-      <p className="mb-5 text-xs uppercase tracking-widest text-charcoal-muted">{title}</p>
-      {children}
-    </div>
-  );
-}
+import { greeting } from '../../src/lib/greeting';
+import { ActionCard } from '../../src/components/dashboard/ActionCard';
+import { ExpensesChart, ProfitShareChart, RevenueCharts } from '../../src/components/dashboard/Breakdowns';
+import { MonthFigures } from '../../src/components/dashboard/MonthFigures';
+import { MonthSelector } from '../../src/components/dashboard/MonthSelector';
+import { StatusStrip } from '../../src/components/dashboard/StatusStrip';
+import { TextLink } from '../../src/components/dashboard/TextLink';
+import { isSameMonth, monthLabel, nairobiYearMonth, type YearMonth } from '../../src/components/dashboard/month';
+import { activeBookings, noActiveJobs } from '../../src/components/dashboard/status';
+import { useBlock } from '../../src/components/dashboard/useBlock';
+import { Button } from '../../src/components/ui/button';
+import { Card } from '../../src/components/ui/card';
 
 // Finance data is not served to every staff role, so only ask for it when the
 // signed-in user is actually allowed it — otherwise the request 403s.
@@ -45,53 +24,119 @@ const FINANCE_ROLES = ['ADMIN', 'FINANCIAL_MANAGER', 'SHAREHOLDER'];
 
 type OtpRow = { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string };
 
+/**
+ * The landing page, top to bottom: a greeting and the month selector; what
+ * needs doing right now; the month's figures and targets; where the month's
+ * money came from and went. Every block loads by itself (see `useBlock`), and
+ * a block the signed-in role may not see is absent, not empty:
+ *
+ *   everyone signed in      status strip, action cards
+ *   owner and finance roles the month's tiles, targets and revenue charts
+ *   owner only              "Where the money went" and "Profit share"
+ */
 export default function DashboardPage() {
   const { session } = useAuth();
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // One reading of the clock for the whole visit, so the greeting, the date
+  // and the month the selector stops at cannot disagree.
+  const [now] = useState(() => new Date());
+  const [current] = useState<YearMonth>(() => nairobiYearMonth(now));
+  // The month on screen. It drives the figures, targets, sparklines and
+  // breakdown charts; the strip and the action cards always show the present.
+  const [month, setMonth] = useState<YearMonth>(current);
 
-  useEffect(() => {
-    api
-      .stats()
-      .then((res) => setStats(res.stats))
-      .catch((err: unknown) =>
-        setError(err instanceof ApiError ? `Could not load stats (${err.status}).` : 'Could not load stats.'),
-      );
-  }, []);
+  const stats = useBlock(() => api.stats().then((res) => res.stats), [], noActiveJobs);
+  const counts = stats.status === 'loaded' || stats.status === 'empty' ? stats.data : null;
 
-  const canSeeFinance =
-    !!session && (session.user.isOwner || FINANCE_ROLES.includes(session.user.role));
+  const user = session?.user;
+  const isOwner = user?.isOwner === true;
+  const canSeeFinance = !!user && (isOwner || FINANCE_ROLES.includes(user.role));
+  const onCurrentMonth = isSameMonth(month, current);
 
   return (
     <div>
-      <h1 className="font-serif text-3xl">
-        Today at a glance
-      </h1>
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <h1 className="font-serif text-3xl text-charcoal">{greeting(now, user?.fullName)}</h1>
+          <p className="mt-1 text-sm text-charcoal-muted">
+            {now.toLocaleDateString('en-GB', {
+              timeZone: 'Africa/Nairobi',
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })}
+          </p>
+        </div>
+        {/* The selector moves the month's figures, so it is there only for those who see them. */}
+        {canSeeFinance && <MonthSelector value={month} current={current} onChange={setMonth} />}
+      </header>
 
-      {error && <div className="mt-4 rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>}
+      <section className="mt-7" aria-label="Jobs and requests right now">
+        {/* The counts below are always today's. Say so once a past month is on
+            screen, so they are not read as that month's. */}
+        {!onCurrentMonth && (
+          <p className="mb-2.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-charcoal-muted">
+            <Clock className="size-3.5" aria-hidden="true" />
+            Right now
+          </p>
+        )}
 
-      <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Awaiting payment" value={stats?.pendingPayment} href="/bookings?status=PENDING_PAYMENT" />
-        <StatCard label="Confirmed" value={stats?.confirmed} href="/bookings?status=CONFIRMED" />
-        <StatCard label="In progress" value={stats?.inProgress} href="/bookings" />
-        <StatCard label="Pending quotes" value={stats?.pendingQuotes} href="/quotes" accent />
-      </div>
+        <StatusStrip stats={stats} />
 
-      <div className="mt-8 grid md:grid-cols-2 gap-4">
-        <Link href="/bookings" className="rounded-xl border border-border bg-surface p-5 hover:border-aqua">
-          <h2 className="font-serif text-xl">Bookings</h2>
-          <p className="text-text-muted text-sm mt-1">Review schedule, assign crews and leads.</p>
-        </Link>
-        <Link href="/quotes" className="rounded-xl border border-border bg-surface p-5 hover:border-aqua">
-          <h2 className="font-serif text-xl">Quote requests</h2>
-          <p className="text-text-muted text-sm mt-1">Respond to walkthrough requests with a price.</p>
-        </Link>
-      </div>
+        {/* Side by side only from 1024px. From 768px the side menu takes its
+            share of the width, and two cards in what is left wrap their
+            titles and descriptions badly, so there they stack as on a phone. */}
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <ActionCard
+            href="/bookings"
+            icon={CalendarCheck}
+            title="Bookings"
+            description="Review the schedule, assign crews and leads."
+            count={counts ? activeBookings(counts) : undefined}
+            countLoading={stats.status === 'loading'}
+            countLabel="active bookings"
+          />
+          <ActionCard
+            href="/quotes"
+            icon={FileText}
+            title="Quote requests"
+            description="Respond to walkthrough requests with a price."
+            count={counts?.pendingQuotes}
+            countLoading={stats.status === 'loading'}
+            countLabel="pending quotes"
+          />
+        </div>
+      </section>
 
-      {canSeeFinance && <FinanceSnapshot />}
+      {canSeeFinance && user && (
+        <section className="mt-10" aria-labelledby="month-heading">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 id="month-heading" className="font-serif text-2xl text-charcoal">
+              {monthLabel(month)}
+              {onCurrentMonth && <span className="ml-2.5 font-sans text-sm text-charcoal-muted">so far</span>}
+            </h2>
+            {/* Insights is the owner's page, as in the side menu. */}
+            {isOwner && <TextLink href="/insights">Full insights</TextLink>}
+          </div>
+
+          <MonthFigures month={month} current={current} user={user} />
+
+          {/* Part-to-whole views of the month. Each child is one grid cell and
+              carries `min-w-0`, so a long legend label wraps inside its card. */}
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <RevenueCharts month={month} isCurrentMonth={onCurrentMonth} isOwner={isOwner} />
+            {isOwner && (
+              <>
+                <ExpensesChart month={month} />
+                <ProfitShareChart month={month} isCurrentMonth={onCurrentMonth} />
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Dev sign-in codes: the server decides whether this exists (404 when dev tools are off). */}
-      {session?.user.isOwner && <LiveOtpPanel />}
+      {isOwner && <LiveOtpPanel />}
     </div>
   );
 }
@@ -146,30 +191,32 @@ function LiveOtpPanel() {
   if (!enabled) return null;
 
   return (
-    <div className="mt-10 rounded-xl border border-aqua/40 bg-white p-5">
-      <div className="flex items-center justify-between mb-4">
+    <Card className="mt-10 border-dashed border-border-strong p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-text-muted">Dev · Live OTP Codes</p>
-          <p className="font-serif text-lg mt-0.5">
-            Active verification codes
-          </p>
+          <p className="text-xs uppercase tracking-widest text-charcoal-muted">Development only</p>
+          <h2 className="mt-0.5 font-serif text-lg text-charcoal">Active sign-in codes</h2>
         </div>
-        <button
-          onClick={() => void refresh()}
-          disabled={loading}
-          className="text-xs text-text-muted underline hover:text-aqua-deep disabled:opacity-40"
-        >
-          {loading ? 'Refreshing…' : lastRefresh ? `Last: ${lastRefresh.toLocaleTimeString()}` : 'Refresh'}
-        </button>
+        {/* The time is a fact and the button is the action: two things, so
+            the time is plain text and only "Refresh" can be pressed. */}
+        <div className="flex items-center gap-1.5">
+          {lastRefresh && (
+            <span className="figure text-xs text-charcoal-muted">Last: {lastRefresh.toLocaleTimeString()}</span>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={loading} aria-busy={loading}>
+            <RotateCw aria-hidden="true" className={loading ? 'animate-spin' : undefined} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {loading && codes.length === 0 && (
-        <p className="text-text-muted text-sm">Checking for active codes…</p>
+        <p className="text-sm text-charcoal-muted">Checking for active codes…</p>
       )}
 
       {!loading && codes.length === 0 && (
-        <p className="text-text-muted text-sm italic">
-          No active codes right now — request a code from the login page or the mobile app to see it here.
+        <p className="text-sm text-charcoal-muted">
+          No active codes right now. Request a code from the login page or the mobile app to see it here.
         </p>
       )}
 
@@ -180,7 +227,7 @@ function LiveOtpPanel() {
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -195,222 +242,21 @@ function OtpRowCard({ row }: { row: OtpRow }) {
   };
 
   return (
-    <div className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3">
-      <div className="flex-1 min-w-0">
+    <div className="flex items-center gap-4 rounded-lg border border-line bg-mist px-4 py-3">
+      <div className="min-w-0 flex-1">
         {/* Staff codes go by email, customer codes by SMS — show where each one went. */}
-        <p className="text-text-muted text-xs truncate">{row.email ?? row.phone}{row.email ? ' · email' : ' · SMS'}</p>
-        <p className="font-mono text-2xl tracking-[0.35em] text-aqua-deep mt-0.5">{row.codePlain}</p>
+        <p className="truncate text-xs text-charcoal-muted">{row.email ?? row.phone}{row.email ? ' · email' : ' · SMS'}</p>
+        <p className="figure mt-0.5 text-2xl tracking-[0.3em] text-charcoal">{row.codePlain}</p>
       </div>
-      <div className="text-right shrink-0">
-        <p className="text-text-muted text-xs">Expires in {expiresIn}m</p>
+      <div className="shrink-0 text-right">
+        <p className="figure text-xs text-charcoal-muted">Expires in {expiresIn}m</p>
         <button
           onClick={copy}
-          className="mt-1 text-xs font-medium text-aqua-deep underline hover:no-underline"
+          className="mt-1 rounded text-xs font-medium text-navy underline underline-offset-2 hover:no-underline"
         >
-          {copied ? 'Copied!' : 'Copy'}
+          {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
     </div>
-  );
-}
-
-function StatCard({ label, value, href, accent }: { label: string; value?: number; href: string; accent?: boolean }) {
-  return (
-    <Link href={href} className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
-      <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className="figure mt-2 text-3xl">
-        {value ?? '—'}
-      </p>
-    </Link>
-  );
-}
-
-/**
- * Headline financials on the landing page: this month against target, and the
- * 12-month shape of the business. The full breakdowns live on Insights.
- */
-function FinanceSnapshot() {
-  const router = useRouter();
-  const [overview, setOverview] = useState<DashboardOverview | null>(null);
-  const [breakdown, setBreakdown] = useState<RevenueBreakdown | null>(null);
-  const [summary, setSummary] = useState<FinancialSummary | null>(null);
-  const [equity, setEquity] = useState<EquityOverview | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth() + 1;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const from = `${y}-${pad(m)}-01`;
-    const to = `${y}-${pad(m)}-${new Date(y, m, 0).getDate()}`;
-
-    Promise.all([
-      api.overview(y, m),
-      api.revenueBreakdown(from, to).catch(() => null),
-      api.financialSummary(from, to).catch(() => null),
-      api.equity(from, to).catch(() => null), // cap-table holders only
-    ])
-      .then(([o, b, sm, eq]) => {
-        setOverview(o.overview);
-        setBreakdown(b?.breakdown ?? null);
-        setSummary(sm?.summary ?? null);
-        setEquity(eq?.overview ?? null);
-      })
-      .catch(() => undefined)
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="mt-10 rounded-xl border border-line bg-white py-10 text-center text-sm text-charcoal-muted">
-        Loading financials…
-      </div>
-    );
-  }
-  if (!overview) return null;
-
-  const expenseSlices = summary
-    ? (Object.entries(summary.expensesByCategoryCents) as [ExpenseCategory, number][]).map(
-        ([category, cents]) => ({ key: category, label: EXPENSE_LABELS[category], value: cents }),
-      )
-    : [];
-
-  return (
-    <section className="mt-10">
-      <div className="mb-4 flex items-baseline justify-between gap-3">
-        <h2 className="font-serif text-2xl">
-          This month
-        </h2>
-        <Link href="/insights" className="text-sm font-medium text-aqua-deep hover:underline">
-          Full insights →
-        </Link>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <StatTile
-            label="Revenue"
-            value={money(overview.revenue.actual)}
-            delta={overviewChanges(overview).revenue}
-            deltaLabel={changeLabel(overviewChanges(overview).mode)}
-            context="Income from approved jobs this month"
-            progressPercent={overview.revenue.target > 0 ? overview.revenue.percent : null}
-            progressLabel={
-              overview.revenue.target > 0
-                ? `${overview.revenue.percent}% of ${money(overview.revenue.target)} target`
-                : undefined
-            }
-          />
-          <StatTile
-            label="Net profit"
-            value={money(overview.netProfit.actual)}
-            delta={overviewChanges(overview).netProfit}
-            deltaLabel={changeLabel(overviewChanges(overview).mode)}
-            context="After job expenses, before any reserve"
-            progressPercent={overview.netProfit.target > 0 ? overview.netProfit.percent : null}
-            progressLabel={
-              overview.netProfit.target > 0
-                ? `${overview.netProfit.percent}% of ${money(overview.netProfit.target)} target`
-                : undefined
-            }
-          />
-          <StatTile
-            label="Jobs completed"
-            value={String(overview.jobs.actual)}
-            delta={overviewChanges(overview).jobs}
-            deltaLabel={changeLabel(overviewChanges(overview).mode)}
-            context="Approved jobs recorded this month"
-            progressPercent={overview.jobs.target > 0 ? overview.jobs.percent : null}
-            progressLabel={
-              overview.jobs.target > 0 ? `${overview.jobs.actual} of ${overview.jobs.target} planned` : undefined
-            }
-          />
-          <StatTile
-            label="Margin"
-            value={
-              overview.revenue.actual > 0
-                ? `${Math.round((overview.netProfit.actual / overview.revenue.actual) * 100)}%`
-                : '—'
-            }
-            context="Net profit as a share of revenue"
-          />
-        </div>
-
-        {/* Rings replace the old flat "no target set" bar: with no target they
-            render an empty track carrying the action, not dead space. */}
-        <AchievementRow>
-          <AchievementRing
-            label="Revenue"
-            percent={overview.revenue.target > 0 ? overview.revenue.percent : null}
-            caption="of monthly target"
-            onSetTarget={() => router.push('/insights')}
-          />
-          <AchievementRing
-            label="Net profit"
-            percent={overview.netProfit.target > 0 ? overview.netProfit.percent : null}
-            caption="of monthly target"
-            onSetTarget={() => router.push('/insights')}
-          />
-          <AchievementRing
-            label="Jobs"
-            percent={overview.jobs.target > 0 ? overview.jobs.percent : null}
-            caption="of jobs planned"
-            onSetTarget={() => router.push('/insights')}
-          />
-        </AchievementRow>
-      </div>
-
-      {/* The 12-month trend chart was here. Removed from the dashboard: with a
-          single month of recorded data it renders as one spike in a row of
-          zeros, which reads as broken rather than informative. The chart still
-          lives on Insights, where a sparse series is expected while history
-          accumulates. */}
-
-      {/* Part-to-whole views of the month */}
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Revenue by service line">
-          <DonutChart
-            slices={(breakdown?.byServiceLine ?? []).map((i) => ({
-              key: i.key, label: i.label, value: i.incomeCents,
-            }))}
-            centreLabel="total revenue"
-            emptyLabel="No classified revenue yet. Set a service line when you record a job."
-          />
-        </ChartCard>
-
-        <ChartCard title="Where the money went">
-          <DonutChart
-            slices={expenseSlices}
-            centreLabel="total expenses"
-            emptyLabel="No expenses recorded this month."
-          />
-        </ChartCard>
-
-        <ChartCard title="Revenue by client segment">
-          <DonutChart
-            slices={(breakdown?.bySegment ?? []).map((i) => ({
-              key: i.key, label: i.label, value: i.incomeCents,
-            }))}
-            centreLabel="total revenue"
-            emptyLabel="No segmented revenue yet."
-          />
-        </ChartCard>
-
-        {equity && (
-          <ChartCard title="Profit share">
-            <DonutChart
-              slices={equity.allocations.map((a) => ({
-                key: a.shareholder.id,
-                label: `${a.shareholder.name} (${(a.shareholder.basisPoints / 100).toFixed(0)}%)`,
-                value: Math.max(0, a.periodShareCents),
-              }))}
-              centreLabel="net profit shared"
-              emptyLabel="No shareholders on the cap table."
-            />
-          </ChartCard>
-        )}
-      </div>
-    </section>
   );
 }
