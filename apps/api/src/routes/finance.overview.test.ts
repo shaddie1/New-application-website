@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DashboardOverview } from '@onyxhawk/types';
 
-import { as, resetDb, t } from '../test-support/financialsDb.js';
+import { as, db, resetDb, t } from '../test-support/financialsDb.js';
 
 vi.mock('../db.js', async () => ({ prisma: (await import('../test-support/financialsDb.js')).db }));
 
@@ -117,6 +117,30 @@ describe('GET /admin/finance/overview', () => {
       });
       expect(overview.revenue.actual).toBe(9_500_000);
     });
+  });
+
+  it('answers with an error, and leaves no failure unhandled, when a query fails while the month is running', async () => {
+    clockAt('2026-11-12T09:00:00.000Z');
+    t.jobs = [job('nov5', '2026-11-05', 7_000_000)];
+    // A failure nothing handles ends the server process, not just this request.
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    db.job.aggregate.mockRejectedValueOnce(new Error('connection lost'));
+
+    try {
+      const res = await as('owner', 'GET', '/admin/finance/overview?year=2026&month=11');
+
+      expect(res.statusCode).toBe(500);
+      // Node reports an unhandled failure once the work in hand is done.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   it('counts the cut-off day on both sides and nothing dated after it', async () => {

@@ -655,7 +655,7 @@ export const api = {
       { method: 'DELETE', auth: true },
     ),
 
-  // ── Dev OTP viewer (owner only, returns [] in production) ────────────────
+  // ── Dev sign-in-code viewer (owner only; the server answers 404 outside development) ─────────────────
   recentOtps: () =>
     request<{ codes: { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
       '/admin/otps/recent',

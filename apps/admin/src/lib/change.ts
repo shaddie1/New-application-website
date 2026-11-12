@@ -29,6 +29,32 @@ export type ReceivedOverview = Omit<DashboardOverview, 'comparison' | 'series'> 
 };
 
 /**
+ * The two sides every change figure is worked out from, and the mode that
+ * labels them: the comparison the server made, or, against an older server
+ * that sends none, the whole month and the whole previous month with no mode.
+ */
+function comparedSides(overview: ReceivedOverview): {
+  mode: ComparisonMode | undefined;
+  current: OverviewComparison['current'];
+  previous: OverviewComparison['previous'];
+} {
+  if (overview.comparison) return overview.comparison;
+  return {
+    mode: undefined,
+    current: {
+      revenueCents: overview.revenue.actual,
+      netCents: overview.netProfit.actual,
+      jobCount: overview.jobs.actual,
+    },
+    previous: {
+      revenueCents: overview.previousRevenueCents,
+      netCents: overview.previousNetCents,
+      jobCount: overview.previousJobCount,
+    },
+  };
+}
+
+/**
  * The percent change of an overview's three figures, and the mode that labels
  * them. Each is worked out from the comparison's two sides. Against an older
  * server that sends no comparison, the whole month is set against the whole
@@ -40,21 +66,13 @@ export function overviewChanges(overview: ReceivedOverview | null): {
   netProfit: number | null;
   jobs: number | null;
 } {
-  const comparison = overview?.comparison;
-  if (comparison) {
-    const { current, previous } = comparison;
-    return {
-      mode: comparison.mode,
-      revenue: pctChange(current.revenueCents, previous.revenueCents),
-      netProfit: pctChange(current.netCents, previous.netCents),
-      jobs: pctChange(current.jobCount, previous.jobCount),
-    };
-  }
+  if (!overview) return { mode: undefined, revenue: null, netProfit: null, jobs: null };
+  const { mode, current, previous } = comparedSides(overview);
   return {
-    mode: undefined,
-    revenue: pctChange(overview?.revenue.actual ?? 0, overview?.previousRevenueCents ?? 0),
-    netProfit: pctChange(overview?.netProfit.actual ?? 0, overview?.previousNetCents ?? 0),
-    jobs: pctChange(overview?.jobs.actual ?? 0, overview?.previousJobCount ?? 0),
+    mode,
+    revenue: pctChange(current.revenueCents, previous.revenueCents),
+    netProfit: pctChange(current.netCents, previous.netCents),
+    jobs: pctChange(current.jobCount, previous.jobCount),
   };
 }
 
@@ -69,16 +87,12 @@ export function overviewChanges(overview: ReceivedOverview | null): {
  */
 export function marginPointsChange(overview: ReceivedOverview | null): number | null {
   if (!overview) return null;
-  const comparison = overview.comparison;
-  const current = comparison
-    ? { revenue: comparison.current.revenueCents, net: comparison.current.netCents }
-    : { revenue: overview.revenue.actual, net: overview.netProfit.actual };
-  const previous = comparison
-    ? { revenue: comparison.previous.revenueCents, net: comparison.previous.netCents }
-    : { revenue: overview.previousRevenueCents, net: overview.previousNetCents };
-  if (!(current.revenue > 0) || !(previous.revenue > 0)) return null;
+  const { current, previous } = comparedSides(overview);
+  if (!(current.revenueCents > 0) || !(previous.revenueCents > 0)) return null;
 
-  const points = Math.round((current.net / current.revenue - previous.net / previous.revenue) * 100);
+  const points = Math.round(
+    (current.netCents / current.revenueCents - previous.netCents / previous.revenueCents) * 100,
+  );
   // A small fall rounds to -0, which is not the 0 a caller compares with.
   return points === 0 ? 0 : points;
 }

@@ -66,8 +66,10 @@ function setup(initial: Session | null) {
     stored: () => stored,
     clears: () => clears,
     failures: () => failures,
-    grant: (next: Session) => answer({ ok: true, json: async () => next }),
-    refuse: () => answer({ ok: false, json: async () => ({ error: 'Refresh token reused' }) }),
+    grant: (next: Session) => answer({ ok: true, status: 200, json: async () => next }),
+    refuse: () => answer({ ok: false, status: 401, json: async () => ({ error: 'Refresh token reused' }) }),
+    /** The server, or something in front of it, is down: no word on the token. */
+    serverError: (status: number) => answer({ ok: false, status, json: async () => ({ error: 'Unavailable' }) }),
   };
 }
 
@@ -124,6 +126,70 @@ describe('session renewal', () => {
     expect(h.stored()).toBeNull();
     expect(h.clears()).toBe(1);
     expect(h.failures()).toBe(1);
+  });
+
+  it.each([500, 502, 503, 429])('keeps the session when the server answers %i, and renews again on the next try', async (status) => {
+    const h = setup(sessionWith('access-0', 'refresh-0'));
+
+    const callers = Array.from({ length: 3 }, () => h.renewal.renew('access-0'));
+    await h.serverError(status);
+
+    expect(await Promise.all(callers)).toEqual([null, null, null]);
+    expect(h.stored()?.refreshToken).toBe('refresh-0');
+    expect(h.clears()).toBe(0);
+    expect(h.failures()).toBe(0);
+
+    // The server is back: the same refresh token is still good.
+    const retry = h.renewal.renew('access-0');
+    await h.grant(sessionWith('access-1', 'refresh-1'));
+
+    expect((await retry)?.accessToken).toBe('access-1');
+    expect(h.sentRefreshTokens).toEqual(['refresh-0', 'refresh-0']);
+  });
+
+  it('keeps the session when the renewal request never reaches the server, and renews again on the next try', async () => {
+    let stored: Session | null = sessionWith('access-0', 'refresh-0');
+    let failures = 0;
+    let online = false;
+    const renewal = createSessionRenewal({
+      refreshUrl: REFRESH_URL,
+      fetch: async () => {
+        if (!online) throw new TypeError('Failed to fetch');
+        return { ok: true, status: 200, json: async () => sessionWith('access-1', 'refresh-1') };
+      },
+      load: () => stored,
+      save: (next) => {
+        stored = next;
+      },
+      clear: () => {
+        stored = null;
+      },
+    });
+    renewal.onFailed(() => {
+      failures += 1;
+    });
+
+    expect(await renewal.renew('access-0')).toBeNull();
+    expect(stored?.refreshToken).toBe('refresh-0');
+    expect(failures).toBe(0);
+
+    online = true;
+    expect((await renewal.renew('access-0'))?.accessToken).toBe('access-1');
+  });
+
+  it('stops telling a listener that has been removed', async () => {
+    const h = setup(sessionWith('access-0', 'refresh-0'));
+    let told = 0;
+    const remove = h.renewal.onFailed(() => {
+      told += 1;
+    });
+    remove();
+
+    const caller = h.renewal.renew('access-0');
+    await h.refuse();
+    await caller;
+
+    expect(told).toBe(0);
   });
 
   const withoutRefreshToken: [string, Session | null][] = [

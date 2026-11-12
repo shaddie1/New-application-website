@@ -41,11 +41,6 @@ export function shareHeadingParts(scope: OwnershipScope, monthLabel: string): [s
   return ['Share,', scope === 'this-month' ? monthLabel : 'all time'];
 }
 
-/** The heading of the table's share column. */
-export function shareHeading(scope: OwnershipScope, monthLabel: string): string {
-  return shareHeadingParts(scope, monthLabel).join(' ');
-}
-
 /**
  * The name of the row for what the stakes leave over. Short of 100% the
  * business keeps the rest; past 100% nothing is kept, the stakes hand out

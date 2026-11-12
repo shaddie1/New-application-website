@@ -3,8 +3,9 @@ import type { EquityHistoryMonth } from '@onyxhawk/types';
 
 import { OTHERS_KEY } from '../stacked-bars';
 import {
-  OVER_KEY, RETAINED_KEY, amountWithoutUnit, isPhone, monthAxisLabels, monthTableColumns, shapeHistory, tableMonthIndexes, wholeColumns,
+  OVER_KEY, amountWithoutUnit, isPhone, monthAxisLabels, monthTableColumns, shapeHistory, tableMonthIndexes, wholeColumns,
 } from './history';
+import { RETAINED_SEGMENT } from './split';
 
 type Stake = { id: string; name: string; basisPoints: number };
 
@@ -83,7 +84,7 @@ describe('shapeHistory', () => {
   });
 
   it('has no "Retained" series or row when the stakes total 100%', () => {
-    expect(history.series.some((s) => s.key === RETAINED_KEY)).toBe(false);
+    expect(history.series.some((s) => s.key === RETAINED_SEGMENT)).toBe(false);
     expect(history.rows.some((r) => r.kind === 'retained')).toBe(false);
   });
 
@@ -104,14 +105,14 @@ describe('stakes under 100%', () => {
   const history = shapeHistory(threeMonths(THREE.slice(0, 2))); // 40% and 30%
 
   it('adds the unallocated remainder as a neutral "Retained" series, last', () => {
-    expect(history.series.map((s) => s.key)).toEqual(['h1', 'h2', RETAINED_KEY]);
-    expect(history.series[2]).toEqual({ key: RETAINED_KEY, label: 'Retained', kind: 'retained', colourIndex: null });
+    expect(history.series.map((s) => s.key)).toEqual(['h1', 'h2', RETAINED_SEGMENT]);
+    expect(history.series[2]).toEqual({ key: RETAINED_SEGMENT, label: 'Retained', kind: 'retained', colourIndex: null });
     expect(history.columns.map((c) => c.values[2])).toEqual([300_000, -60_000, 150_000]);
   });
 
   it('adds a "Retained by the business" row to the table', () => {
     expect(history.rows[2]).toEqual({
-      key: RETAINED_KEY, label: 'Retained by the business', kind: 'retained', colourIndex: null, cents: [300_000, -60_000, 150_000],
+      key: RETAINED_SEGMENT, label: 'Retained by the business', kind: 'retained', colourIndex: null, cents: [300_000, -60_000, 150_000],
     });
   });
 });
@@ -167,7 +168,7 @@ describe('"Others" and "Retained" together', () => {
   it('tells them apart by kind, since neither has a colour of its own', () => {
     const [others, retained] = history.series.slice(5);
     expect([others!.key, others!.kind, others!.colourIndex]).toEqual([OTHERS_KEY, 'others', null]);
-    expect([retained!.key, retained!.kind, retained!.colourIndex]).toEqual([RETAINED_KEY, 'retained', null]);
+    expect([retained!.key, retained!.kind, retained!.colourIndex]).toEqual([RETAINED_SEGMENT, 'retained', null]);
   });
 
   it('keeps a holder past the fifth a holder in the table, and the retained row retained', () => {

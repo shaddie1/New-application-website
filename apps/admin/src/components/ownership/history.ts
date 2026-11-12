@@ -2,7 +2,7 @@ import type { EquityHistoryMonth } from '@onyxhawk/types';
 
 import { money } from '../../lib/money';
 import { enoughToDraw, foldSeries, OTHERS_KEY, type StackColumn } from '../stacked-bars';
-import { COLOURED_HOLDERS, colourIndexOf } from './split';
+import { COLOURED_HOLDERS, RETAINED_SEGMENT, colourIndexOf } from './split';
 import { BASIS_POINTS_TOTAL } from './stakes';
 
 /**
@@ -11,7 +11,6 @@ import { BASIS_POINTS_TOTAL } from './stakes';
  * the server sent, each month's net profit split at today's stakes.
  */
 
-export const RETAINED_KEY = '__retained';
 export const OVER_KEY = '__over';
 
 /**
@@ -108,9 +107,9 @@ export function shapeHistory(months: EquityHistoryMonth[]): OwnershipHistory {
   const unallocated = months.map((m) => m.unallocatedCents);
   if (stakesBasisPoints < BASIS_POINTS_TOTAL) {
     // Stakes short of 100% leave part of every month with nobody: the business keeps it.
-    series.push({ key: RETAINED_KEY, label: 'Retained', kind: 'retained', colourIndex: null });
+    series.push({ key: RETAINED_SEGMENT, label: 'Retained', kind: 'retained', colourIndex: null });
     columns = columns.map((c, i) => ({ ...c, values: [...c.values, unallocated[i]!] }));
-    rows.push({ key: RETAINED_KEY, label: 'Retained by the business', kind: 'retained', colourIndex: null, cents: unallocated });
+    rows.push({ key: RETAINED_SEGMENT, label: 'Retained by the business', kind: 'retained', colourIndex: null, cents: unallocated });
   } else if (stakesBasisPoints > BASIS_POINTS_TOTAL) {
     // Stakes past 100% hand out more than there is. The table says by how
     // much, so its rows still add up to the net profit; the chart draws the

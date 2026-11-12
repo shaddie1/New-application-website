@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  AMOUNTS_UNIT, formatDay, monthTableWording, noSplitLine, overAllocatedLine, remainderName, remainderStake, scopeLine, shareHeading,
+  AMOUNTS_UNIT, formatDay, monthTableWording, noSplitLine, overAllocatedLine, remainderName, remainderStake, scopeLine,
   shareHeadingParts,
 } from './wording';
 
@@ -48,22 +48,10 @@ describe('noSplitLine', () => {
   });
 });
 
-describe('shareHeading', () => {
-  it('names what the share column covers', () => {
-    expect(shareHeading('all-time', 'November 2026')).toBe('Share, all time');
-    expect(shareHeading('this-month', 'November 2026')).toBe('Share, November 2026');
-  });
-});
-
 describe('shareHeadingParts', () => {
   it('gives the heading in two parts, for a column too narrow for one line', () => {
     expect(shareHeadingParts('all-time', 'November 2026')).toEqual(['Share,', 'all time']);
     expect(shareHeadingParts('this-month', 'November 2026')).toEqual(['Share,', 'November 2026']);
-  });
-
-  it('reads as the full heading when joined', () => {
-    expect(shareHeadingParts('this-month', 'November 2026').join(' ')).toBe(shareHeading('this-month', 'November 2026'));
-    expect(shareHeadingParts('all-time', 'November 2026').join(' ')).toBe(shareHeading('all-time', 'November 2026'));
   });
 });
 

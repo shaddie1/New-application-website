@@ -452,17 +452,20 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     // series, so their totals are used again and not added up twice.
     const window = comparisonWindow(year, month, nairobiToday());
     const seriesMonths = monthsEndingAt(year, month, SERIES_MONTHS);
-    const seriesTotals = Promise.all(seriesMonths.map((m) => monthTotals(m.year, m.month)));
-    const wholeMonth = seriesTotals.then((totals) => totals[totals.length - 1]!);
-    const wholeMonthBefore = seriesTotals.then((totals) => totals[totals.length - 2]!);
+    const wholeMonths = window.mode === 'full-month';
 
-    const [current, monthly, currentSide, previousSide, target] = await Promise.all([
-      wholeMonth,
-      seriesTotals,
-      window.mode === 'full-month' ? wholeMonth : rangeTotals(window.current),
-      window.mode === 'full-month' ? wholeMonthBefore : rangeTotals(window.previous),
+    // Every query sits directly in this one Promise.all, so a query that
+    // fails is always caught here and answered as an error. A promise made
+    // on the side and then left unused would take the whole server down.
+    const [monthly, currentRange, previousRange, target] = await Promise.all([
+      Promise.all(seriesMonths.map((m) => monthTotals(m.year, m.month))),
+      wholeMonths ? null : rangeTotals(window.current),
+      wholeMonths ? null : rangeTotals(window.previous),
       prisma.monthlyTarget.findUnique({ where: { year_month: { year, month } } }),
     ]);
+    const current = monthly[monthly.length - 1]!;
+    const currentSide = currentRange ?? current;
+    const previousSide = previousRange ?? monthly[monthly.length - 2]!;
 
     const progress = (actual: number, goal: number): TargetProgress => ({
       actual,

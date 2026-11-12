@@ -14,7 +14,14 @@ import type { Session } from '@onyxhawk/types';
 export type RenewalFetch = (
   url: string,
   init: { method: 'POST'; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+
+/**
+ * The answers that mean the server looked at the refresh token and said no.
+ * Anything else that is not a success (a 502 while the server restarts, a
+ * 500) says nothing about the token, so the session is kept.
+ */
+const REFUSED = new Set([400, 401, 403]);
 
 export interface SessionRenewalDeps {
   refreshUrl: string;
@@ -27,7 +34,8 @@ export interface SessionRenewalDeps {
 export interface SessionRenewal {
   /**
    * Call after a 401. `sentAccessToken` is the token the refused request
-   * carried. Resolves to the session to retry with, or null when there is none.
+   * carried. Resolves to the session to retry with, or null when there is
+   * none: the server refused the renewal, or could not be asked just now.
    */
   renew: (sentAccessToken: string | null) => Promise<Session | null>;
   /**
@@ -49,8 +57,10 @@ export function createSessionRenewal(deps: SessionRenewalDeps): SessionRenewal {
         body: JSON.stringify({ refreshToken }),
       });
       if (!res.ok) {
-        deps.clear();
-        failedListener?.();
+        if (REFUSED.has(res.status)) {
+          deps.clear();
+          failedListener?.();
+        }
         return null;
       }
       const next = (await res.json()) as Session;
