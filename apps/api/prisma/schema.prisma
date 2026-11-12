@@ -1248,6 +1248,9 @@ model Shareholder {
   user        User?           @relation("UserShareholder", fields: [userId], references: [id])
   userId      String?         @unique
   sortOrder   Int             @default(0)
+  // Set when the holder is removed from the cap table. The row stays, so the
+  // payouts declared for them keep their name; reads of current holders skip it.
+  removedAt   DateTime?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 

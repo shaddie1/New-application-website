@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { useRouter } from 'next/navigation';
 import type { Session } from '@onyxhawk/types';
 
-import { api } from './api';
+import { api, onSessionRenewalFailed } from './api';
 import { clearSession, loadSession, saveSession } from './session';
 
 interface AuthState {
@@ -21,6 +21,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setSessionState(loadSession() ?? null);
   }, []);
+
+  // A refused renewal has already cleared the stored session. Dropping it here
+  // too lets useRequireAdmin send the user to sign in without a reload.
+  useEffect(() => onSessionRenewalFailed(() => setSessionState(null)), []);
 
   const setSession = useCallback((s: Session) => {
     saveSession(s);

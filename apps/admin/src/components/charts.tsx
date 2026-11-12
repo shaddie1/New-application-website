@@ -2,6 +2,8 @@
 
 import { useState, type ReactNode } from 'react';
 
+import { OTHER_KEY, donutLayout, type Slice } from './chart-geometry';
+
 /**
  * Charts for the admin dashboard.
  *
@@ -553,27 +555,12 @@ export const CATEGORICAL = ['#008300', '#2a78d6', '#eb6834', '#4a3aa7', '#e34948
 export const OTHER_GREY = '#8A94A3';
 const SURFACE = '#FFFFFF';
 
-export type Slice = { key: string; label: string; value: number };
+export type { Slice } from './chart-geometry';
 
-function polar(cx: number, cy: number, r: number, angle: number) {
-  return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
-}
-
-/** SVG path for one donut segment (an annular sector). */
-function arcPath(cx: number, cy: number, rOuter: number, rInner: number, from: number, to: number) {
-  const large = to - from > Math.PI ? 1 : 0;
-  const o1 = polar(cx, cy, rOuter, from);
-  const o2 = polar(cx, cy, rOuter, to);
-  const i2 = polar(cx, cy, rInner, to);
-  const i1 = polar(cx, cy, rInner, from);
-  return [
-    `M ${o1.x} ${o1.y}`,
-    `A ${rOuter} ${rOuter} 0 ${large} 1 ${o2.x} ${o2.y}`,
-    `L ${i2.x} ${i2.y}`,
-    `A ${rInner} ${rInner} 0 ${large} 0 ${i1.x} ${i1.y}`,
-    'Z',
-  ].join(' ');
-}
+// A 2px surface gap separates touching segments — the gap does the work, not a
+// stroke.
+const DONUT_SIZE = 220;
+const DONUT_GEOMETRY = { cx: DONUT_SIZE / 2, cy: DONUT_SIZE / 2, rOuter: 100, rInner: 64, gapPx: 2 };
 
 /**
  * Part-to-whole donut. Segments are sorted largest first and the tail folded
@@ -598,9 +585,10 @@ export function DonutChart({
   maxSlices?: number;
   emptyLabel?: string;
 }) {
-  const positive = slices.filter((s) => s.value > 0).sort((a, b) => b.value - a.value);
+  const layout = donutLayout(slices, DONUT_GEOMETRY, { maxSlices, total: totalOverride });
 
-  if (positive.length === 0) {
+  // No positive slices, or a total of 0: there is no whole to take a share of.
+  if (layout.rows.length === 0) {
     return (
       <div className="flex h-56 items-center justify-center rounded-lg bg-mist text-sm text-charcoal-muted">
         {emptyLabel}
@@ -608,29 +596,14 @@ export function DonutChart({
     );
   }
 
-  const head = positive.slice(0, maxSlices);
-  const tail = positive.slice(maxSlices);
-  const shown: (Slice & { color: string })[] = head.map((s, i) => ({ ...s, color: CATEGORICAL[i]! }));
-  if (tail.length > 0) {
-    shown.push({
-      key: '__other',
-      label: `Other (${tail.length})`,
-      value: tail.reduce((acc, s) => acc + s.value, 0),
-      color: OTHER_GREY,
-    });
-  }
-
-  const total = totalOverride ?? shown.reduce((acc, s) => acc + s.value, 0);
-  const size = 220;
-  const cx = size / 2;
-  const cy = size / 2;
-  const rOuter = 100;
-  const rInner = 64;
-
-  // A 2px surface gap separates touching segments — the gap does the work, not a
-  // stroke. Converted to radians at the outer edge so it looks even.
-  const gap = shown.length > 1 ? 2 / rOuter : 0;
-  let cursor = -Math.PI / 2; // start at 12 o'clock
+  const { total } = layout;
+  const shown: (Slice & { color: string })[] = layout.rows.map((s, i) => ({
+    ...s,
+    color: s.key === OTHER_KEY ? OTHER_GREY : CATEGORICAL[i]!,
+  }));
+  const colorOf = new Map(shown.map((s) => [s.key, s.color]));
+  const size = DONUT_SIZE;
+  const { cx, cy } = DONUT_GEOMETRY;
 
   return (
     <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
@@ -642,18 +615,11 @@ export function DonutChart({
         aria-label={`Donut chart: ${shown.map((s) => `${s.label} ${format(s.value)}`).join(', ')}`}
         className="shrink-0"
       >
-        {shown.map((s) => {
-          const sweep = (s.value / total) * Math.PI * 2;
-          const from = cursor + gap / 2;
-          const to = cursor + sweep - gap / 2;
-          cursor += sweep;
-          if (to <= from) return null;
-          return (
-            <path key={s.key} d={arcPath(cx, cy, rOuter, rInner, from, to)} fill={s.color}>
-              <title>{`${s.label}: ${format(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
-            </path>
-          );
-        })}
+        {layout.segments.map((s) => (
+          <path key={s.key} d={s.d} fill={colorOf.get(s.key)}>
+            <title>{`${s.label}: ${format(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
+          </path>
+        ))}
         <text x={cx} y={cy - 4} textAnchor="middle" className="fill-charcoal text-[15px] font-bold">
           {format(total)}
         </text>

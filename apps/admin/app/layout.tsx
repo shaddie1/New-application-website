@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { Raleway } from 'next/font/google';
+import { ConfirmProvider } from '../src/components/ui/confirm-dialog';
 import { AuthProvider } from '../src/lib/auth';
 
 // Self-hosted at build time by next/font, so there is no render-blocking
@@ -21,7 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={raleway.variable}>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </AuthProvider>
       </body>
     </html>
   );

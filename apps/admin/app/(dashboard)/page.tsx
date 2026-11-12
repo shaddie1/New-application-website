@@ -13,6 +13,7 @@ import type {
 } from '@onyxhawk/types';
 import { api, ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
+import { changeLabel, overviewChanges } from '../../src/lib/change';
 import {
   AchievementRing,
   AchievementRow,
@@ -89,13 +90,15 @@ export default function DashboardPage() {
 
       {canSeeFinance && <FinanceSnapshot />}
 
-      {/* Live OTP panel — visible to owner in non-production only */}
+      {/* Dev sign-in codes: the server decides whether this exists (404 when dev tools are off). */}
       {session?.user.isOwner && <LiveOtpPanel />}
     </div>
   );
 }
 
 function LiveOtpPanel() {
+  // null until the server answers; false when dev tools are off or it cannot be reached.
+  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [codes, setCodes] = useState<OtpRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -118,12 +121,29 @@ function LiveOtpPanel() {
   };
 
   useEffect(() => {
-    void refresh();
-    intervalRef.current = setInterval(() => void refresh(), 8000);
+    let cancelled = false;
+    // Ask once. Only an answer turns the panel on and starts the polling; a
+    // 404 (dev tools off) or an unreachable server leaves it hidden and silent.
+    api
+      .recentOtps()
+      .then((res) => {
+        if (cancelled) return;
+        setCodes(res.codes);
+        setLastRefresh(new Date());
+        setLoading(false);
+        setEnabled(true);
+        intervalRef.current = setInterval(() => void refresh(), 8000);
+      })
+      .catch(() => {
+        if (!cancelled) setEnabled(false);
+      });
     return () => {
+      cancelled = true;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
+
+  if (!enabled) return null;
 
   return (
     <div className="mt-10 rounded-xl border border-aqua/40 bg-white p-5">
@@ -205,12 +225,6 @@ function StatCard({ label, value, href, accent }: { label: string; value?: numbe
   );
 }
 
-/** Percent change, or null when there is no previous figure to compare against. */
-function pctChange(current: number, previous: number): number | null {
-  if (previous === 0) return null;
-  return Math.round(((current - previous) / Math.abs(previous)) * 100);
-}
-
 /**
  * Headline financials on the landing page: this month against target, and the
  * 12-month shape of the business. The full breakdowns live on Insights.
@@ -278,8 +292,8 @@ function FinanceSnapshot() {
           <StatTile
             label="Revenue"
             value={money(overview.revenue.actual)}
-            delta={pctChange(overview.revenue.actual, overview.previousRevenueCents)}
-            deltaLabel="vs last month"
+            delta={overviewChanges(overview).revenue}
+            deltaLabel={changeLabel(overviewChanges(overview).mode)}
             context="Income from approved jobs this month"
             progressPercent={overview.revenue.target > 0 ? overview.revenue.percent : null}
             progressLabel={
@@ -291,8 +305,8 @@ function FinanceSnapshot() {
           <StatTile
             label="Net profit"
             value={money(overview.netProfit.actual)}
-            delta={pctChange(overview.netProfit.actual, overview.previousNetCents)}
-            deltaLabel="vs last month"
+            delta={overviewChanges(overview).netProfit}
+            deltaLabel={changeLabel(overviewChanges(overview).mode)}
             context="After job expenses, before any reserve"
             progressPercent={overview.netProfit.target > 0 ? overview.netProfit.percent : null}
             progressLabel={
@@ -304,8 +318,8 @@ function FinanceSnapshot() {
           <StatTile
             label="Jobs completed"
             value={String(overview.jobs.actual)}
-            delta={pctChange(overview.jobs.actual, overview.previousJobCount)}
-            deltaLabel="vs last month"
+            delta={overviewChanges(overview).jobs}
+            deltaLabel={changeLabel(overviewChanges(overview).mode)}
             context="Approved jobs recorded this month"
             progressPercent={overview.jobs.target > 0 ? overview.jobs.percent : null}
             progressLabel={

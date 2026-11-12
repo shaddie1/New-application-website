@@ -12,6 +12,7 @@ import type {
 
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { changeLabel, overviewChanges } from '../../../src/lib/change';
 import { DonutChart, StatTile, TargetMeter, TrendChart, money, moneyShort } from '../../../src/components/charts';
 
 const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
@@ -30,11 +31,6 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
       {children}
     </div>
   );
-}
-
-function pctChange(current: number, previous: number): number | null {
-  if (previous === 0) return null;
-  return Math.round(((current - previous) / Math.abs(previous)) * 100);
 }
 
 function monthRange(year: number, month: number) {
@@ -203,15 +199,15 @@ export default function InsightsPage() {
 
           {/* Month-on-month */}
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            <StatTile label="Revenue vs last month" value={money(overview?.revenue.actual ?? 0)}
-              delta={pctChange(overview?.revenue.actual ?? 0, overview?.previousRevenueCents ?? 0)}
-              deltaLabel={`vs ${moneyShort(overview?.previousRevenueCents ?? 0)} last month`} />
-            <StatTile label="Net profit vs last month" value={money(overview?.netProfit.actual ?? 0)}
-              delta={pctChange(overview?.netProfit.actual ?? 0, overview?.previousNetCents ?? 0)}
-              deltaLabel={`vs ${moneyShort(overview?.previousNetCents ?? 0)} last month`} />
-            <StatTile label="Jobs vs last month" value={String(overview?.jobs.actual ?? 0)}
-              delta={pctChange(overview?.jobs.actual ?? 0, overview?.previousJobCount ?? 0)}
-              deltaLabel={`vs ${overview?.previousJobCount ?? 0} last month`} />
+            <StatTile label="Revenue" value={money(overview?.revenue.actual ?? 0)}
+              delta={overviewChanges(overview).revenue}
+              deltaLabel={changeLabel(overviewChanges(overview).mode, moneyShort(overview?.previousRevenueCents ?? 0))} />
+            <StatTile label="Net profit" value={money(overview?.netProfit.actual ?? 0)}
+              delta={overviewChanges(overview).netProfit}
+              deltaLabel={changeLabel(overviewChanges(overview).mode, moneyShort(overview?.previousNetCents ?? 0))} />
+            <StatTile label="Jobs" value={String(overview?.jobs.actual ?? 0)}
+              delta={overviewChanges(overview).jobs}
+              deltaLabel={changeLabel(overviewChanges(overview).mode, String(overview?.previousJobCount ?? 0))} />
           </div>
 
           {/* Trend */}

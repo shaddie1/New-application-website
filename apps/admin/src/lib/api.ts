@@ -21,8 +21,9 @@ import type {
   CreateJobReportInput,
   MonthlyTrendItem,
   ShareholderDto,
-  CreateShareholderInput,
   UpdateShareholderInput,
+  ReplaceStakesInput,
+  ReplaceStakesResult,
   EquityOverview,
   AllTimeTotals,
   MarketingSpendDto,
@@ -68,6 +69,7 @@ import type {
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
+import { createSessionRenewal } from './session-refresh';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -93,10 +95,10 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
 
   let res = await fetch(`${API_URL}${path}`, { ...rest, headers: finalHeaders });
 
-  if (res.status === 401 && auth && session?.refreshToken) {
-    const refreshed = await tryRefresh(session.refreshToken);
-    if (refreshed) {
-      finalHeaders.Authorization = `Bearer ${refreshed.accessToken}`;
+  if (res.status === 401 && auth) {
+    const renewed = await sessionRenewal.renew(session?.accessToken ?? null);
+    if (renewed) {
+      finalHeaders.Authorization = `Bearer ${renewed.accessToken}`;
       res = await fetch(`${API_URL}${path}`, { ...rest, headers: finalHeaders });
     }
   }
@@ -114,24 +116,18 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
   return (await res.json()) as T;
 }
 
-async function tryRefresh(refreshToken: string): Promise<Session | null> {
-  try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!res.ok) {
-      clearSession();
-      return null;
-    }
-    const next = (await res.json()) as Session;
-    saveSession(next);
-    return next;
-  } catch {
-    return null;
-  }
-}
+// One renewal per expiry, shared by every request waiting on it.
+const sessionRenewal = createSessionRenewal({
+  refreshUrl: `${API_URL}/auth/refresh`,
+  // Called through an arrow: the browser's fetch refuses to run detached from window.
+  fetch: (url, init) => fetch(url, init),
+  load: loadSession,
+  save: saveSession,
+  clear: clearSession,
+});
+
+/** Tells `listener` when a renewal was refused and the stored session cleared. */
+export const onSessionRenewalFailed = sessionRenewal.onFailed;
 
 export const api = {
   /** Staff sign-in: staff enter their email and the code is sent there. */
@@ -359,24 +355,20 @@ export const api = {
       { method: 'GET', auth: true },
     ),
 
-  addShareholder: (input: CreateShareholderInput) =>
-    request<{ shareholder: ShareholderDto }>('/admin/financials/shareholders', {
-      method: 'POST',
+  /** Every stake at once: the only request that adds a holder, removes one or changes a stake. */
+  replaceStakes: (input: ReplaceStakesInput) =>
+    request<ReplaceStakesResult>('/admin/financials/shareholders/stakes', {
+      method: 'PUT',
       auth: true,
       body: JSON.stringify(input),
     }),
 
+  /** A holder's details. The server refuses a stake sent here. */
   updateShareholder: (id: string, input: UpdateShareholderInput) =>
     request<{ shareholder: ShareholderDto }>(`/admin/financials/shareholders/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       auth: true,
       body: JSON.stringify(input),
-    }),
-
-  removeShareholder: (id: string) =>
-    request<{ ok: true }>(`/admin/financials/shareholders/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      auth: true,
     }),
 
   // ── Finance: marketing, assets, investments, distributions ───────────────

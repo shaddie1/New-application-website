@@ -1,7 +1,9 @@
 /**
- * Route-test support for Financials and project money: an in-memory stand-in
- * for the Prisma calls those routes make on users, projects, jobs and costs,
- * and one helper that signs a token and calls a route. A test file mocks
+ * Route-test support for Financials, project money and the finance overview:
+ * an in-memory stand-in for the Prisma calls those routes make on users,
+ * projects, jobs, costs, monthly targets, shareholders and declared payouts,
+ * and one helper that signs a token and calls a route under /admin/financials
+ * or /admin/finance. A test file mocks
  * '../db.js' with `db` and seeds the tables in `t`. Not built:
  * tsconfig.build.json excludes this folder.
  */
@@ -15,6 +17,9 @@ export const t = {
   projects: [] as Row[],
   jobs: [] as Row[],
   expenses: [] as Row[],
+  monthlyTargets: [] as Row[],
+  shareholders: [] as Row[],
+  profitDistributions: [] as Row[],
 };
 
 export function resetDb() {
@@ -22,15 +27,30 @@ export function resetDb() {
   t.projects = [];
   t.jobs = [];
   t.expenses = [];
+  t.monthlyTargets = [];
+  t.shareholders = [];
+  t.profitDistributions = [];
   seq = 0;
 }
 
-/** The subset of Prisma's `where` the routes use: equality, null, `not` and `in`. */
+const BOUNDS = ['gte', 'lte', 'gt', 'lt'] as const;
+
+/** A column against any of `gte`, `lte`, `gt` and `lt`; a row with no value is outside every range. */
+const withinBounds = (value: any, bounds: Row) => // eslint-disable-line @typescript-eslint/no-explicit-any
+  value != null &&
+  (bounds.gte === undefined || value >= bounds.gte) &&
+  (bounds.lte === undefined || value <= bounds.lte) &&
+  (bounds.gt === undefined || value > bounds.gt) &&
+  (bounds.lt === undefined || value < bounds.lt);
+
+/** The subset of Prisma's `where` the routes use: equality (dates by their instant), null, `not`, `in` and ranges. */
 const matches = (row: Row, where: Row = {}) =>
   Object.entries(where).every(([k, v]) =>
     v === null ? row[k] == null
+    : v instanceof Date ? row[k] instanceof Date && row[k].getTime() === v.getTime()
     : typeof v === 'object' && 'not' in v ? row[k] !== v.not
     : typeof v === 'object' && 'in' in v ? (v.in as unknown[]).includes(row[k])
+    : typeof v === 'object' && BOUNDS.some((b) => b in v) ? withinBounds(row[k], v)
     : row[k] === v);
 
 /** A job with its costs, as `include` or `select` of `expenses` gives it. */
@@ -44,6 +64,40 @@ function withRelations(job: Row) {
     ...withCosts(job),
     project: project ? { title: project.title } : null,
     reportedBy: reporter ? { fullName: reporter.fullName } : null,
+  };
+}
+
+type OrderBy = Record<string, 'asc' | 'desc'>;
+
+/** A copy of the rows sorted by one `orderBy` or a list of them, the first entry deciding first. */
+function ordered(rows: Row[], orderBy: OrderBy | OrderBy[] = []) {
+  const columns = [orderBy].flat().flatMap((o) => Object.entries(o));
+  return [...rows].sort((a, b) => {
+    for (const [column, way] of columns) {
+      if (a[column] < b[column]) return way === 'desc' ? 1 : -1;
+      if (a[column] > b[column]) return way === 'desc' ? -1 : 1;
+    }
+    return 0;
+  });
+}
+
+/** A user with the shareholder linked to the account, as selecting `shareholder` gives it. */
+const withHolder = (user: Row) => ({ ...user, shareholder: t.shareholders.find((s) => s.userId === user.id) ?? null });
+
+/** A shareholder with the linked account, as `include: { user }` gives it. */
+function withUser(holder: Row) {
+  const user = t.users.find((u) => u.id === holder.userId);
+  return { ...holder, user: user ? { fullName: user.fullName } : null };
+}
+
+/** A declared payout with its shareholder and whoever declared it, removed shareholders included. */
+function withHolderAndCreator(payout: Row) {
+  const holder = t.shareholders.find((s) => s.id === payout.shareholderId);
+  const creator = t.users.find((u) => u.id === payout.createdById);
+  return {
+    ...payout,
+    shareholder: holder ? { name: holder.name } : null,
+    createdBy: creator ? { fullName: creator.fullName } : null,
   };
 }
 
@@ -70,10 +124,18 @@ function aggregate(rows: Row[], args: Row) {
 
 type Where = { where: Row };
 type Data = { data: Row };
+type Sorted = { orderBy?: OrderBy | OrderBy[] };
 
 export const db = {
   user: {
-    findUnique: vi.fn(async ({ where }: Where) => t.users.find((u) => matches(u, where)) ?? null),
+    findUnique: vi.fn(async ({ where }: Where) => {
+      const user = t.users.find((u) => matches(u, where));
+      return user ? withHolder(user) : null;
+    }),
+    findFirst: vi.fn(async ({ where }: Where) => {
+      const user = t.users.find((u) => matches(u, where));
+      return user ? withHolder(user) : null;
+    }),
   },
   project: {
     findUnique: vi.fn(async ({ where }: Where) => t.projects.find((p) => matches(p, where)) ?? null),
@@ -110,17 +172,66 @@ export const db = {
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.jobs.filter((j) => matches(j, args.where)), args)),
   },
   expense: {
+    findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.expenses.filter((e) => costMatches(e, where))),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.expenses.filter((e) => costMatches(e, args.where)), args)),
   },
-  /** Runs the callback against the same tables. It does not undo writes when the callback throws. */
-  $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(db)),
+  monthlyTarget: {
+    /** Looked up by its compound key, `{ year_month: { year, month } }`. */
+    findUnique: vi.fn(async ({ where }: Where) => t.monthlyTargets.find((m) => matches(m, where.year_month)) ?? null),
+  },
+  shareholder: {
+    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
+      ordered(t.shareholders.filter((s) => matches(s, where)), orderBy).map(withUser)),
+    findUnique: vi.fn(async ({ where }: Where) => {
+      const holder = t.shareholders.find((s) => matches(s, where));
+      return holder ? withUser(holder) : null;
+    }),
+    findFirst: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) => {
+      const [holder] = ordered(t.shareholders.filter((s) => matches(s, where)), orderBy);
+      return holder ? withUser(holder) : null;
+    }),
+    /** The columns the database fills in when a row is created without them. */
+    create: vi.fn(async ({ data }: Data) => {
+      const holder = {
+        id: `sh${++seq}`, title: null, kind: 'INDIVIDUAL', notes: null, userId: null, sortOrder: 0, removedAt: null,
+        createdAt: new Date(), updatedAt: new Date(), ...data,
+      };
+      t.shareholders.push(holder);
+      return withUser(holder);
+    }),
+    update: vi.fn(async ({ where, data }: Where & Data) => withUser(Object.assign(t.shareholders.find((s) => matches(s, where))!, data))),
+  },
+  profitDistribution: {
+    findFirst: vi.fn(async ({ where }: Partial<Where> = {}) => {
+      const payout = t.profitDistributions.find((d) => matches(d, where));
+      return payout ? withHolderAndCreator(payout) : null;
+    }),
+    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
+      ordered(t.profitDistributions.filter((d) => matches(d, where)), orderBy).map(withHolderAndCreator)),
+    createMany: vi.fn(async ({ data }: { data: Row[] }) => {
+      for (const d of data) {
+        t.profitDistributions.push({
+          id: `pd${++seq}`, status: 'PENDING', paidAt: null, reference: null, notes: null,
+          createdAt: new Date(), updatedAt: new Date(), ...d,
+        });
+      }
+      return { count: data.length };
+    }),
+  },
+  /**
+   * Runs the callback against the same tables, whatever options it is given.
+   * It does not undo writes when the callback throws.
+   */
+  $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>, _options?: unknown) => run(db)),
 };
 
-export async function as(userId: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) {
+export async function as(userId: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) {
   const { signAccessToken } = await import('../auth/jwt.js');
   const { financialsRoutes } = await import('../routes/financials.js');
+  const { financeRoutes } = await import('../routes/finance.js');
   const { token } = await signAccessToken(userId, t.users.find((u) => u.id === userId)!.role);
   const server = Fastify();
   await server.register(financialsRoutes, { prefix: '/admin/financials' });
+  await server.register(financeRoutes, { prefix: '/admin/finance' });
   return server.inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });
 }
