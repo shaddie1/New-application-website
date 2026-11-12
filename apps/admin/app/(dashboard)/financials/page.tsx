@@ -366,7 +366,7 @@ export default function FinancialsPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="font-serif text-3xl">Financials</h1>
+        <h1 className="font-serif text-3xl">Jobs &amp; costs</h1>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">←</button>
           <span className="text-sm font-medium w-36 text-center">{monthLabel}</span>
@@ -402,7 +402,7 @@ export default function FinancialsPage() {
       </div>
 
       {/* Summary cards — the selected month */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <SummaryCard label="Income" cents={summary?.incomeCents} color="text-success" loading={loading} />
         <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} loading={loading} />
         <SummaryCard

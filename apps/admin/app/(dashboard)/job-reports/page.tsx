@@ -167,7 +167,7 @@ export default function JobReportsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-serif text-3xl">Job Reports</h1>
+          <h1 className="font-serif text-3xl">Job reports</h1>
           <p className="text-text-muted text-sm mt-1">Submit job details after each completed job. The owner reviews and approves them.</p>
         </div>
         <button

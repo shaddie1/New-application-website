@@ -185,7 +185,7 @@ export default function TeamPage() {
       </form>
 
       {/* Current team */}
-      <div className="rounded-xl border border-border bg-surface overflow-hidden">
+      <div className="rounded-xl border border-border bg-surface overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-bg-muted text-text-muted">
             <tr>

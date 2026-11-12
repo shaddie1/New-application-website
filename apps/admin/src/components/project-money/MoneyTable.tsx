@@ -145,7 +145,7 @@ export function MoneyTable({
                   Not yet sorted ({unsortedCount} job{unsortedCount === 1 ? '' : 's'})
                   {isOwner && (
                     <span className="mt-0.5 block text-xs text-charcoal-muted">
-                      Sort these in Financials, under Sort jobs.
+                      Sort these in Jobs &amp; costs, under Sort jobs.
                     </span>
                   )}
                 </>
