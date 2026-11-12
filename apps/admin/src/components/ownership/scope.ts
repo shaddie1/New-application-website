@@ -1,5 +1,7 @@
 import type { EquityOverview, ShareholderDto } from '@onyxhawk/types';
 
+import { monthLabel, monthRange, nairobiYearMonth } from '../dashboard/month';
+
 /** What the Ownership page's figures cover. */
 export type OwnershipScope = 'all-time' | 'this-month';
 
@@ -61,15 +63,6 @@ export function scopeFigures(overview: ReceivedEquityOverview, scope: OwnershipS
  * YYYY-MM-DD, for the equity request, and its name, such as "November 2026".
  */
 export function nairobiMonth(now: Date): { from: string; to: string; label: string } {
-  const today = now.toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' }); // YYYY-MM-DD
-  const year = Number(today.slice(0, 4));
-  const month = Number(today.slice(5, 7));
-  // Day 0 of the next month is the last day of this one.
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const yearMonth = today.slice(0, 7);
-  return {
-    from: `${yearMonth}-01`,
-    to: `${yearMonth}-${String(lastDay).padStart(2, '0')}`,
-    label: now.toLocaleDateString('en-KE', { timeZone: 'Africa/Nairobi', month: 'long', year: 'numeric' }),
-  };
+  const yearMonth = nairobiYearMonth(now);
+  return { ...monthRange(yearMonth), label: monthLabel(yearMonth) };
 }

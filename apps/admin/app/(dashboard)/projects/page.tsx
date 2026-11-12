@@ -64,7 +64,6 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** This page shows whole shillings. */
 const money = (cents: number) => formatMoney(cents, { whole: true });
 
 /** Colour of the timeline dot, by what kind of change it was. */

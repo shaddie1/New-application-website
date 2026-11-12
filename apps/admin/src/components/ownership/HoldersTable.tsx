@@ -53,12 +53,12 @@ function StakeBelow({ stake, said, className }: { stake: string; said: string; c
  * the stakes leave over, and the net profit being split.
  */
 export function HoldersTable({
-  figures, totalBasisPoints, shareHeading, onEditDetails, onEditStakes,
+  figures, totalBasisPoints, shareHeadingLines, onEditDetails, onEditStakes,
 }: {
   figures: ScopeFigures;
   totalBasisPoints: number;
   /** The share column's heading in its two parts: "Share," and the scope it covers. */
-  shareHeading: [string, string];
+  shareHeadingLines: [string, string];
   onEditDetails: (holder: ShareholderDto) => void;
   onEditStakes: () => void;
 }) {
@@ -85,9 +85,9 @@ export function HoldersTable({
               <th scope="col" className={cn(stakeCell, 'text-right align-top font-medium')}>Stake</th>
               {/* Under 30rem it is at least as wide as either scope's heading, so it does not move with the scope. */}
               <th scope="col" className={cn(amountCell, 'figure min-w-[6.125rem] text-right align-top font-medium [@container_(min-width:30rem)]:min-w-0')}>
-                <span className="whitespace-nowrap">{shareHeading[0]}</span>{' '}
+                <span className="whitespace-nowrap">{shareHeadingLines[0]}</span>{' '}
                 <span className="block whitespace-nowrap text-[11px] normal-case tracking-normal [@container_(min-width:42rem)]:inline [@container_(min-width:42rem)]:text-xs [@container_(min-width:42rem)]:uppercase [@container_(min-width:42rem)]:tracking-widest">
-                  {shareHeading[1]}
+                  {shareHeadingLines[1]}
                 </span>
               </th>
               <th scope="col" className="py-3"><span className="sr-only">Actions</span></th>

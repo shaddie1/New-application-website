@@ -3,7 +3,7 @@ import { chartColour, retainedFill } from './colours';
 import { initials } from './initials';
 
 const disc = 'inline-flex shrink-0 items-center justify-center rounded-full';
-const sizes = { xs: 'h-6 w-6 text-[9px]', sm: 'h-7 w-7 text-[10px]', md: 'h-9 w-9 text-xs' };
+const sizes = { xs: 'h-6 w-6 text-[9px]', sm: 'h-7 w-7 text-[10px]' };
 
 type BadgeSize = keyof typeof sizes;
 
@@ -15,11 +15,11 @@ type BadgeSize = keyof typeof sizes;
  * container width.
  */
 export function InitialsBadge({
-  name, colourIndex, size = 'md', className,
+  name, colourIndex, size, className,
 }: {
   name: string;
   colourIndex: number | null;
-  size?: BadgeSize;
+  size: BadgeSize;
   className?: string;
 }) {
   return (
@@ -37,6 +37,6 @@ export function InitialsBadge({
  * The disc beside "Retained by the business": hatched like the retained part
  * of the share bar and of the chart, with no initials, since it is nobody's.
  */
-export function RetainedBadge({ size = 'md', className }: { size?: BadgeSize; className?: string }) {
+export function RetainedBadge({ size, className }: { size: BadgeSize; className?: string }) {
   return <span aria-hidden="true" style={retainedFill} className={cn(disc, sizes[size], className)} />;
 }

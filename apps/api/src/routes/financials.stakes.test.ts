@@ -516,3 +516,34 @@ describe('the requests that used to add and delete one holder', () => {
     expect(snapshot()).toEqual(before);
   });
 });
+
+describe('the order of the holders', () => {
+  it('follows their place in the table, not the order the rows were stored in, in the list and in the split', async () => {
+    // Stored last place first: Brian (place 5), then OnyxHawk Holdings (0), then Amina (1).
+    t.shareholders = [stored('h3'), stored('h1'), stored('h2')];
+    // KSh 10,000 charged in November, nothing spent.
+    t.jobs = [{
+      id: 'j1', title: 'Office deep clean', date: day('2026-11-05'), incomeCents: 1_000_000, discountCents: 0,
+      status: 'OWNER_ENTRY', placement: 'STANDALONE', projectId: null, createdById: 'owner',
+    }];
+
+    const list = await as('owner', 'GET', '/admin/financials/shareholders');
+    const equity = await as('owner', 'GET', '/admin/financials/equity?from=2026-11-01&to=2026-11-30');
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json().shareholders.map((s: { id: string; sortOrder: number }) => [s.id, s.sortOrder])).toEqual([
+      ['h1', 0],
+      ['h2', 1],
+      ['h3', 5],
+    ]);
+    expect(equity.statusCode).toBe(200);
+    expect(
+      equity.json().overview.allocations.map((a: { shareholder: { id: string }; periodShareCents: number }) =>
+        [a.shareholder.id, a.periodShareCents]),
+    ).toEqual([
+      ['h1', 400_000],
+      ['h2', 300_000],
+      ['h3', 300_000],
+    ]);
+  });
+});

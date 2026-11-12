@@ -16,7 +16,6 @@ import { changeLabel, overviewChanges } from '../../../src/lib/change';
 import { DonutChart, StatTile, TargetMeter, TrendChart, moneyShort } from '../../../src/components/charts';
 import { money as formatMoney } from '../../../src/lib/money';
 
-/** This page shows whole shillings. */
 const money = (cents: number) => formatMoney(cents, { whole: true });
 
 const EXPENSE_LABELS: Record<ExpenseCategory, string> = {

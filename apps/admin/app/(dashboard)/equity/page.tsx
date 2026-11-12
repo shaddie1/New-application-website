@@ -158,7 +158,7 @@ export default function EquityPage() {
               <HoldersTable
                 figures={figures}
                 totalBasisPoints={totalBasisPoints}
-                shareHeading={shareHeadingParts(scope, month.label)}
+                shareHeadingLines={shareHeadingParts(scope, month.label)}
                 onEditDetails={setDetailsFor}
                 onEditStakes={() => setStakesOpen(true)}
               />

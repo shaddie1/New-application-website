@@ -3,6 +3,8 @@
  * it can be tested without a DOM.
  */
 
+import { colourIndexOf } from '../ownership/split';
+
 /** The key the server files revenue under when a job has no service line or client segment. */
 export const UNKNOWN_KEY = '__unknown';
 
@@ -78,22 +80,23 @@ type Allocation = { shareholder: { id: string; name: string }; periodShareCents:
 
 export type HolderSlice = { key: string; label: string; value: number; color: string };
 
-/** As on the Ownership page: the first five holders take a colour, the rest share the neutral grey. */
-const COLOURED_HOLDERS = 5;
-
 /**
  * One slice per holder, in table order. A holder's colour is the colour of
  * their place in the table, so it is the same here and on Ownership and does
- * not move when the shares change. The label is the name alone: the chart's
- * legend already gives each share.
+ * not move when the shares change: the first five take a colour, the rest
+ * share the neutral grey. The label is the name alone: the chart's legend
+ * already gives each share.
  */
 export function holderSlices(allocations: Allocation[]): HolderSlice[] {
-  return allocations.map((a, index) => ({
-    key: a.shareholder.id,
-    label: a.shareholder.name,
-    value: Math.max(0, a.periodShareCents),
-    color: index < COLOURED_HOLDERS ? `var(--chart-${index + 1})` : 'var(--chart-other)',
-  }));
+  return allocations.map((a, position) => {
+    const colourIndex = colourIndexOf(position);
+    return {
+      key: a.shareholder.id,
+      label: a.shareholder.name,
+      value: Math.max(0, a.periodShareCents),
+      color: colourIndex === null ? 'var(--chart-other)' : `var(--chart-${colourIndex + 1})`,
+    };
+  });
 }
 
 /** A loss or a break-even month has no profit to share, whoever holds what. */

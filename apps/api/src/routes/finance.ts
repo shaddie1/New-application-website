@@ -32,7 +32,14 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
-import { comparisonWindow, monthDays, nairobiToday, utcBounds, type DayRange } from '../finance/comparison.js';
+import {
+  comparisonWindow,
+  monthDays,
+  monthsEndingAt,
+  nairobiToday,
+  utcBounds,
+  type DayRange,
+} from '../finance/comparison.js';
 
 const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
 const BASIS_POINTS_TOTAL = 10_000;
@@ -440,18 +447,20 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     const { year, month } = parsed.data;
 
     // The headline is always the whole month: the last month of the series.
-    // The change figures compare the window's two ranges, which are whole
-    // months too unless this month is still running.
+    // The change figures compare the window's two ranges. Unless this month
+    // is still running those are two whole months, the last two of the
+    // series, so their totals are used again and not added up twice.
     const window = comparisonWindow(year, month, nairobiToday());
     const seriesMonths = monthsEndingAt(year, month, SERIES_MONTHS);
     const seriesTotals = Promise.all(seriesMonths.map((m) => monthTotals(m.year, m.month)));
     const wholeMonth = seriesTotals.then((totals) => totals[totals.length - 1]!);
+    const wholeMonthBefore = seriesTotals.then((totals) => totals[totals.length - 2]!);
 
     const [current, monthly, currentSide, previousSide, target] = await Promise.all([
       wholeMonth,
       seriesTotals,
       window.mode === 'full-month' ? wholeMonth : rangeTotals(window.current),
-      rangeTotals(window.previous),
+      window.mode === 'full-month' ? wholeMonthBefore : rangeTotals(window.previous),
       prisma.monthlyTarget.findUnique({ where: { year_month: { year, month } } }),
     ]);
 
@@ -671,18 +680,6 @@ function monthTotals(year: number, month: number) {
 
 /** How many months an overview's series covers, the requested month included. */
 const SERIES_MONTHS = 6;
-
-/** The `count` calendar months ending at the given one, oldest first, each with a short label such as "Jun". */
-function monthsEndingAt(year: number, month: number, count: number) {
-  return Array.from({ length: count }, (_, i) => {
-    const first = new Date(Date.UTC(year, month - count + i, 1));
-    return {
-      year: first.getUTCFullYear(),
-      month: first.getUTCMonth() + 1,
-      label: first.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
-    };
-  });
-}
 
 /** Income, net and job count over a range of calendar days. */
 async function rangeTotals(range: DayRange) {

@@ -30,8 +30,6 @@ import { sparklineLayout, type SparklineGeometry, type SparklineMonth } from './
 /** The navy token, for a mark that measures without saying good or bad. */
 const NAVY = 'rgb(var(--navy))';
 
-export { money };
-
 /** Compact money for axis and inline labels: KSh 1.2M, KSh 340k. */
 export function moneyShort(cents: number): string {
   return money(cents, { compact: true });
@@ -43,9 +41,8 @@ export function moneyShort(cents: number): string {
 export type ChangeUnit = '%' | 'pts';
 
 /**
- * A headline number. Per the form heuristic, a single value is a stat tile, not
- * a one-bar chart. `delta` compares with the previous period and is drawn as a
- * chip; `sparkline` is the slot for the figure's recent trend.
+ * A headline number. `delta` compares with the previous period and is drawn as
+ * a chip; `sparkline` is the slot for the figure's recent trend.
  *
  * The line under the figure is the chip and what it compares with. A tile with
  * no comparison puts its `context` there instead, so the figure is never left
@@ -468,8 +465,6 @@ export type TrendPoint = {
   label: string;
   incomeCents: number;
   netCents: number;
-  /** Optional tooltip context; points without it simply hide that row. */
-  jobCount?: number;
 };
 
 /**
@@ -477,8 +472,7 @@ export type TrendPoint = {
  *
  * Both series share ONE axis deliberately. They are the same unit (KSh) and net
  * profit is a component of income, so a second y-scale could render the profit
- * line above the income area — stating something false. The density the brief
- * asks for comes from the tooltip, gridlines and fill instead of a second scale.
+ * line above the income area — stating something false.
  */
 export function TrendChart({ data }: { data: TrendPoint[] }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -660,12 +654,6 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
                 {active.incomeCents > 0 ? `${Math.round((active.netCents / active.incomeCents) * 100)}%` : '—'}
               </dd>
             </div>
-            {typeof active.jobCount === 'number' && (
-              <div className="flex items-center justify-between gap-5">
-                <dt className="text-charcoal-muted">Jobs</dt>
-                <dd className="figure font-medium text-charcoal">{active.jobCount}</dd>
-              </div>
-            )}
           </dl>
         </div>
       )}
@@ -682,72 +670,6 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
   );
 }
 
-// ── Ranked magnitude bars ───────────────────────────────────────────────────
-
-export type RankedItem = { key: string; label: string; value: number; sub?: string };
-
-/**
- * Horizontal ranked bars — the right form for "share by category" when there
- * are more than a handful of categories. A donut of eight close values is
- * unreadable, and colouring each bar differently would burn a channel on
- * information the bar length already carries, so it is one hue throughout.
- */
-export function RankedBars({
-  title,
-  items,
-  format,
-  emptyLabel = 'Nothing recorded yet.',
-}: {
-  title: string;
-  items: RankedItem[];
-  format: (n: number) => string;
-  emptyLabel?: string;
-}) {
-  const max = Math.max(...items.map((i) => i.value), 1);
-  const total = items.reduce((acc, i) => acc + i.value, 0);
-
-  return (
-    <figure className="rounded-xl border border-line bg-white p-5">
-      <figcaption className="text-sm font-medium text-charcoal">{title}</figcaption>
-      {items.length === 0 ? (
-        <p className="mt-4 text-sm text-charcoal-muted">{emptyLabel}</p>
-      ) : (
-        <ul className="mt-4 space-y-3">
-          {items.map((item) => {
-            const share = total > 0 ? Math.round((item.value / total) * 100) : 0;
-            return (
-              <li key={item.key}>
-                <div className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="truncate text-charcoal">{item.label}</span>
-                  <span className="figure shrink-0 font-medium text-charcoal">
-                    {format(item.value)}
-                    <span className="ml-2 text-xs font-normal text-charcoal-muted">{share}%</span>
-                  </span>
-                </div>
-                <div className="mt-1.5 h-2.5 overflow-hidden rounded-pill bg-mist">
-                  <div
-                    className="h-full rounded-pill"
-                    style={{ width: `${Math.max(2, (item.value / max) * 100)}%`, backgroundColor: 'var(--chart-accent)' }}
-                  />
-                </div>
-                {item.sub && <p className="mt-1 text-xs text-charcoal-muted">{item.sub}</p>}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </figure>
-  );
-}
-
-function ChartEmpty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-line bg-white py-10 text-center text-sm text-charcoal-muted">
-      {children}
-    </div>
-  );
-}
-
 // ── Donut (part-to-whole) ───────────────────────────────────────────────────
 
 /**
@@ -756,17 +678,16 @@ function ChartEmpty({ children }: { children: React.ReactNode }) {
  * `--chart-1` to `--chart-6` in app/globals.css. A slice takes the colour of
  * its position; colours are never generated or cycled.
  *
- * The values were chosen with the dataviz palette validator against the white
- * card, and pass all five of its checks for EVERY pair, not only for
- * neighbours: every colour sits in the lightness band and above the chroma
- * floor, the closest pair for a red-green colour-blind reader is slate violet
- * and teal (ΔE 8.6, target 8), the closest pair in full colour is terracotta
- * and plum (ΔE 15.7, floor 15), and each is at least 3:1 on the card (3.4 to
- * 8.2). Because every pair passes, the order can change and a donut of any
- * size can wrap its last slice round to its first. Changing a VALUE needs the
- * validator run again: the brand navy itself is too dark for its lightness
- * band, the logo gold too pale to be a mark at all, and a greyer slate cannot
- * be told from teal.
+ * The values were measured against the white card, and EVERY pair is far
+ * enough apart, not only neighbours: every colour sits in the lightness band
+ * and above the chroma floor, the closest pair for a red-green colour-blind
+ * reader is slate violet and teal (ΔE 8.6, target 8), the closest pair in
+ * full colour is terracotta and plum (ΔE 15.7, floor 15), and each is at
+ * least 3:1 on the card (3.4 to 8.2). Because every pair passes, the order
+ * can change and a donut of any size can wrap its last slice round to its
+ * first. The values are not the brand's own: the brand navy itself is too
+ * dark for its lightness band, the logo gold too pale to be a mark at all,
+ * and a greyer slate cannot be told from teal.
  *
  * src/lib/contrast.test.ts holds each colour to 3:1 on the card.
  */
@@ -788,8 +709,6 @@ export const CATEGORICAL = [
 export const OTHER_GREY = 'var(--chart-other)';
 const SURFACE = 'var(--chart-surface)';
 
-export type { Slice } from './chart-geometry';
-
 /**
  * A donut slice. `color` fixes the slice's colour, for an entity that keeps
  * one colour wherever it appears (a shareholder, on Dashboard and Ownership).
@@ -803,7 +722,7 @@ export type DonutSlice = Slice & { color?: string };
 // on one line beside it in a half-width card, its ring thin enough to read as
 // a frame for the total and not as the subject, and its hole wide enough for
 // a six-figure total. A longer total is written short (see `centreTotal`).
-export const DONUT_SIZE = 128;
+const DONUT_SIZE = 128;
 const DONUT_GEOMETRY = { cx: DONUT_SIZE / 2, cy: DONUT_SIZE / 2, rOuter: 64, rInner: 50, gapPx: 2 };
 
 /** Seven digits of shillings: the first total too wide for the hole when written in full. */
@@ -829,20 +748,16 @@ const CENTRE_COMPACT_FROM_CENTS = 1_000_000 * 100;
  */
 export function DonutChart({
   slices,
-  total: totalOverride,
-  format = money,
   centreLabel,
   maxSlices = 5,
   emptyLabel = 'Nothing recorded yet.',
 }: {
   slices: DonutSlice[];
-  total?: number;
-  format?: (n: number) => string;
   centreLabel?: string;
   maxSlices?: number;
   emptyLabel?: string;
 }) {
-  const layout = donutLayout(slices, DONUT_GEOMETRY, { maxSlices, total: totalOverride });
+  const layout = donutLayout(slices, DONUT_GEOMETRY, { maxSlices });
 
   // No positive slices, or a total of 0: there is no whole to take a share of.
   if (layout.rows.length === 0) {
@@ -866,9 +781,7 @@ export function DonutChart({
   const colorOf = new Map(shown.map((s) => [s.key, s.color]));
   const size = DONUT_SIZE;
   const { cx, cy } = DONUT_GEOMETRY;
-  // Only money has a short form; a caller's own format is left as it is.
-  const centreTotal =
-    format === money && Math.round(Math.abs(total)) >= CENTRE_COMPACT_FROM_CENTS ? moneyShort(total) : format(total);
+  const centreTotal = Math.round(Math.abs(total)) >= CENTRE_COMPACT_FROM_CENTS ? moneyShort(total) : money(total);
 
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-5">
@@ -877,12 +790,12 @@ export function DonutChart({
         height={size}
         viewBox={`0 0 ${size} ${size}`}
         role="img"
-        aria-label={`Donut chart: ${shown.map((s) => `${s.label} ${format(s.value)}`).join(', ')}`}
+        aria-label={`Donut chart: ${shown.map((s) => `${s.label} ${money(s.value)}`).join(', ')}`}
         className="shrink-0"
       >
         {layout.segments.map((s) => (
           <path key={s.key} d={s.d} fill={colorOf.get(s.key)}>
-            <title>{`${s.label}: ${format(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
+            <title>{`${s.label}: ${money(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
           </path>
         ))}
         {/* 13px: a six-figure total ("KSh 164,000") with clear room on both sides of it. */}
@@ -912,7 +825,7 @@ export function DonutChart({
               {Math.round((s.value / total) * 100)}%
             </span>
             <span className="figure text-right font-medium text-charcoal">
-              {format(s.value)}
+              {money(s.value)}
             </span>
           </li>
         ))}

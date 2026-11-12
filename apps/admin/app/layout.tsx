@@ -10,8 +10,7 @@ import { AuthProvider } from '../src/lib/auth';
 // in tailwind.config.ts start with.
 //
 // Inter is the one sans for the whole admin because its digits can be set at
-// full height and equal width, so figures line up in columns. Raleway, which
-// it replaced, has no equal-width digits in this build.
+// full height and equal width, so figures line up in columns.
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-sans',

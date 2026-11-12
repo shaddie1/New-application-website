@@ -34,6 +34,18 @@ export function monthDays(year: number, month: number): DayRange {
   return daysOf(year, month, lastDayOf(year, month));
 }
 
+/** The `count` calendar months ending at the given one, oldest first, each with a short label such as "Jun". */
+export function monthsEndingAt(year: number, month: number, count: number) {
+  return Array.from({ length: count }, (_, i) => {
+    const first = new Date(Date.UTC(year, month - count + i, 1));
+    return {
+      year: first.getUTCFullYear(),
+      month: first.getUTCMonth() + 1,
+      label: first.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
+    };
+  });
+}
+
 /**
  * The two ranges a month's change figures compare. When the month holds
  * `today`, it is still running: days 1 to today are set against the same days

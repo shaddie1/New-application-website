@@ -77,7 +77,6 @@ const tab = (on: boolean) =>
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
-/** This page shows whole shillings. */
 const money = (cents: number) => formatMoney(cents, { whole: true });
 function when(iso: string) {
   return new Date(iso).toLocaleString('en-KE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });

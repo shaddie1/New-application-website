@@ -19,7 +19,6 @@ import { AMOUNTS_UNIT, monthTableWording, overAllocatedLine } from './wording';
 // label under every other month.
 const HEIGHT = 300;
 const BAR_RADIUS = 4;
-/** A frame narrower than this is a phone: smaller text and a slimmer axis gutter. */
 const NARROW_FRAME = 480;
 const PAD = { top: 16, right: 8, bottom: 46, left: 66 };
 const NARROW_PAD = { top: 12, right: 0, bottom: 44, left: 50 };
@@ -46,8 +45,8 @@ function contentWidth(element: HTMLElement): number {
  * follows any re-render of a parent. It does not wait for a ResizeObserver,
  * whose first report comes with the next frame the browser renders and never
  * comes while the page is not being rendered (a tab opened behind another
- * one): waiting for it left the chart's place blank. The observer and the
- * window's resize are only for a change of width with no render of ours.
+ * one). The observer and the window's resize are only for a change of width
+ * with no render of ours.
  */
 function useWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -134,7 +133,6 @@ function Bars({ history }: { history: OwnershipHistory }) {
   const narrow = frameWidth < NARROW_FRAME;
   const pad = narrow ? NARROW_PAD : PAD;
   const slot = (frameWidth - pad.left - pad.right) / Math.max(history.columns.length, 1);
-  // Wide slots hold a bar a little under half their width; a phone's narrow slots need more of theirs.
   const tight = slot < SLOT_FOR_EVERY_LABEL;
   const geometry: StackGeometry = {
     width: frameWidth, height: HEIGHT, pad, barShare: tight ? 0.58 : 0.45, maxBarWidth: 44, gapPx: 2,

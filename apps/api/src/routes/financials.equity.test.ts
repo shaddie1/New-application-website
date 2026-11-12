@@ -110,4 +110,23 @@ describe('GET /admin/financials/equity', () => {
     expect(overview.periodProjects).toBe(0);
     expect(overview.periodNetCents).toBe(0);
   });
+
+  it("counts a cost dated the month after its job in the cost's own month, not the job's", async () => {
+    // KSh 700 spent on 3 November on the job done on 15 October.
+    t.expenses.push(cost('c5', 'oct1', '2026-11-03', 70_000));
+
+    const november = (await as('owner', 'GET', NOVEMBER)).json().overview;
+    const october = (await as('owner', 'GET', '/admin/financials/equity?from=2026-10-01&to=2026-10-31')).json().overview;
+
+    // November: its own 2,000 and 500, and the 700. Its income and its job count do not move.
+    expect(november.periodExpensesCents).toBe(320_000);
+    expect(november.periodIncomeCents).toBe(1_400_000);
+    expect(november.periodProjects).toBe(2);
+    expect(november.periodNetCents).toBe(1_080_000);
+    // October: the 4,000 job and the 1,000 spent in October, without the 700.
+    expect(october.periodIncomeCents).toBe(400_000);
+    expect(october.periodExpensesCents).toBe(100_000);
+    expect(october.periodProjects).toBe(1);
+    expect(october.periodNetCents).toBe(300_000);
+  });
 });

@@ -26,7 +26,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
-import { monthDays, nairobiToday } from '../finance/comparison.js';
+import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
 import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
 import { suggester } from '../projectMoney/suggest.js';
 
@@ -665,18 +665,6 @@ async function periodFigures(fromDate: string, toDate: string) {
   const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
   const expensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
   return { incomeCents, expensesCents, netCents: incomeCents - expensesCents, jobCount: jobs.length };
-}
-
-/** The `count` calendar months ending at the given one, oldest first, each with a short label such as "Jun". */
-function monthsEndingAt(year: number, month: number, count: number) {
-  return Array.from({ length: count }, (_, i) => {
-    const first = new Date(Date.UTC(year, month - count + i, 1));
-    return {
-      year: first.getUTCFullYear(),
-      month: first.getUTCMonth() + 1,
-      label: first.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
-    };
-  });
 }
 
 /** The current holders, in table order. Removed holders are left out. */
