@@ -2,20 +2,34 @@ import { Slot } from '@radix-ui/react-slot';
 import { forwardRef } from 'react';
 import { cn } from '../../lib/cn';
 
-// One card for the admin: one radius, one hairline border, a white surface.
-const base = 'rounded-xl border border-line bg-surface';
-// A card that goes somewhere. The border darkens and the card lifts on hover;
-// the keyboard focus ring is the global one in app/globals.css.
-const clickable = 'block transition-[border-color,box-shadow] hover:border-border-strong hover:shadow-sm';
+// One card for the admin: one radius, a white surface and the one soft shadow.
+// The page is close to white, so a faint outline keeps the card's edge.
+const base = 'rounded-xl border border-line/70 bg-surface shadow-card';
+// A card that goes somewhere. Its outline darkens on hover; the keyboard focus
+// ring is the global one in app/globals.css.
+const clickable = 'block transition-colors hover:border-border-strong';
+
+/** The Dashboard section a card belongs to. */
+export type CardAccent = 'attention' | 'month' | 'trend' | 'breakdown' | 'ownership';
+
+// The accent is the card's top border, thickened and in the section's strong
+// shade. The class names are written whole so that Tailwind finds them.
+const accents: Record<CardAccent, string> = {
+  attention: 'border-t-[3px] border-t-section-attention-strong',
+  month: 'border-t-[3px] border-t-section-month-strong',
+  trend: 'border-t-[3px] border-t-section-trend-strong',
+  breakdown: 'border-t-[3px] border-t-section-breakdown-strong',
+  ownership: 'border-t-[3px] border-t-section-ownership-strong',
+};
 
 export type CardProps = React.HTMLAttributes<HTMLDivElement> & {
-  /** A subtle shadow, for a card that should sit above its neighbours. */
-  raised?: boolean;
+  /** Draws a thin line in the section's colour along the top edge. Leave it out for a plain card. */
+  accent?: CardAccent;
 };
 
 /** A plain container. Padding is the caller's, since cards hold very different things. */
-export const Card = forwardRef<HTMLDivElement, CardProps>(({ className, raised = false, ...props }, ref) => (
-  <div ref={ref} className={cn(base, raised && 'shadow-sm', className)} {...props} />
+export const Card = forwardRef<HTMLDivElement, CardProps>(({ className, accent, ...props }, ref) => (
+  <div ref={ref} className={cn(base, accent && accents[accent], className)} {...props} />
 ));
 Card.displayName = 'Card';
 

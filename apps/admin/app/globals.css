@@ -10,12 +10,19 @@
 
    UI colours are stored as red, green and blue channels, so Tailwind can add
    the opacity for classes such as `bg-danger/10`. Chart colours are stored
-   whole, because the SVG charts read them directly. */
+   whole, because the SVG charts read them directly.
+
+   The white-led look is built from three raw groups, one hue to a column: a
+   light tint, a strong shade and a deep shade. Components do not name those;
+   they name a section (`--section-month-tint`) or a meaning (`--positive`),
+   which points at one. A tint is a background and never a text colour. A
+   strong shade is a fill or an accent and never text. Text on a tint is ink,
+   muted or the deep shade of the same hue. */
 :root {
   color-scheme: light;
 
   /* Surfaces */
-  --page: 250 247 242;          /* warm page background */
+  --page: 250 250 247;          /* near-white page background */
   --surface: 255 255 255;       /* cards, inputs, dialogs */
   --sunken: 241 236 227;        /* table heads, neutral pills, pressed areas */
   --mist: 246 242 235;          /* hover, alternating bands */
@@ -37,7 +44,7 @@
   --on-dark-muted: 169 184 203; /* labels on navy-deep */
 
   /* Teal: good */
-  --teal: 13 109 102;           /* teal text: income, profit, success */
+  --teal: var(--deep-teal);     /* teal text: income, profit, success */
   --teal-fill: 13 148 136;      /* teal marks: progress, checks. Not for text */
   --teal-soft: 227 245 242;     /* teal-tinted wells */
   --teal-light: 94 234 212;     /* teal on navy-deep */
@@ -48,34 +55,113 @@
 
   /* Gold, from the hawk in the logo */
   --gold: 201 165 92;           /* decoration only: fills, borders, icons. Never text */
-  --brass: 122 92 30;           /* the gold that can be read as text */
+  --brass: var(--deep-gold);    /* the gold that can be read as text */
 
   --steel: 58 94 122;           /* "in progress" status pills */
 
   --focus: var(--teal);         /* keyboard focus ring */
 
+  /* The one card shadow: soft, and tinted with the ink so it sits on the page */
+  --shadow-card: 0 1px 2px rgb(var(--ink) / 0.04), 0 6px 20px -6px rgb(var(--ink) / 0.1);
+
+  /* ── The white-led colours, raw ──────────────────────────────────────────
+     The tints and the strong shades are the owner's choices; do not adjust
+     them. The deep shades are whatever passes src/lib/contrast.test.ts on
+     white, on the page and on the tint of the same hue. */
+
+  /* Light tints: backgrounds for icon tiles, badges and soft bands */
+  --tint-mint: 230 247 243;
+  --tint-sky: 232 243 255;
+  --tint-butter: 255 246 219;
+  --tint-blush: 255 236 234;
+  --tint-lavender: 240 236 255;
+
+  /* Strong shades: fills and accents. Too light to be read as text */
+  --strong-teal: 20 184 166;
+  --strong-sky: 59 158 255;
+  --strong-gold: 232 181 58;
+  --strong-coral: 242 120 107;
+  --strong-violet: 124 108 240;
+
+  /* Deep shades: text, edges and lines */
+  --deep-teal: 13 109 102;
+  --deep-sky: 29 95 175;
+  --deep-gold: 122 92 30;
+  --deep-coral: 178 58 44;
+  --deep-violet: 74 61 184;
+
+  /* ── Sections of the Dashboard ───────────────────────────────────────────
+     One hue to a section: the tint behind its icon, the strong shade on the
+     top edge of its cards, the deep shade where the hue is text. */
+  --section-attention-tint: var(--tint-butter);
+  --section-attention-strong: var(--strong-gold);
+  --section-attention-deep: var(--deep-gold);
+
+  --section-month-tint: var(--tint-mint);
+  --section-month-strong: var(--strong-teal);
+  --section-month-deep: var(--deep-teal);
+
+  --section-trend-tint: var(--tint-sky);
+  --section-trend-strong: var(--strong-sky);
+  --section-trend-deep: var(--deep-sky);
+
+  --section-breakdown-tint: var(--tint-blush);
+  --section-breakdown-strong: var(--strong-coral);
+  --section-breakdown-deep: var(--deep-coral);
+
+  --section-ownership-tint: var(--tint-lavender);
+  --section-ownership-strong: var(--strong-violet);
+  --section-ownership-deep: var(--deep-violet);
+
+  /* ── Meaning ─────────────────────────────────────────────────────────────
+     Teal is growth or good, gold a target or something needing attention,
+     coral something overdue or a fall. The bare name is the deep shade, for
+     text; a badge is that text on the `-tint`. Red, above, stays for errors
+     and destructive actions. */
+  --positive: var(--deep-teal);
+  --positive-tint: var(--tint-mint);
+  --positive-strong: var(--strong-teal);
+
+  --attention: var(--deep-gold);
+  --attention-tint: var(--tint-butter);
+  --attention-strong: var(--strong-gold);
+
+  --overdue: var(--deep-coral);
+  --overdue-tint: var(--tint-blush);
+  --overdue-strong: var(--strong-coral);
+
   /* ── Charts ──────────────────────────────────────────────────────────────
-     Six colours for parts of a whole, in a fixed order. Any two of them stay
-     distinguishable for red-green colour-blind readers and each is at least
-     3:1 on the card surface; see the note in src/components/charts.tsx before
-     changing or re-ordering them. */
-  --chart-1: #024e9a;           /* blue, from the navy */
-  --chart-2: #0d9488;           /* teal */
-  --chart-3: #a98904;           /* old gold */
-  --chart-4: #793d67;           /* plum */
-  --chart-5: #b84f3c;           /* terracotta */
-  --chart-6: #7471b3;           /* slate violet */
-  --chart-other: #b0aca2;       /* "Other": a remainder, not a category */
+     Five colours for parts of a whole, in a fixed order: teal, violet, gold,
+     sky, coral. Each is a pair: the strong shade as the fill and, as the
+     `-edge` beside it, the deep shade of the same hue, drawn round the fill.
+     The fills are too pale to be held to 3:1 on the card, so the edges are
+     (src/lib/contrast.test.ts). The order keeps colours that sit next to each
+     other apart, with and without full colour vision; see the note in
+     src/components/chart-palette.ts before changing or re-ordering them. */
+  --chart-1: rgb(var(--strong-teal));
+  --chart-1-edge: rgb(var(--deep-teal));
+  --chart-2: rgb(var(--strong-violet));
+  --chart-2-edge: rgb(var(--deep-violet));
+  --chart-3: rgb(var(--strong-gold));
+  --chart-3-edge: rgb(var(--deep-gold));
+  --chart-4: rgb(var(--strong-sky));
+  --chart-4-edge: rgb(var(--deep-sky));
+  --chart-5: rgb(var(--strong-coral));
+  --chart-5-edge: rgb(var(--deep-coral));
+  --chart-other: #b0aca2;       /* "Other": a remainder, not a category. Any slice past the fifth */
+  --chart-other-edge: #6d6b64;
 
   --chart-surface: rgb(var(--surface));
   --chart-ink: rgb(var(--ink));          /* axis labels, the net-profit line, target notches */
   --chart-muted: rgb(var(--muted));      /* secondary labels */
   --chart-grid: rgb(var(--line));        /* horizontal gridlines, deliberately faint */
   --chart-track: rgb(var(--sunken));     /* ring and progress tracks */
-  --chart-accent: rgb(var(--teal-fill)); /* the one colour for a single series */
-  --chart-accent-deep: rgb(var(--teal));
-  --chart-positive: rgb(var(--teal));
-  --chart-negative: rgb(var(--red));
+  --chart-accent: rgb(var(--positive-strong)); /* the fill of a single series: teal, for growth */
+  --chart-accent-deep: rgb(var(--positive));   /* its edge, and a single series drawn as a line */
+  --chart-target: rgb(var(--attention-strong)); /* progress toward a target not yet met: gold */
+  --chart-target-edge: rgb(var(--attention));
+  --chart-positive: rgb(var(--positive));
+  --chart-negative: rgb(var(--overdue)); /* a fall: coral. Red is for errors and is not a chart colour */
 }
 
 /* The sans comes from `fontFamily.sans` in tailwind.config.ts, which Tailwind
