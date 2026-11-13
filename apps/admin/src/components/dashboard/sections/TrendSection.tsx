@@ -19,18 +19,17 @@ import { trendView } from './trend';
  * "12 months to August 2026", or six against a server that sends six.
  */
 export function TrendSection({
-  trend, month, className,
+  trend, month,
 }: {
   /** The months to chart, oldest first, from `useTrend`. */
   trend: BlockResult<OverviewSeriesMonth[]>;
   /** The month on screen, which the trend ends at. */
   month: YearMonth;
-  className?: string;
 }) {
   const view = trendView(trend);
 
   return (
-    <section id="trend" aria-labelledby="trend-heading" className={className}>
+    <section id="trend" aria-labelledby="trend-heading">
       <SectionHeading
         id="trend-heading"
         section="trend"

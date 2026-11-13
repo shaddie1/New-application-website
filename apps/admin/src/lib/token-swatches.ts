@@ -7,6 +7,8 @@
  * marks honest.
  */
 
+import type { DashboardSection } from '@onyxhawk/types';
+
 export type SwatchGroup = { title: string; note?: string; tokens: string[] };
 
 /** A piece of text (or a line) on a background, with the ratio it has to reach. */
@@ -18,7 +20,7 @@ export const TEXT_TARGET = 4.5;
 export const MARK_TARGET = 3;
 
 /** The Dashboard's sections, in the order the page shows them. */
-export const SECTIONS = ['attention', 'month', 'trend', 'breakdown', 'ownership'] as const;
+export const SECTIONS = ['attention', 'month', 'trend', 'breakdown', 'ownership'] as const satisfies readonly DashboardSection[];
 const MEANINGS = ['positive', 'attention', 'overdue'] as const;
 
 /** The five hues, one row each: the light tint, the strong shade and the deep shade. */

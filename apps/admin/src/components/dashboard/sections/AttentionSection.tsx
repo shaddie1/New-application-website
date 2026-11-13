@@ -44,14 +44,13 @@ function QuietLine({ children, links }: { children: React.ReactNode; links?: Rea
  * this draws it.
  */
 export function AttentionSection({
-  stats, className,
+  stats,
 }: {
   /** The live counts, from `useAttention`. */
   stats: BlockResult<AdminStats>;
-  className?: string;
 }) {
   return (
-    <section id="attention" aria-labelledby="attention-heading" className={className}>
+    <section id="attention" aria-labelledby="attention-heading">
       <SectionHeading id="attention-heading" section="attention" icon={BellRing} title="Needs attention" note="right now" />
       <AttentionBody stats={stats} />
     </section>

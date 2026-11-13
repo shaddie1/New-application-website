@@ -152,7 +152,7 @@ function RevenueChart({
  * nudge to classify the jobs; when both would, one nudge covers both.
  */
 export function BreakdownSection({
-  revenue, expenses, month, current, canOpenJobsAndCosts, className,
+  revenue, expenses, month, current, canOpenJobsAndCosts,
 }: {
   /** Revenue by service line and by client segment, from `useRevenueBreakdown`. */
   revenue: BlockResult<RevenueBreakdown>;
@@ -164,7 +164,6 @@ export function BreakdownSection({
   current: YearMonth;
   /** The viewer can open Jobs & costs, where a job is given its service line and client segment. */
   canOpenJobsAndCosts: boolean;
-  className?: string;
 }) {
   const label = monthLabel(month);
   const isCurrentMonth = isSameMonth(month, current);
@@ -172,7 +171,7 @@ export function BreakdownSection({
   const summary = expenses.status === 'loaded' || expenses.status === 'empty' ? expenses.data : null;
 
   return (
-    <section id="breakdown" aria-labelledby="breakdown-heading" className={className}>
+    <section id="breakdown" aria-labelledby="breakdown-heading">
       <SectionHeading id="breakdown-heading" section="breakdown" icon={ChartPie} title="Breakdown" note={label} />
 
       {/* Part-to-whole views of the month. Each card is one grid cell and

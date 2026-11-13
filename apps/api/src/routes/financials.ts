@@ -600,8 +600,8 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
 /**
  * The Financials figures the Dashboard draws. The summary keeps its address
- * under the prefix financialsRoutes has, the ownership summary is new, and
- * both answer to the access list of the Dashboard in place of requireOwner. They sit in a plugin of their own because
+ * under the prefix financialsRoutes has, and both answer to the access list of
+ * the Dashboard in place of requireOwner. They sit in a plugin of their own because
  * a plugin hook runs before a route hook: inside financialsRoutes a route
  * could never be opened to anyone but the owner.
  */

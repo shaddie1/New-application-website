@@ -1,5 +1,6 @@
 import { Slot } from '@radix-ui/react-slot';
 import { forwardRef } from 'react';
+import type { DashboardSection } from '@onyxhawk/types';
 import { cn } from '../../lib/cn';
 
 // One card for the admin: one radius, a white surface and the one soft shadow.
@@ -10,7 +11,7 @@ const base = 'rounded-xl border border-line/70 bg-surface shadow-card';
 const clickable = 'block transition-colors hover:border-border-strong';
 
 /** The Dashboard section a card belongs to. */
-export type CardAccent = 'attention' | 'month' | 'trend' | 'breakdown' | 'ownership';
+export type CardAccent = DashboardSection;
 
 // The accent is the card's top border, thickened and in the section's strong
 // shade. The class names are written whole so that Tailwind finds them.
@@ -20,6 +21,17 @@ const accents: Record<CardAccent, string> = {
   trend: 'border-t-[3px] border-t-section-trend-strong',
   breakdown: 'border-t-[3px] border-t-section-breakdown-strong',
   ownership: 'border-t-[3px] border-t-section-ownership-strong',
+};
+
+// A section's icon tile: its light tint, with the icon in the deep shade of
+// the same hue. The tint is a background only; the section's name beside it
+// is ink. The class names are written whole so that Tailwind finds them.
+export const SECTION_TILE: Record<CardAccent, string> = {
+  attention: 'bg-section-attention-tint text-section-attention-deep',
+  month: 'bg-section-month-tint text-section-month-deep',
+  trend: 'bg-section-trend-tint text-section-trend-deep',
+  breakdown: 'bg-section-breakdown-tint text-section-breakdown-deep',
+  ownership: 'bg-section-ownership-tint text-section-ownership-deep',
 };
 
 export type CardProps = React.HTMLAttributes<HTMLDivElement> & {

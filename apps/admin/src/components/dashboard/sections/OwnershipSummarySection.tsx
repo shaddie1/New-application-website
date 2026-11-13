@@ -9,7 +9,7 @@ import { money } from '../../../lib/money';
 import { InitialsBadge, RetainedBadge } from '../../ownership/InitialsBadge';
 import { SplitBar } from '../../ownership/SplitBar';
 import { Button } from '../../ui/button';
-import { Card } from '../../ui/card';
+import { Card, SECTION_TILE } from '../../ui/card';
 import type { BlockResult } from '../block-state';
 import { BlockFailed, Skeleton } from '../BlockState';
 import { monthLabel, type YearMonth } from '../month';
@@ -49,7 +49,7 @@ const signed = (cents: number) => (cents < 0 ? 'text-danger' : 'text-charcoal');
  * with no other section sees no revenue, expenses or job counts here.
  */
 export function OwnershipSummarySection({
-  summary, month, current, canManageOwnership, className,
+  summary, month, current, canManageOwnership,
 }: {
   /** The month's split, from `useOwnershipSummary`. */
   summary: BlockResult<OwnershipSummary>;
@@ -59,12 +59,11 @@ export function OwnershipSummarySection({
   current: YearMonth;
   /** The viewer adds, edits and removes shareholders: the owner. */
   canManageOwnership: boolean;
-  className?: string;
 }) {
   const label = monthLabel(month);
 
   return (
-    <section id="ownership" aria-labelledby="ownership-heading" className={className}>
+    <section id="ownership" aria-labelledby="ownership-heading">
       <SectionHeading id="ownership-heading" section="ownership" icon={UsersRound} title="Ownership" note={label}>
         {canManageOwnership && <TextLink href="/equity">Manage ownership</TextLink>}
       </SectionHeading>
@@ -103,7 +102,7 @@ function Summary({ view }: { view: OwnershipSummaryView }) {
         <div className="flex min-w-0 items-center gap-3.5">
           <span
             aria-hidden="true"
-            className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-section-ownership-tint text-section-ownership-deep"
+            className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', SECTION_TILE.ownership)}
           >
             <UsersRound className="size-5" strokeWidth={1.75} />
           </span>

@@ -8,9 +8,9 @@ vi.mock('../db.js', async () => ({ prisma: (await import('../test-support/financ
 
 // The access table of the merged Dashboard, as a test: every kind of account
 // down the side, every address the Dashboard's data comes from across, and the
-// status each cell must answer. It is laid out as the table in the plan is, so
-// the two can be compared cell for cell. A second table pins what the routes
-// the Dashboard does not use answer today.
+// status each cell must answer. The source of truth for who sees which section
+// is the access list in src/dashboard/access.ts. A second table pins what the
+// routes the Dashboard does not use answer today.
 
 const RANGE = 'from=2026-11-01&to=2026-11-30';
 const MONTH = 'year=2026&month=11';
@@ -42,7 +42,7 @@ const COLUMNS: Address[][] = [
   ],
 ];
 
-/** The sections by the numbers the plan gives them. */
+/** The sections by the numbers the table below uses for them. */
 const SECTION: Record<number, DashboardSection> = {
   1: 'attention', 2: 'month', 3: 'trend', 4: 'breakdown', 5: 'ownership',
 };
@@ -64,8 +64,8 @@ type Row = [
   equityAndTrends: number,
 ];
 
-// "linked" means linked to a current shareholder record. The plan's rows that
-// name several roles are one row for each account here.
+// "linked" means linked to a current shareholder record. A role that is
+// treated alike is still one row for each account here.
 const TABLE: Row[] = [
   //                                                             access                   overview,                 owner-
   //                                                             and its                  breakdown,  PUT           ship     equity,

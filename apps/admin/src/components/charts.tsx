@@ -15,12 +15,9 @@ import { Card, type CardAccent } from './ui/card';
  * Charts for the admin dashboard.
  *
  * Every colour is a `--chart-*` token declared in app/globals.css, the
- * admin's one token file; nothing here names a colour itself. The five
- * colours for parts of a whole are teal, violet, gold, sky and coral, in that
- * order; chart-palette.ts holds them, the rule that gives a mark its colour,
- * and the note on how the order was checked: neighbouring colours pass the
- * validator's colour-blind and full-colour separation checks, and its
- * lightness and contrast results for the bright fills are accepted.
+ * admin's one token file; nothing here names a colour itself.
+ * chart-palette.ts holds the colours for parts of a whole, the rule that gives
+ * a mark its colour, and the note on how the order was checked.
  *
  * The fills are bright, and most are too pale to stand on the white card
  * alone. So a filled mark (a donut segment, a legend dot, a progress ring or
@@ -170,14 +167,14 @@ export function StatTile({
  * screen readers.
  */
 function ChangeChip({ change, unit }: { change: number | null | undefined; unit: ChangeUnit }) {
-  const pill = 'figure inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 align-middle font-medium leading-4';
   const tone = changeTone(change);
+  const pill = `figure inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 align-middle font-medium leading-4 ${changeChipClass(tone)}`;
   if (tone === 'none') {
-    return <span className={`${pill} ${changeChipClass(tone)}`}>No earlier figure to compare</span>;
+    return <span className={pill}>No earlier figure to compare</span>;
   }
   if (tone === 'flat') {
     return (
-      <span className={`${pill} ${changeChipClass(tone)}`}>
+      <span className={pill}>
         <ChangeSize size={0} unit={unit} />
       </span>
     );
@@ -185,7 +182,7 @@ function ChangeChip({ change, unit }: { change: number | null | undefined; unit:
   const up = tone === 'up';
   const Arrow = up ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={`${pill} ${changeChipClass(tone)}`}>
+    <span className={pill}>
       <Arrow className="size-3.5" aria-hidden="true" />
       <span className="sr-only">{up ? 'Up' : 'Down'}</span>
       <ChangeSize size={Math.abs(change as number)} unit={unit} />

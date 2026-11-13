@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 describe('GET /admin/dashboard/access', () => {
-  // The access column of the plan's access table.
+  // The sections each account is given, as the access list in src/dashboard/access.ts has them.
   it.each<[CastId, DashboardSection[]]>([
     ['owner', ['attention', 'month', 'trend', 'breakdown', 'ownership']],
     ['admin', ['attention', 'month', 'trend', 'breakdown']],

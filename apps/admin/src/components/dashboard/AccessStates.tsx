@@ -4,7 +4,7 @@ import { Link2Off, RefreshCw, RotateCw, type LucideIcon } from 'lucide-react';
 
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/button';
-import { Card } from '../ui/card';
+import { Card, SECTION_TILE } from '../ui/card';
 import { BlockFailed, Skeleton } from './BlockState';
 
 /**
@@ -35,10 +35,9 @@ export function AccessLoading() {
   );
 }
 
-// The class names are written whole so that Tailwind finds them.
 const tiles = {
-  update: 'bg-section-trend-tint text-section-trend-deep',
-  ownership: 'bg-section-ownership-tint text-section-ownership-deep',
+  update: SECTION_TILE.trend,
+  ownership: SECTION_TILE.ownership,
 };
 
 /** One card that stands for the whole page: an icon tile, what has happened, and what can be done about it. */

@@ -1,18 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 
 import { cn } from '../../../lib/cn';
-import type { CardAccent } from '../../ui/card';
-
-// A section's icon tile: its light tint, with the icon in the deep shade of
-// the same hue. The tint is a background only; the section's name beside it
-// is ink. The class names are written whole so that Tailwind finds them.
-const tiles: Record<CardAccent, string> = {
-  attention: 'bg-section-attention-tint text-section-attention-deep',
-  month: 'bg-section-month-tint text-section-month-deep',
-  trend: 'bg-section-trend-tint text-section-trend-deep',
-  breakdown: 'bg-section-breakdown-tint text-section-breakdown-deep',
-  ownership: 'bg-section-ownership-tint text-section-ownership-deep',
-};
+import { SECTION_TILE, type CardAccent } from '../../ui/card';
 
 /**
  * The head of a Dashboard section: its icon tile in the section's tint, and
@@ -23,7 +12,7 @@ const tiles: Record<CardAccent, string> = {
  * section.
  */
 export function SectionHeading({
-  id, section, icon: Icon, title, note, children, className,
+  id, section, icon: Icon, title, note, children,
 }: {
   /** The heading's id, for the section's `aria-labelledby`. */
   id: string;
@@ -32,14 +21,13 @@ export function SectionHeading({
   title: string;
   note?: React.ReactNode;
   children?: React.ReactNode;
-  className?: string;
 }) {
   return (
-    <div className={cn('mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2', className)}>
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div className="flex min-w-0 items-center gap-3">
         <span
           aria-hidden="true"
-          className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', tiles[section])}
+          className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', SECTION_TILE[section])}
         >
           <Icon className="size-[18px]" strokeWidth={1.75} />
         </span>

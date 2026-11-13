@@ -51,6 +51,9 @@ export const CATEGORICAL: readonly ChartColour[] = [
  */
 export const OTHER_GREY: ChartColour = { fill: 'var(--chart-other)', edge: 'var(--chart-other-edge)' };
 
+/** The one colour for a single series or a progress bar: bright teal, deep-teal edge. */
+export const ACCENT: ChartColour = { fill: 'var(--chart-accent)', edge: 'var(--chart-accent-deep)' };
+
 /** The width of the edge round a filled mark, in pixels. */
 export const EDGE_PX = 1.5;
 
@@ -73,9 +76,6 @@ export function sliceColour(key: string, position: number): ChartColour {
  * its fill by name. A fill from outside the palette has no darker shade to
  * offer, so it is its own edge.
  */
-/** The one colour for a single series or a progress bar: bright teal, deep-teal edge. */
-export const ACCENT: ChartColour = { fill: 'var(--chart-accent)', edge: 'var(--chart-accent-deep)' };
-
 export function colourOfFill(fill: string): ChartColour {
   return [...CATEGORICAL, OTHER_GREY].find((colour) => colour.fill === fill) ?? { fill, edge: fill };
 }

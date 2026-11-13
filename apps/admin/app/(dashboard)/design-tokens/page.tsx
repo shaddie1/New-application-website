@@ -4,7 +4,7 @@ import { Check, Sparkles, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { CATEGORICAL, OTHER_GREY, edgedFill } from '../../../src/components/chart-palette';
-import { Card } from '../../../src/components/ui/card';
+import { Card, SECTION_TILE } from '../../../src/components/ui/card';
 import { contrastRatio, parseTokenValue, type Rgb } from '../../../src/lib/contrast';
 import {
   CONTRAST_PAIRS, SECTIONS, SWATCH_GROUPS, type ContrastPair,
@@ -12,15 +12,6 @@ import {
 
 const heading = 'font-serif text-xl text-charcoal';
 const note = 'text-sm text-charcoal-muted';
-
-// The class names are written whole so that Tailwind finds them.
-const tints: Record<(typeof SECTIONS)[number], string> = {
-  attention: 'bg-section-attention-tint text-section-attention-deep',
-  month: 'bg-section-month-tint text-section-month-deep',
-  trend: 'bg-section-trend-tint text-section-trend-deep',
-  breakdown: 'bg-section-breakdown-tint text-section-breakdown-deep',
-  ownership: 'bg-section-ownership-tint text-section-ownership-deep',
-};
 
 /** Every token's value, as the page's own styles give it. */
 type Values = Record<string, string>;
@@ -95,7 +86,7 @@ export default function DesignTokensPage() {
           {SECTIONS.map((section) => (
             <Card key={section} accent={section} className="p-5">
               <div className="flex items-center gap-3">
-                <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${tints[section]}`}>
+                <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${SECTION_TILE[section]}`}>
                   <Sparkles size={20} aria-hidden="true" />
                 </span>
                 <div>
@@ -103,7 +94,7 @@ export default function DesignTokensPage() {
                   <p className={note}>Tile, badge and top accent</p>
                 </div>
               </div>
-              <span className={`mt-4 inline-block rounded-full px-3 py-1 text-xs font-medium ${tints[section]}`}>
+              <span className={`mt-4 inline-block rounded-full px-3 py-1 text-xs font-medium ${SECTION_TILE[section]}`}>
                 {section} badge
               </span>
             </Card>

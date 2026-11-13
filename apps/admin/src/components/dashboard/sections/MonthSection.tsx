@@ -43,7 +43,7 @@ const SPARKLINE_MONTHS = 6;
  * filled from `savedTargets`.
  */
 export function MonthSection({
-  overview, savedTargets, month, current, canSetTargets, className,
+  overview, savedTargets, month, current, canSetTargets,
 }: {
   /** The month's figures and targets, from `useMonthOverview`. */
   overview: BlockResult<ReceivedOverview>;
@@ -54,12 +54,11 @@ export function MonthSection({
   /** The current month in Nairobi. */
   current: YearMonth;
   canSetTargets: boolean;
-  className?: string;
 }) {
   const onCurrentMonth = isSameMonth(month, current);
 
   return (
-    <section id="month" aria-labelledby="month-heading" className={className}>
+    <section id="month" aria-labelledby="month-heading">
       <SectionHeading
         id="month-heading"
         section="month"

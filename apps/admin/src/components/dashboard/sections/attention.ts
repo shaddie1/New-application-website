@@ -1,5 +1,7 @@
 import type { AdminStats } from '@onyxhawk/types';
 
+import { noActiveJobs } from '../status';
+
 /**
  * What the "Needs attention" section shows for a set of live counts, kept
  * free of React so the rule can be tested without a DOM.
@@ -28,32 +30,22 @@ export type AttentionView =
   | { kind: 'work'; strip: boolean; cards: AttentionCard[] };
 
 export function attentionView(stats: AdminStats): AttentionView {
-  const strip = stats.pendingPayment > 0 || stats.confirmed > 0 || stats.inProgress > 0 || stats.pendingQuotes > 0;
+  const strip = !noActiveJobs(stats);
   const { unassignedBookings, unpaidPastDate } = stats;
-
-  // A server from before the two card counts sends neither. A count that was
-  // not sent is not zero, so every card stays, the two bookings cards with no
-  // count on them, and the section is never called clear.
-  if (unassignedBookings === undefined || unpaidPastDate === undefined) {
-    return {
-      kind: 'work',
-      strip,
-      cards: [
-        card('bookings-to-assign', unassignedBookings),
-        card('quotes-to-price', stats.pendingQuotes),
-        card('unpaid-past-date', unpaidPastDate),
-      ],
-    };
-  }
-
   const cards = [
     card('bookings-to-assign', unassignedBookings),
     card('quotes-to-price', stats.pendingQuotes),
     card('unpaid-past-date', unpaidPastDate),
-  ].filter((c) => (c.count ?? 0) > 0);
+  ];
 
-  if (!strip && cards.length === 0) return { kind: 'all-clear' };
-  return { kind: 'work', strip, cards };
+  // A server from before the two card counts sends neither. A count that was
+  // not sent is not zero, so every card stays, the two bookings cards with no
+  // count on them, and the section is never called clear.
+  if (unassignedBookings === undefined || unpaidPastDate === undefined) return { kind: 'work', strip, cards };
+
+  const waiting = cards.filter((c) => (c.count ?? 0) > 0);
+  if (!strip && waiting.length === 0) return { kind: 'all-clear' };
+  return { kind: 'work', strip, cards: waiting };
 }
 
 function card(key: AttentionCardKey, count: number | undefined): AttentionCard {

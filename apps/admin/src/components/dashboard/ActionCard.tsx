@@ -4,15 +4,14 @@ import Link from 'next/link';
 import { ArrowRight, Clock, type LucideIcon } from 'lucide-react';
 
 import { cn } from '../../lib/cn';
-import { ClickableCard } from '../ui/card';
+import { ClickableCard, SECTION_TILE } from '../ui/card';
 
 // The icon tile says what the card is about. Sky is the colour for bookings
 // wherever they appear, and the trend section's sky is the one sky there is;
 // anything else in "Needs attention" takes that section's own butter and gold.
-// The class names are written whole so that Tailwind finds them.
 const tiles = {
-  bookings: 'bg-section-trend-tint text-section-trend-deep',
-  attention: 'bg-section-attention-tint text-section-attention-deep',
+  bookings: SECTION_TILE.trend,
+  attention: SECTION_TILE.attention,
 };
 
 /**

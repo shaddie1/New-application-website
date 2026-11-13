@@ -4,8 +4,6 @@ import { useCallback, useEffect, useReducer, useRef, type Reducer } from 'react'
 
 import { blockReducer, initialBlockState, type BlockEvent, type BlockResult, type BlockState } from './block-state';
 
-export type { Block, BlockResult } from './block-state';
-
 /**
  * Runs `load` when the block appears and again whenever `deps` change. A
  * change of `deps` is a fresh load: the block goes back to loading and the
