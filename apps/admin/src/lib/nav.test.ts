@@ -46,3 +46,13 @@ describe('isActivePath', () => {
     }
   });
 });
+
+describe('the menus', () => {
+  // Insights is the Dashboard's trend section now; its address only redirects there.
+  it('have no item that points at /insights', () => {
+    for (const menu of [OWNER, STAFF]) {
+      expect(menu.map((item) => item.href)).not.toContain('/insights');
+    }
+    expect(highlighted('/insights')).toEqual([]);
+  });
+});

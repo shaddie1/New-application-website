@@ -12,6 +12,7 @@ import type {
 } from '@onyxhawk/types';
 
 import { ContractMoney } from '../../../src/components/project-money/ContractMoney';
+import { ACCENT, edgedFill } from '../../../src/components/chart-palette';
 import { MoneyTable } from '../../../src/components/project-money/MoneyTable';
 import { refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { api, ApiError } from '../../../src/lib/api';
@@ -69,7 +70,7 @@ const money = (cents: number) => formatMoney(cents, { whole: true });
 /** Colour of the timeline dot, by what kind of change it was. */
 const EVENT_TONE: Record<ProjectEventKind, string> = {
   CREATED: 'var(--chart-accent-deep)',
-  STAGE_CHANGED: 'var(--chart-accent)',
+  STAGE_CHANGED: 'var(--chart-accent-deep)',
   QUESTION_ANSWERED: 'var(--chart-positive)',
   QUESTION_ADDED: 'var(--chart-muted)',
   QUESTION_REMOVED: 'var(--chart-negative)',
@@ -103,7 +104,8 @@ function ProgressBar({ percent, blocked }: { percent: number; blocked: boolean }
         className="h-full rounded-full transition-[width] duration-500"
         style={{
           width: `${Math.min(100, Math.max(0, percent))}%`,
-          backgroundColor: blocked ? 'var(--chart-negative)' : 'var(--chart-accent)',
+          // The bright fill carries a darker edge, as every filled chart mark does.
+          ...(blocked ? { backgroundColor: 'var(--chart-negative)' } : edgedFill(ACCENT)),
         }}
       />
     </div>

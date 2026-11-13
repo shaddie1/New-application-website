@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClientSegment, SaveWebsiteJobInput, SiteUpdateStatus, WebsiteJobDto } from '@onyxhawk/types';
 
+import { ACCENT, edgedFill } from '../../../src/components/chart-palette';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { preparePhoto } from '../../../src/lib/photoPrep';
@@ -608,7 +609,7 @@ function PhotoTile({
             <div className="h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--chart-track)' }}>
               <div
                 className="h-full rounded-full transition-[width]"
-                style={{ width: `${photo.progress}%`, backgroundColor: 'var(--chart-accent)' }}
+                style={{ width: `${photo.progress}%`, ...edgedFill(ACCENT) }}
               />
             </div>
             <p className="mt-0.5 text-[11px] tabular-nums text-charcoal-muted">Uploading {photo.progress}%</p>

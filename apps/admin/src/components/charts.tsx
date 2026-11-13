@@ -1,34 +1,43 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 
 import { money } from '../lib/money';
-import { OTHER_KEY, donutLayout, type Slice } from './chart-geometry';
-import { changeTone } from './dashboard/change-tone';
+import { donutLayout, type Slice } from './chart-geometry';
+import { ACCENT, EDGE_PX, colourOfFill, edgedFill, sliceColour, type ChartColour } from './chart-palette';
+import { changeChipClass, changeTone } from './dashboard/change-tone';
+import { hasFigures, type TrendPoint } from './dashboard/sections/trend';
 import { sparklineLayout, type SparklineGeometry, type SparklineMonth } from './sparkline';
+import { Card, type CardAccent } from './ui/card';
 
 /**
  * Charts for the admin dashboard.
  *
- * Every colour is a token declared in app/globals.css, the admin's one token
- * file (the --chart-* variables, and the navy); nothing here names a colour
- * itself.
+ * Every colour is a `--chart-*` token declared in app/globals.css, the
+ * admin's one token file; nothing here names a colour itself.
+ * chart-palette.ts holds the colours for parts of a whole, the rule that gives
+ * a mark its colour, and the note on how the order was checked.
  *
- * A single series (bars, the income area) is drawn in one colour, the teal
- * `--chart-accent`, which measures 3.7:1 on the white card. The one
- * two-series chart sets that teal against the ink and separates the two by
- * mark as well: an area for income, a line for net profit.
+ * The fills are bright, and most are too pale to stand on the white card
+ * alone. So a filled mark (a donut segment, a legend dot, a progress ring or
+ * bar) is drawn with a thin edge in the deep shade of its own hue, just
+ * inside its outline, which leaves the gaps between marks as they are. A
+ * thin line has no room for an edge, so it is drawn in the deep shade itself.
  *
- * Teal also means "good", so two marks that only measure stay out of it and
- * are drawn in the navy: a tile's sparkline, which shows a shape and not good
- * news, and a target ring that has not reached its target yet.
+ * A single series is teal, the colour for growth: `--chart-accent` as a fill
+ * and `--chart-accent-deep` as its edge or its line. The one two-series chart
+ * sets that teal against the ink and separates the two by mark as well: an
+ * area for income, a line for net profit. A ring that has not reached its
+ * target is gold, the colour for a target, and turns teal once it has.
  *
- * Charts carry visible numeric labels, so no value is read from fill alone.
+ * Charts carry visible numeric labels in the text colours, so no value is
+ * read from fill alone and no label takes a series colour.
  */
 
-/** The navy token, for a mark that measures without saying good or bad. */
-const NAVY = 'rgb(var(--navy))';
+/** Progress toward a target that is not met yet: gold, the colour for a target. */
+const TARGET: ChartColour = { fill: 'var(--chart-target)', edge: 'var(--chart-target-edge)' };
+const SURFACE = 'var(--chart-surface)';
 
 /** Compact money for axis and inline labels: KSh 1.2M, KSh 340k. */
 export function moneyShort(cents: number): string {
@@ -53,6 +62,9 @@ export type ChangeUnit = '%' | 'pts';
  * Below 640px a tile with a sparkline is compact, so a column of them stays
  * short: the label, figure and chip on the left, the sparkline on the right,
  * and the foot caption left to screen readers.
+ *
+ * The frame is the admin's one `Card`; `accent` gives it the thin top line of
+ * the Dashboard section it sits in.
  */
 export function StatTile({
   label,
@@ -63,6 +75,7 @@ export function StatTile({
   sparkline,
   context,
   loss = false,
+  accent,
 }: {
   label: string;
   value: string;
@@ -78,6 +91,8 @@ export function StatTile({
   context?: string;
   /** The figure is a loss, so it is drawn in red. */
   loss?: boolean;
+  /** The Dashboard section the tile belongs to. */
+  accent?: CardAccent;
 }) {
   const compared = delta !== undefined || deltaLabel !== undefined;
   const hasFigure = changeTone(delta) !== 'none';
@@ -85,8 +100,9 @@ export function StatTile({
   const compact = !!sparkline;
 
   return (
-    <div
-      className={`min-w-0 rounded-xl border border-line bg-surface sm:flex sm:flex-col sm:p-5 ${
+    <Card
+      accent={accent}
+      className={`min-w-0 sm:flex sm:flex-col sm:p-5 ${
         compact ? 'grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-center gap-x-3 p-4 sm:items-stretch' : 'flex flex-col p-5'
       }`}
     >
@@ -137,27 +153,30 @@ export function StatTile({
           &nbsp;
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 
 /**
  * The change from the earlier period as a rounded pill, coloured by
- * `changeTone`: a rise is teal, a decline is amber (it needs attention; red is
- * kept for a loss or an error), and no change is neutral with no arrow. With
+ * `changeTone`: a rise is teal, a fall is coral (red is kept for a loss or an
+ * error), and no change is neutral with no arrow. Each is a light tint with
+ * the deep shade of the same colour as its text. With
  * no earlier figure there is nothing to give, so the pill says so instead of
  * leaving a bare label. The arrow is decoration; "Up" and "Down" are there for
- * screen readers.
+ * screen readers, each with a space after it so it is read as a word of its
+ * own ("Up 6%"). The space is a no-break one: a plain space at the end of the
+ * hidden word is one a browser may drop.
  */
 function ChangeChip({ change, unit }: { change: number | null | undefined; unit: ChangeUnit }) {
-  const pill = 'figure inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 align-middle font-medium leading-4';
   const tone = changeTone(change);
+  const pill = `figure inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 align-middle font-medium leading-4 ${changeChipClass(tone)}`;
   if (tone === 'none') {
-    return <span className={`${pill} bg-mist text-charcoal-muted`}>No earlier figure to compare</span>;
+    return <span className={pill}>No earlier figure to compare</span>;
   }
   if (tone === 'flat') {
     return (
-      <span className={`${pill} bg-mist text-charcoal-muted`}>
+      <span className={pill}>
         <ChangeSize size={0} unit={unit} />
       </span>
     );
@@ -165,9 +184,9 @@ function ChangeChip({ change, unit }: { change: number | null | undefined; unit:
   const up = tone === 'up';
   const Arrow = up ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={`${pill} ${up ? 'bg-aqua-soft text-success' : 'bg-warning/10 text-warning'}`}>
+    <span className={pill}>
       <Arrow className="size-3.5" aria-hidden="true" />
-      <span className="sr-only">{up ? 'Up' : 'Down'}</span>
+      <span className="sr-only">{up ? 'Up' : 'Down'}&nbsp;</span>
       <ChangeSize size={Math.abs(change as number)} unit={unit} />
     </span>
   );
@@ -195,8 +214,9 @@ function ChangeSize({ size, unit }: { size: number; unit: ChangeUnit }) {
 // scale and the end marker is a round-capped dot, which stays a circle.
 const SPARK_GEOMETRY: SparklineGeometry = { width: 200, height: 40, padX: 6, padY: 6 };
 // One series is not a part of a whole, so it stays out of the categorical
-// palette: the line is the navy.
-const SPARK_COLOR = NAVY;
+// palette. A line is too thin to carry an edge, so it is the deep shade of
+// the single-series colour.
+const SPARK_COLOR = ACCENT.edge;
 
 /**
  * A figure's last few months as one small line, ending at the month on screen.
@@ -206,7 +226,8 @@ const SPARK_COLOR = NAVY;
  * line stops before it and starts again after it. The dotted zero line, with
  * a "0" at its left end, is there only when a month is below zero. Draws
  * nothing when fewer than two months have a figure. Each month answers a hover
- * with its own figure.
+ * with its own figure, and the text alternative gives every month's figure in
+ * order, so nothing is left to the hover alone.
  */
 export function Sparkline({
   label,
@@ -229,7 +250,6 @@ export function Sparkline({
 
   const { points, runs, zeroY } = layout;
   const { width, height } = SPARK_GEOMETRY;
-  const first = points[0]!;
   const last = points[points.length - 1]!;
   const path = (pts: typeof points) => pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const dotAt = (p: { x: number; y: number }) => `M ${p.x} ${p.y} h 0.01`;
@@ -238,6 +258,14 @@ export function Sparkline({
   // The axis under the plot names the first and last month of the stretch, figure or not.
   const firstMonth = months[0]!;
   const lastMonth = months[months.length - 1]!;
+  // Every month in order, as one sentence: "KSh 54,000 in Mar, no revenue in Apr, KSh 61,000 in May so far".
+  const figures = months
+    .map((m, i) =>
+      m.value === null
+        ? `${gapLabel} in ${m.label}`
+        : `${format(m.value)} in ${m.label}${partMonthLast && i === months.length - 1 ? ' so far' : ''}`,
+    )
+    .join(', ');
 
   return (
     // The zero line is named, so it is not taken for a target. Its "0" stands
@@ -259,7 +287,7 @@ export function Sparkline({
         preserveAspectRatio="none"
         className="block h-10 w-full"
         role="img"
-        aria-label={`${label} over ${months.length} months: ${format(first.value)} in ${first.label}, ${format(last.value)} in ${last.label}${last.partMonth ? ' so far' : ''}`}
+        aria-label={`${label} over ${months.length} months: ${figures}`}
       >
         {zeroY !== null && (
           <line
@@ -325,10 +353,12 @@ export function Sparkline({
 // ── Achievement ring ────────────────────────────────────────────────────────
 
 /**
- * Circular progress against a target, with the figures beside it. Progress is
- * a neutral measure, so the arc is the navy; it turns teal, the colour for
- * good, only once the target is met (100% or more). A target that is not set
- * draws an empty track with a dash in it.
+ * Circular progress against a target, with the figures beside it. The arc is
+ * gold, the colour for a target, and turns teal, the colour for good, only
+ * once the target is met (100% or more). It is drawn twice: the full width in
+ * the edge colour, and a narrower arc of the fill over it, so the fill has
+ * its edge all the way round, the round ends included. A target that is not
+ * set draws an empty track with a dash in it.
  */
 export function AchievementRing({
   label,
@@ -350,25 +380,32 @@ export function AchievementRing({
   // Cap the arc at a full turn so 180% does not wrap and read as 80%.
   const dash = (Math.min(shown, 100) / 100) * circumference;
   const met = hasTarget && shown >= 100;
+  const colour = met ? ACCENT : TARGET;
 
   return (
     <div className="flex min-w-0 items-center gap-4">
       <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90" role="img" aria-label={`${label}: ${hasTarget ? `${Math.round(shown)}% of target${met ? ', target met' : ''}` : 'no target set'}`}>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--chart-track)" strokeWidth={stroke} />
-          {hasTarget && shown > 0 && (
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={r}
-              fill="none"
-              stroke={met ? 'var(--chart-accent)' : NAVY}
-              strokeWidth={stroke}
-              strokeLinecap="round"
-              strokeDasharray={`${dash} ${circumference}`}
-              className="transition-[stroke-dasharray] duration-700"
-            />
-          )}
+          {hasTarget &&
+            shown > 0 &&
+            [
+              { part: 'edge', paint: colour.edge, width: stroke },
+              { part: 'fill', paint: colour.fill, width: stroke - 2 * EDGE_PX },
+            ].map(({ part, paint, width }) => (
+              <circle
+                key={part}
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                fill="none"
+                stroke={paint}
+                strokeWidth={width}
+                strokeLinecap="round"
+                strokeDasharray={`${dash} ${circumference}`}
+                className="transition-[stroke-dasharray] duration-700"
+              />
+            ))}
         </svg>
 
         <div className="absolute inset-0 flex items-center justify-center" aria-hidden="true">
@@ -393,97 +430,118 @@ export function AchievementRow({ children }: { children: ReactNode }) {
   return <div className="grid gap-x-6 gap-y-5 sm:grid-cols-3">{children}</div>;
 }
 
-// ── Target meter ────────────────────────────────────────────────────────────
-
-/**
- * Progress toward a goal. The bar is the actual; the notch is the target, so
- * over-performance is visible rather than clipped at 100%.
- */
-export function TargetMeter({
-  label,
-  actual,
-  target,
-  format,
-}: {
-  label: string;
-  actual: number;
-  target: number;
-  format: (n: number) => string;
-}) {
-  const hasTarget = target > 0;
-  const percent = hasTarget ? Math.round((actual / target) * 100) : 0;
-  // Scale so the target notch sits at 80% of the track; the bar can overshoot.
-  const scaleMax = hasTarget ? Math.max(target * 1.25, actual * 1.05) : Math.max(actual, 1);
-  const barPct = Math.min(100, (actual / scaleMax) * 100);
-  const targetPct = hasTarget ? (target / scaleMax) * 100 : 0;
-
-  return (
-    <div className="rounded-xl border border-line bg-white p-5">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="text-xs uppercase tracking-widest text-charcoal-muted">{label}</p>
-        {hasTarget && (
-          <span
-            className={`figure text-xs font-medium ${
-              percent >= 100 ? 'text-success' : percent >= 70 ? 'text-charcoal' : 'text-warning'
-            }`}
-          >
-            {percent}% of target
-          </span>
-        )}
-      </div>
-
-      <p className="figure mt-2 text-2xl font-bold tracking-tight text-charcoal">{format(actual)}</p>
-
-      <div className="relative mt-3 h-3 rounded-pill bg-mist">
-        <div
-          className="h-3 rounded-pill"
-          style={{ width: `${barPct}%`, backgroundColor: 'var(--chart-accent)' }}
-          role="img"
-          aria-label={`${format(actual)}${hasTarget ? ` of ${format(target)} target` : ''}`}
-        />
-        {hasTarget && (
-          // Target notch, drawn over the bar with a surface-coloured gap so the
-          // two marks never blend into one another.
-          <span
-            className="absolute top-[-3px] h-[18px] w-[3px] rounded-sm border-x border-surface"
-            style={{ left: `calc(${targetPct}% - 1.5px)`, backgroundColor: 'var(--chart-ink)' }}
-            aria-hidden="true"
-          />
-        )}
-      </div>
-
-      <p className="mt-2 text-xs text-charcoal-muted">
-        {hasTarget ? `Target ${format(target)}` : 'No target set for this month'}
-      </p>
-    </div>
-  );
-}
-
 // ── Monthly trend: income area + net profit line ────────────────────────────
 
-export type TrendPoint = {
-  label: string;
-  incomeCents: number;
-  netCents: number;
+/** How strongly the income area is filled: pale, so the net-profit line and the gridlines read through it. */
+const AREA_OPACITY = 0.18;
+
+/**
+ * The plot's two sizes, in the units of its own viewBox. The wide one is for
+ * a card with room. The compact one is drawn at about a phone's width, so its
+ * labels are the size they are given, where the wide plot's would shrink with
+ * it to a third; with more months than it has room to name, it names every
+ * other one, always ending at the last.
+ */
+const TREND_PLOTS = {
+  wide: {
+    width: 760, height: 280, pad: { top: 18, right: 18, bottom: 38, left: 56 },
+    tickFont: 10, monthFont: 11, monthsNamed: Infinity, incomeStroke: 2.5, netStroke: 2, dot: 4,
+  },
+  compact: {
+    width: 320, height: 220, pad: { top: 12, right: 10, bottom: 30, left: 56 },
+    tickFont: 10, monthFont: 10, monthsNamed: 7, incomeStroke: 2, netStroke: 1.5, dot: 3,
+  },
 };
 
 /**
- * Income as an aqua gradient area, net profit as a line over it.
+ * Income as a flat, pale teal area under a deep teal line, which is the
+ * area's edge; net profit as an ink line over it.
  *
  * Both series share ONE axis deliberately. They are the same unit (KSh) and net
  * profit is a component of income, so a second y-scale could render the profit
  * line above the income area — stating something false.
+ *
+ * The frame is the admin's one `Card`; `accent` gives it the thin top line of
+ * the Dashboard section it sits in. The plot is drawn at two sizes and the
+ * card's own width, not the screen's, picks the one that shows, so the chart
+ * also holds beside a side menu.
+ *
+ * A plot gives a month's figures only under the pointer, so both plots are
+ * hidden from screen readers and the months are given once more as a table
+ * that only they read: the same labels and amounts the pointer shows. With no
+ * figures to chart there is no table; the line beside the title says so.
  */
-export function TrendChart({ data }: { data: TrendPoint[] }) {
+export function TrendChart({ data, accent }: { data: TrendPoint[]; accent?: CardAccent }) {
+  const hasData = hasFigures(data);
+
+  return (
+    <Card accent={accent} className="min-w-0 p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+        <span className="text-sm font-medium text-charcoal">Income and net profit by month</span>
+        {!hasData && (
+          <span className="text-xs text-charcoal-muted">
+            Awaiting data — the dashed line marks the zero baseline
+          </span>
+        )}
+      </div>
+
+      <div className="[container-type:inline-size]">
+        <div className="relative [@container_(min-width:34rem)]:hidden">
+          <TrendPlot data={data} hasData={hasData} size="compact" />
+        </div>
+        <div className="relative hidden [@container_(min-width:34rem)]:block">
+          <TrendPlot data={data} hasData={hasData} size="wide" />
+        </div>
+      </div>
+
+      {hasData && (
+        // The wrapper is what is hidden: a table does not keep to a size of its own.
+        <div className="sr-only">
+          <table>
+            <caption>Income and net profit by month</caption>
+            <thead>
+              <tr>
+                <th scope="col">Month</th>
+                <th scope="col">Income</th>
+                <th scope="col">Net profit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((d, i) => (
+                <tr key={`${d.label}-${i}`}>
+                  <th scope="row">{d.label}</th>
+                  <td>{money(d.incomeCents)}</td>
+                  <td>{money(d.netCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-4 text-xs text-charcoal-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm" style={edgedFill(ACCENT)} /> Income
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-[2px] w-4" style={{ backgroundColor: 'var(--chart-ink)' }} /> Net profit
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+/** The plot at one of its two sizes, with the figures of the month under the pointer. */
+function TrendPlot({ data, hasData, size }: { data: TrendPoint[]; hasData: boolean; size: keyof typeof TREND_PLOTS }) {
   const [hover, setHover] = useState<number | null>(null);
 
-  const width = 760;
-  const height = 280;
-  const pad = { top: 18, right: 18, bottom: 38, left: 56 };
+  const { width, height, pad, tickFont, monthFont, monthsNamed, incomeStroke, netStroke, dot } = TREND_PLOTS[size];
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
+  // Counted back from the last month, so the month the chart ends at is always named.
+  const monthEvery = data.length > monthsNamed ? 2 : 1;
+  const named = (i: number) => (data.length - 1 - i) % monthEvery === 0;
 
-  const hasData = data.some((d) => d.incomeCents !== 0 || d.netCents !== 0);
   const values = data.flatMap((d) => [d.incomeCents, d.netCents]);
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
@@ -509,30 +567,14 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
   const active = hover !== null ? data[hover] : null;
 
   return (
-    <figure className="relative rounded-xl border border-line bg-white p-5">
-      <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-        <span className="text-sm font-medium text-charcoal">Income and net profit by month</span>
-        {!hasData && (
-          <span className="text-xs text-charcoal-muted">
-            Awaiting data — the dashed line marks the zero baseline
-          </span>
-        )}
-      </figcaption>
-
+    <>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="w-full"
-        role="img"
-        aria-label="Monthly income area with a net profit line"
+        // The months' figures are in the table `TrendChart` renders for screen readers.
+        aria-hidden="true"
         onMouseLeave={() => setHover(null)}
       >
-        <defs>
-          <linearGradient id="incomeFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--chart-accent)" stopOpacity="0.38" />
-            <stop offset="100%" stopColor="var(--chart-accent)" stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-
         {ticks.map((t) => (
           <g key={t}>
             <line
@@ -543,9 +585,12 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
               stroke="var(--chart-grid)"
               strokeWidth="1"
             />
-            <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="var(--chart-muted)" className="figure">
-              {moneyShort(t)}
-            </text>
+            {/* With nothing to plot the lines keep the plot's shape, and only the baseline is given a figure. */}
+            {(hasData || t === 0) && (
+              <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize={tickFont} fill="var(--chart-muted)" className="figure">
+                {moneyShort(t)}
+              </text>
+            )}
           </g>
         ))}
 
@@ -564,12 +609,12 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
 
         {hasData && (
           <>
-            <path d={areaPath} fill="url(#incomeFill)" />
+            <path d={areaPath} fill={ACCENT.fill} fillOpacity={AREA_OPACITY} />
             <polyline
               points={data.map((d, i) => `${cx(i)},${y(Math.max(d.incomeCents, 0))}`).join(' ')}
               fill="none"
-              stroke="var(--chart-accent)"
-              strokeWidth="2.5"
+              stroke={ACCENT.edge}
+              strokeWidth={incomeStroke}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
@@ -577,7 +622,7 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
               points={data.map((d, i) => `${cx(i)},${y(d.netCents)}`).join(' ')}
               fill="none"
               stroke="var(--chart-ink)"
-              strokeWidth="2"
+              strokeWidth={netStroke}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
@@ -585,10 +630,12 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
         )}
 
         {data.map((d, i) => (
-          <g key={d.label}>
-            <text x={cx(i)} y={height - 14} textAnchor="middle" fontSize="11" fill="var(--chart-muted)">
-              {d.label}
-            </text>
+          <g key={`${d.label}-${i}`}>
+            {named(i) && (
+              <text x={cx(i)} y={height - 14} textAnchor="middle" fontSize={monthFont} fill="var(--chart-muted)">
+                {d.label}
+              </text>
+            )}
             {hover === i && hasData && (
               <line
                 x1={cx(i)}
@@ -616,10 +663,10 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
         {hasData &&
           data.map((d, i) => (
             <circle
-              key={`${d.label}-pt`}
+              key={`${d.label}-${i}-pt`}
               cx={cx(i)}
               cy={y(d.netCents)}
-              r={hover === i ? 5.5 : 4}
+              r={hover === i ? dot + 1.5 : dot}
               fill="var(--chart-ink)"
               stroke="var(--chart-surface)"
               strokeWidth="2"
@@ -629,14 +676,20 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
 
       {active && hasData && (
         <div
-          className="pointer-events-none absolute top-16 z-10 rounded-lg border border-line bg-white px-3 py-2 shadow-lg"
-          style={{ left: `${(cx(hover!) / width) * 100}%`, transform: 'translateX(-50%)' }}
+          // As wide as its longest line, whatever room is left beside it:
+          // near the right edge it would otherwise fold every figure in two.
+          className="pointer-events-none absolute top-4 z-10 w-max rounded-lg border border-line bg-surface px-3 py-2 shadow-lg"
+          // Over its month, and held inside the plot at either end.
+          style={{
+            left: `clamp(6rem, ${(cx(hover!) / width) * 100}%, calc(100% - 6rem))`,
+            transform: 'translateX(-50%)',
+          }}
         >
           <p className="text-xs font-semibold text-charcoal">{active.label}</p>
           <dl className="mt-1 space-y-0.5 text-xs">
             <div className="flex items-center justify-between gap-5">
               <dt className="flex items-center gap-1.5 text-charcoal-muted">
-                <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: 'var(--chart-accent)' }} />
+                <span className="h-2.5 w-2.5 rounded-sm" style={edgedFill(ACCENT)} />
                 Income
               </dt>
               <dd className="figure font-medium text-charcoal">{money(active.incomeCents)}</dd>
@@ -657,67 +710,22 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
           </dl>
         </div>
       )}
-
-      <div className="mt-3 flex items-center gap-4 text-xs text-charcoal-muted">
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: 'var(--chart-accent)' }} /> Income
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-[2px] w-4" style={{ backgroundColor: 'var(--chart-ink)' }} /> Net profit
-        </span>
-      </div>
-    </figure>
+    </>
   );
 }
 
 // ── Donut (part-to-whole) ───────────────────────────────────────────────────
 
 /**
- * The six colours for parts of a whole, in their fixed order: blue (from the
- * navy), teal, old gold, plum, terracotta and slate violet. The values are
- * `--chart-1` to `--chart-6` in app/globals.css. A slice takes the colour of
- * its position; colours are never generated or cycled.
- *
- * The values were measured against the white card, and EVERY pair is far
- * enough apart, not only neighbours: every colour sits in the lightness band
- * and above the chroma floor, the closest pair for a red-green colour-blind
- * reader is slate violet and teal (ΔE 8.6, target 8), the closest pair in
- * full colour is terracotta and plum (ΔE 15.7, floor 15), and each is at
- * least 3:1 on the card (3.4 to 8.2). Because every pair passes, the order
- * can change and a donut of any size can wrap its last slice round to its
- * first. The values are not the brand's own: the brand navy itself is too
- * dark for its lightness band, the logo gold too pale to be a mark at all,
- * and a greyer slate cannot be told from teal.
- *
- * src/lib/contrast.test.ts holds each colour to 3:1 on the card.
- */
-export const CATEGORICAL = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-  'var(--chart-6)',
-] as const;
-
-/**
- * "Other" is a remainder, not a category, so it takes a neutral and never a
- * hue. It is deliberately a light grey (2.3:1 on the card): a mid grey, at 3:1
- * or more, is the same colour as the teal to a red-green colour-blind reader.
- * Its slice always carries a label and a gap, so it is never read by fill alone.
- */
-export const OTHER_GREY = 'var(--chart-other)';
-const SURFACE = 'var(--chart-surface)';
-
-/**
- * A donut slice. `color` fixes the slice's colour, for an entity that keeps
- * one colour wherever it appears (a shareholder, on Dashboard and Ownership).
- * A slice with none takes the colour of its position, largest first.
+ * A donut slice. `color` fixes the slice's fill, by its token, for an entity
+ * that keeps one colour wherever it appears (a shareholder, on Dashboard and
+ * Ownership); its edge is the one the palette pairs with that fill. A slice
+ * with none takes the colour of its position, largest first.
  */
 export type DonutSlice = Slice & { color?: string };
 
-// A 2px surface gap separates touching segments — the gap does the work, not a
-// stroke.
+// A 2px surface gap separates touching segments. Each segment's edge is drawn
+// inside its own outline, so the gap stays 2px.
 // The donut is small enough to leave its legend room for a holder's full name
 // on one line beside it in a half-width card, its ring thin enough to read as
 // a frame for the total and not as the subject, and its hole wide enough for
@@ -758,6 +766,8 @@ export function DonutChart({
   emptyLabel?: string;
 }) {
   const layout = donutLayout(slices, DONUT_GEOMETRY, { maxSlices });
+  // Each segment is clipped to its own outline, and a clip is found by its id.
+  const clip = `donut-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   // No positive slices, or a total of 0: there is no whole to take a share of.
   if (layout.rows.length === 0) {
@@ -773,12 +783,12 @@ export function DonutChart({
 
   const { total } = layout;
   const given = new Map(slices.map((s) => [s.key, s.color]));
-  const shown: (Slice & { color: string })[] = layout.rows.map((s, i) => ({
-    ...s,
-    // Past the sixth colour there is none left to give: the neutral, never a repeat.
-    color: given.get(s.key) ?? (s.key === OTHER_KEY ? OTHER_GREY : (CATEGORICAL[i] ?? OTHER_GREY)),
-  }));
-  const colorOf = new Map(shown.map((s) => [s.key, s.color]));
+  const shown: (Slice & { colour: ChartColour })[] = layout.rows.map((s, i) => {
+    const fill = given.get(s.key);
+    // A slice given a fill of its own keeps it; the rest take the colour of their position.
+    return { ...s, colour: fill === undefined ? sliceColour(s.key, i) : colourOfFill(fill) };
+  });
+  const colourOf = new Map(shown.map((s) => [s.key, s.colour]));
   const size = DONUT_SIZE;
   const { cx, cy } = DONUT_GEOMETRY;
   const centreTotal = Math.round(Math.abs(total)) >= CENTRE_COMPACT_FROM_CENTS ? moneyShort(total) : money(total);
@@ -793,8 +803,25 @@ export function DonutChart({
         aria-label={`Donut chart: ${shown.map((s) => `${s.label} ${money(s.value)}`).join(', ')}`}
         className="shrink-0"
       >
-        {layout.segments.map((s) => (
-          <path key={s.key} d={s.d} fill={colorOf.get(s.key)}>
+        <defs>
+          {layout.segments.map((s, i) => (
+            <clipPath key={s.key} id={`${clip}-${i}`}>
+              <path d={s.d} />
+            </clipPath>
+          ))}
+        </defs>
+        {/* A stroke straddles its path, so the edge is stroked at twice its
+            width and clipped to the segment: the half that is left lies
+            inside the segment, and the gap to the next one is untouched. */}
+        {layout.segments.map((s, i) => (
+          <path
+            key={s.key}
+            d={s.d}
+            fill={colourOf.get(s.key)?.fill}
+            stroke={colourOf.get(s.key)?.edge}
+            strokeWidth={EDGE_PX * 2}
+            clipPath={`url(#${clip}-${i})`}
+          >
             <title>{`${s.label}: ${money(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
           </path>
         ))}
@@ -818,7 +845,10 @@ export function DonutChart({
             <span
               aria-hidden="true"
               className="mt-[5px] h-2.5 w-2.5 rounded-sm"
-              style={{ backgroundColor: s.color, boxShadow: `0 0 0 2px ${SURFACE}` }}
+              style={{
+                backgroundColor: s.colour.fill,
+                boxShadow: `${edgedFill(s.colour).boxShadow}, 0 0 0 2px ${SURFACE}`,
+              }}
             />
             <span className="line-clamp-2 min-w-0 break-words text-charcoal" title={s.label}>{s.label}</span>
             <span className="figure text-right text-charcoal-muted">

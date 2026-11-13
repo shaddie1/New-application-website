@@ -69,6 +69,10 @@ export interface AdminStats {
   confirmed: number;
   inProgress: number;
   pendingQuotes: number;
+  /** Confirmed bookings with no crew. Optional: a server from before this count leaves it out. */
+  unassignedBookings?: number;
+  /** Unpaid bookings whose date passed in the last 30 days. Optional for the same reason. */
+  unpaidPastDate?: number;
 }
 
 // ── Team / staff management (owner only) ────────────────────────────────────
@@ -441,6 +445,23 @@ export interface UnreconciledItem {
 
 // ── Targets & dashboard ─────────────────────────────────────────────────────
 
+/** The Dashboard's five sections, in the order the page draws them. */
+export type DashboardSection = 'attention' | 'month' | 'trend' | 'breakdown' | 'ownership';
+
+/**
+ * What `GET /admin/dashboard/access` answers: the sections this account sees
+ * and what it may do there. Decided on the server from the user's record; the
+ * admin app builds only what is listed.
+ */
+export interface DashboardAccess {
+  sections: DashboardSection[];
+  canSetTargets: boolean;
+  /** The owner only: adding, editing and removing shareholders. */
+  canManageOwnership: boolean;
+  /** Whether the account is linked to a current shareholder record. */
+  holder: 'linked' | 'not-linked';
+}
+
 export interface MonthlyTargetDto {
   year: number;
   month: number;
@@ -809,6 +830,35 @@ export interface EquityOverview {
   fromDate: string;
   toDate: string;
   allTime: AllTimeTotals;
+}
+
+/**
+ * The Dashboard's ownership summary for one calendar month: every current
+ * holder's stake and share of net profit, for the month and for all time, at
+ * today's stakes. It goes to accounts that see none of the company's other
+ * figures, so it carries the net profit being split and nothing that profit
+ * is made of, and no notes or account links.
+ */
+export interface OwnershipSummary {
+  year: number;
+  month: number; // 1 to 12
+  // Every current holder, in table order.
+  holders: {
+    id: string;
+    name: string;
+    kind: ShareholderKind;
+    basisPoints: number;
+    periodShareCents: number; // negative in a loss month
+    allTimeShareCents: number;
+  }[];
+  // Sum of every stake; 10000 when the cap table adds up to 100%.
+  totalBasisPoints: number;
+  // Net profit the stakes do not cover; the shares and this add up to the net figure.
+  unallocatedPeriodCents: number;
+  unallocatedAllTimeCents: number;
+  // Net profit being split: the month's, and every counted job's to date.
+  periodNetCents: number;
+  allTimeNetCents: number;
 }
 
 /** One current holder's cut of one month's net profit, at today's stake. */

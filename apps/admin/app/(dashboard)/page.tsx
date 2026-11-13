@@ -1,63 +1,116 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { CalendarCheck, Clock, FileText, RotateCw } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DashboardSection } from '@onyxhawk/types';
 
-import { api } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
 import { greeting } from '../../src/lib/greeting';
-import { ActionCard } from '../../src/components/dashboard/ActionCard';
-import { ExpensesChart, ProfitShareChart, RevenueCharts } from '../../src/components/dashboard/Breakdowns';
-import { MonthFigures } from '../../src/components/dashboard/MonthFigures';
+import { hashScrollStep } from '../../src/lib/hash-scroll';
+import {
+  accessView,
+  NO_SECTION_RE_ASKED,
+  sectionRefusal,
+  withReAsked,
+  type ReAskedSections,
+} from '../../src/components/dashboard/access-state';
+import { AccessFailed, AccessLoading, BeingUpdated, NotLinked } from '../../src/components/dashboard/AccessStates';
+import type { BlockResult } from '../../src/components/dashboard/block-state';
+import { DevSignInCodes } from '../../src/components/dashboard/DevSignInCodes';
+import {
+  useAttention,
+  useDashboardAccess,
+  useExpenseSummary,
+  useMonthOverview,
+  useOwnershipSummary,
+  useRevenueBreakdown,
+  useSavedTargets,
+  useTrend,
+} from '../../src/components/dashboard/hooks';
 import { MonthSelector } from '../../src/components/dashboard/MonthSelector';
-import { StatusStrip } from '../../src/components/dashboard/StatusStrip';
-import { TextLink } from '../../src/components/dashboard/TextLink';
-import { isSameMonth, monthLabel, nairobiYearMonth, type YearMonth } from '../../src/components/dashboard/month';
-import { activeBookings, noActiveJobs } from '../../src/components/dashboard/status';
-import { useBlock } from '../../src/components/dashboard/useBlock';
-import { Button } from '../../src/components/ui/button';
-import { Card } from '../../src/components/ui/card';
-
-// Finance data is not served to every staff role, so only ask for it when the
-// signed-in user is actually allowed it — otherwise the request 403s.
-const FINANCE_ROLES = ['ADMIN', 'FINANCIAL_MANAGER', 'SHAREHOLDER'];
-
-type OtpRow = { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string };
+import { followsMonth, nairobiYearMonth, type YearMonth } from '../../src/components/dashboard/month';
+import { AttentionSection } from '../../src/components/dashboard/sections/AttentionSection';
+import { BreakdownSection } from '../../src/components/dashboard/sections/BreakdownSection';
+import { MonthSection } from '../../src/components/dashboard/sections/MonthSection';
+import { OwnershipSummarySection } from '../../src/components/dashboard/sections/OwnershipSummarySection';
+import { TrendSection } from '../../src/components/dashboard/sections/TrendSection';
 
 /**
- * The landing page, top to bottom: a greeting and the month selector; what
- * needs doing right now; the month's figures and targets; where the month's
- * money came from and went. Every block loads by itself (see `useBlock`), and
- * a block the signed-in role may not see is absent, not empty:
+ * The landing page for everyone who signs in. It asks the server which
+ * sections the account has before it builds anything, and then builds those
+ * and no others, top to bottom:
  *
- *   everyone signed in      status strip, action cards
- *   owner and finance roles the month's tiles, targets and revenue charts
- *   owner only              "Where the money went" and "Profit share"
+ *   1  needs attention     what is waiting right now
+ *   2  the month           its figures and targets
+ *   3  the trend           the months ending at it
+ *   4  the breakdown       where its money came from and went
+ *   5  the ownership       how its profit is split
+ *
+ * Who sees which is the server's list (`apps/api/src/dashboard/access.ts`)
+ * and is not restated here. A section the account lacks is absent, not empty,
+ * and nothing is asked for on its behalf: each section's request is made by a
+ * small wrapper below, which is mounted only when the section is listed.
+ * Every section loads, fails and retries by itself.
  */
 export default function DashboardPage() {
-  const { session } = useAuth();
+  const { session, signOut } = useAuth();
   // One reading of the clock for the whole visit, so the greeting, the date
   // and the month the selector stops at cannot disagree.
   const [now] = useState(() => new Date());
   const [current] = useState<YearMonth>(() => nairobiYearMonth(now));
-  // The month on screen. It drives the figures, targets, sparklines and
-  // breakdown charts; the strip and the action cards always show the present.
+  // The month on screen. It drives the figures, targets, trend, breakdown and
+  // ownership summary; "Needs attention" always shows the present.
   const [month, setMonth] = useState<YearMonth>(current);
 
-  const stats = useBlock(() => api.stats().then((res) => res.stats), [], noActiveJobs);
-  const counts = stats.status === 'loaded' || stats.status === 'empty' ? stats.data : null;
+  const access = useDashboardAccess();
+  const view = accessView(access);
+
+  // The sections whose refusal has already sent the page back to the access
+  // list, so that each does so once in a visit.
+  const [reAsked, setReAsked] = useState(NO_SECTION_RE_ASKED);
+  const retryAccess = access.retry;
+  const askAgain = useCallback(
+    (section: DashboardSection) => {
+      setReAsked((had) => withReAsked(had, section));
+      retryAccess();
+    },
+    [retryAccess],
+  );
+  const refusals: Refusals = {
+    reAsked,
+    askingAgain: access.status === 'loaded' && access.refreshing,
+    askAgain,
+  };
+
+  // The server says this is not a staff account, whatever the cached session
+  // holds. Signing out clears that session, and the layout then leads to the
+  // sign-in page; a plain redirect would be sent straight back here.
+  const refused = view.kind === 'sign-out';
+  useEffect(() => {
+    if (refused) void signOut();
+  }, [refused, signOut]);
+
+  // The sections above the trend that have left loading, as their wrappers
+  // report it: the jump to `#trend` waits for them.
+  const [leftLoading, setLeftLoading] = useState(NONE_LEFT_LOADING);
+  const onLeftLoading = useCallback((section: DashboardSection) => {
+    setLeftLoading((had) => (had.has(section) ? had : new Set([...had, section])));
+  }, []);
+  useTrendFragment(
+    view.kind === 'sections' ? view.sections : view.kind === 'not-linked' ? NO_SECTIONS : null,
+    leftLoading,
+  );
 
   const user = session?.user;
-  const isOwner = user?.isOwner === true;
-  const canSeeFinance = !!user && (isOwner || FINANCE_ROLES.includes(user.role));
-  const onCurrentMonth = isSameMonth(month, current);
+  const has = (section: DashboardSection) => view.kind === 'sections' && view.sections.includes(section);
 
   return (
     <div>
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      {/* The greeting comes from the cached session, so it is there before the
+          server has said anything. Its band carries the page's one gradient. */}
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 rounded-2xl border border-line/70 bg-gradient-to-r from-surface from-40% to-section-trend-tint px-5 py-5 sm:px-7 sm:py-6">
         <div className="min-w-0">
           <h1 className="font-serif text-3xl text-charcoal">{greeting(now, user?.fullName)}</h1>
-          <p className="mt-1 text-sm text-charcoal-muted">
+          <p className="figure mt-1 text-sm text-charcoal-muted">
             {now.toLocaleDateString('en-GB', {
               timeZone: 'Africa/Nairobi',
               weekday: 'long',
@@ -67,196 +120,249 @@ export default function DashboardPage() {
             })}
           </p>
         </div>
-        {/* The selector moves the month's figures, so it is there only for those who see them. */}
-        {canSeeFinance && <MonthSelector value={month} current={current} onChange={setMonth} />}
+        {/* The selector moves every section but "Needs attention", so it is there when one of those is. */}
+        {view.kind === 'sections' && followsMonth(view.sections) && (
+          <MonthSelector value={month} current={current} onChange={setMonth} />
+        )}
       </header>
 
-      <section className="mt-7" aria-label="Jobs and requests right now">
-        {/* The counts below are always today's. Say so once a past month is on
-            screen, so they are not read as that month's. */}
-        {!onCurrentMonth && (
-          <p className="mb-2.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-charcoal-muted">
-            <Clock className="size-3.5" aria-hidden="true" />
-            Right now
-          </p>
-        )}
+      <div className="mt-10">
+        {/* While the account is being signed out there is nothing to say: the sign-in page is a moment away. */}
+        {(view.kind === 'loading' || view.kind === 'sign-out') && <AccessLoading />}
+        {view.kind === 'being-updated' && <BeingUpdated onRetry={access.retry} />}
+        {view.kind === 'failed' && <AccessFailed onRetry={access.retry} />}
+        {view.kind === 'not-linked' && <NotLinked />}
 
-        <StatusStrip stats={stats} />
-
-        {/* Side by side only from 1024px. From 768px the side menu takes its
-            share of the width, and two cards in what is left wrap their
-            titles and descriptions badly, so there they stack as on a phone. */}
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <ActionCard
-            href="/bookings"
-            icon={CalendarCheck}
-            title="Bookings"
-            description="Review the schedule, assign crews and leads."
-            count={counts ? activeBookings(counts) : undefined}
-            countLoading={stats.status === 'loading'}
-            countLabel="active bookings"
-          />
-          <ActionCard
-            href="/quotes"
-            icon={FileText}
-            title="Quote requests"
-            description="Respond to walkthrough requests with a price."
-            count={counts?.pendingQuotes}
-            countLoading={stats.status === 'loading'}
-            countLabel="pending quotes"
-          />
-        </div>
-      </section>
-
-      {canSeeFinance && user && (
-        <section className="mt-10" aria-labelledby="month-heading">
-          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 id="month-heading" className="font-serif text-2xl text-charcoal">
-              {monthLabel(month)}
-              {onCurrentMonth && <span className="ml-2.5 font-sans text-sm text-charcoal-muted">so far</span>}
-            </h2>
-            {/* Insights is the owner's page, as in the side menu. */}
-            {isOwner && <TextLink href="/insights">Full insights</TextLink>}
-          </div>
-
-          <MonthFigures month={month} current={current} user={user} />
-
-          {/* Part-to-whole views of the month. Each child is one grid cell and
-              carries `min-w-0`, so a long legend label wraps inside its card. */}
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <RevenueCharts month={month} isCurrentMonth={onCurrentMonth} isOwner={isOwner} />
-            {isOwner && (
-              <>
-                <ExpensesChart month={month} />
-                <ProfitShareChart month={month} isCurrentMonth={onCurrentMonth} />
-              </>
+        {view.kind === 'sections' && (
+          <div className="space-y-12">
+            {has('attention') && <Attention refusals={refusals} onLeftLoading={onLeftLoading} />}
+            {has('month') && (
+              <MonthAndTrend
+                month={month}
+                current={current}
+                canSetTargets={view.canSetTargets}
+                withTrend={has('trend')}
+                refusals={refusals}
+                onLeftLoading={onLeftLoading}
+              />
+            )}
+            {has('breakdown') && (
+              <Breakdown
+                month={month}
+                current={current}
+                // Jobs & costs, where a job is classified, is the owner's page.
+                canOpenJobsAndCosts={view.canManageOwnership}
+                refusals={refusals}
+              />
+            )}
+            {has('ownership') && (
+              <OwnershipSummary
+                month={month}
+                current={current}
+                canManageOwnership={view.canManageOwnership}
+                refusals={refusals}
+              />
             )}
           </div>
-        </section>
-      )}
+        )}
+      </div>
 
-      {/* Dev sign-in codes: the server decides whether this exists (404 when dev tools are off). */}
-      {isOwner && <LiveOtpPanel />}
+      {/* Development sign-in codes. The session's owner flag and the server's
+          own answer (404 when dev tools are off) decide this, not the access list. */}
+      {user?.isOwner === true && <DevSignInCodes />}
     </div>
   );
 }
 
-function LiveOtpPanel() {
-  // null until the server answers; false when dev tools are off or it cannot be reached.
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [codes, setCodes] = useState<OtpRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+// ── A section refused after the page was built ──────────────────────────────
 
-  const refresh = async () => {
-    setLoading(true);
-    try {
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 5000),
-      );
-      const res = await Promise.race([api.recentOtps(), timeout]);
-      setCodes(res.codes);
-      setLastRefresh(new Date());
-    } catch {
-      // Timeout, network error, or API unavailable — keep existing codes
-    } finally {
-      setLoading(false);
-    }
-  };
+/** What a wrapper needs to send its section back to the access list. */
+type Refusals = {
+  reAsked: ReAskedSections;
+  /** The access list is being asked again; its last answer is still on screen. */
+  askingAgain: boolean;
+  askAgain: (section: DashboardSection) => void;
+};
 
+/**
+ * A section the access list granted can still be refused (403) later: the
+ * account's role or shareholder link changed while the page was open. The
+ * first time that happens to a section the page asks the access list again
+ * and rebuilds from its answer, which usually takes the section away. Until
+ * that answer lands a refused block reads as loading, so the section keeps
+ * its skeleton and does not flash an error for something the account may no
+ * longer have. A refusal after that is the section's own error, with Retry.
+ *
+ * Give it every block the section asks for; pass each block through the
+ * function it returns before handing it to the section.
+ */
+function useReAskOnRefusal(
+  section: DashboardSection,
+  blocks: BlockResult<unknown>[],
+  { reAsked, askingAgain, askAgain }: Refusals,
+): <T>(block: BlockResult<T>) => BlockResult<T> {
+  const ask = blocks.some((block) => sectionRefusal(block, section, reAsked) === 'ask-access-again');
   useEffect(() => {
-    let cancelled = false;
-    // Ask once. Only an answer turns the panel on and starts the polling; a
-    // 404 (dev tools off) or an unreachable server leaves it hidden and silent.
-    api
-      .recentOtps()
-      .then((res) => {
-        if (cancelled) return;
-        setCodes(res.codes);
-        setLastRefresh(new Date());
-        setLoading(false);
-        setEnabled(true);
-        intervalRef.current = setInterval(() => void refresh(), 8000);
-      })
-      .catch(() => {
-        if (!cancelled) setEnabled(false);
-      });
-    return () => {
-      cancelled = true;
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+    if (ask) askAgain(section);
+  }, [ask, askAgain, section]);
 
-  if (!enabled) return null;
+  const waiting = ask || askingAgain;
+  return (block) =>
+    waiting && block.status === 'failed' && block.httpStatus === 403
+      ? { status: 'loading', retry: block.retry }
+      : block;
+}
 
+// ── Arriving at /#trend ─────────────────────────────────────────────────────
+
+const NONE_LEFT_LOADING: ReadonlySet<DashboardSection> = new Set<DashboardSection>();
+/** What an account with no section has built. */
+const NO_SECTIONS: readonly DashboardSection[] = [];
+
+/** How a wrapper tells the page that its section has left loading. */
+type OnLeftLoading = (section: DashboardSection) => void;
+
+/**
+ * Reports a section once its block has left loading: its figures, or its
+ * error, are on screen and it has the height it will keep. A refused block
+ * that reads as loading while the access list is asked again has not left.
+ */
+function useReportLeftLoading(section: DashboardSection, block: BlockResult<unknown>, onLeftLoading: OnLeftLoading) {
+  const left = block.status !== 'loading';
+  useEffect(() => {
+    if (left) onLeftLoading(section);
+  }, [left, onLeftLoading, section]);
+}
+
+/**
+ * `/insights` sends its visitors to `/#trend`. `hashScrollStep` says what to
+ * do about that fragment and when; this does it, once in a visit. `sections`
+ * is what the page has built, or null while the access list has not said.
+ */
+function useTrendFragment(
+  sections: readonly DashboardSection[] | null,
+  leftLoading: ReadonlySet<DashboardSection>,
+) {
+  const done = useRef(false);
+  useEffect(() => {
+    const answer = hashScrollStep({
+      fragment: window.location.hash,
+      sections,
+      settled: leftLoading,
+      done: done.current,
+    });
+    done.current = answer.done;
+
+    if (answer.step === 'scroll') {
+      document.getElementById('trend')?.scrollIntoView();
+      // Focus follows, so the next Tab starts from the trend and a screen
+      // reader says where the page has gone. The heading takes focus from
+      // here only, as a dialog's title does: -1 keeps it out of the Tab
+      // order, and it is not a control, so it shows no focus ring. Someone
+      // who has already put focus in a control keeps it there: the page
+      // scrolls, and they are not pulled away from where they are.
+      const heading = document.getElementById('trend-heading');
+      const focused = document.activeElement;
+      if (heading && (focused === null || focused === document.body)) {
+        heading.tabIndex = -1;
+        heading.classList.add('outline-none');
+        heading.focus({ preventScroll: true });
+      }
+    }
+
+    if (answer.step === 'drop-fragment') {
+      // Next.js watches this call and takes the new address as its own, so
+      // the fragment does not come back with the next thing the router does.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [sections, leftLoading]);
+}
+
+// ── A section and its request ───────────────────────────────────────────────
+// Each wrapper calls its section's hooks once and hands the blocks down.
+// Mounting a wrapper is what sends the requests.
+
+function Attention({ refusals, onLeftLoading }: { refusals: Refusals; onLeftLoading: OnLeftLoading }) {
+  const asked = useAttention();
+  const settled = useReAskOnRefusal('attention', [asked], refusals);
+  const stats = settled(asked);
+  useReportLeftLoading('attention', stats, onLeftLoading);
+  return <AttentionSection stats={stats} />;
+}
+
+/**
+ * Sections 2 and 3 read one overview answer, so one call of its hook feeds
+ * both, and a refusal of it is the month's: the server grants the two
+ * together.
+ */
+function MonthAndTrend({
+  month, current, canSetTargets, withTrend, refusals, onLeftLoading,
+}: {
+  month: YearMonth;
+  current: YearMonth;
+  canSetTargets: boolean;
+  withTrend: boolean;
+  refusals: Refusals;
+  onLeftLoading: OnLeftLoading;
+}) {
+  const asked = useMonthOverview(month);
+  const settled = useReAskOnRefusal('month', [asked], refusals);
+  const overview = settled(asked);
+  useReportLeftLoading('month', overview, onLeftLoading);
+  const trend = useTrend(overview);
+  const savedTargets = useSavedTargets();
   return (
-    <Card className="mt-10 border-dashed border-border-strong p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-charcoal-muted">Development only</p>
-          <h2 className="mt-0.5 font-serif text-lg text-charcoal">Active sign-in codes</h2>
-        </div>
-        {/* The time is a fact and the button is the action: two things, so
-            the time is plain text and only "Refresh" can be pressed. */}
-        <div className="flex items-center gap-1.5">
-          {lastRefresh && (
-            <span className="figure text-xs text-charcoal-muted">Last: {lastRefresh.toLocaleTimeString()}</span>
-          )}
-          <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={loading} aria-busy={loading}>
-            <RotateCw aria-hidden="true" className={loading ? 'animate-spin' : undefined} />
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      {loading && codes.length === 0 && (
-        <p className="text-sm text-charcoal-muted">Checking for active codes…</p>
-      )}
-
-      {!loading && codes.length === 0 && (
-        <p className="text-sm text-charcoal-muted">
-          No active codes right now. Request a code from the login page or the mobile app to see it here.
-        </p>
-      )}
-
-      {codes.length > 0 && (
-        <div className="space-y-2">
-          {codes.map((row, i) => (
-            <OtpRowCard key={i} row={row} />
-          ))}
-        </div>
-      )}
-    </Card>
+    <>
+      <MonthSection
+        overview={overview}
+        savedTargets={savedTargets}
+        month={month}
+        current={current}
+        canSetTargets={canSetTargets}
+      />
+      {withTrend && <TrendSection trend={trend} month={month} />}
+    </>
   );
 }
 
-function OtpRowCard({ row }: { row: OtpRow }) {
-  const [copied, setCopied] = useState(false);
-  const expiresIn = Math.max(0, Math.round((new Date(row.expiresAt).getTime() - Date.now()) / 1000 / 60));
-
-  const copy = () => {
-    void navigator.clipboard.writeText(row.codePlain);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
+function Breakdown({
+  month, current, canOpenJobsAndCosts, refusals,
+}: {
+  month: YearMonth;
+  current: YearMonth;
+  canOpenJobsAndCosts: boolean;
+  refusals: Refusals;
+}) {
+  const revenue = useRevenueBreakdown(month);
+  const expenses = useExpenseSummary(month);
+  const settled = useReAskOnRefusal('breakdown', [revenue, expenses], refusals);
   return (
-    <div className="flex items-center gap-4 rounded-lg border border-line bg-mist px-4 py-3">
-      <div className="min-w-0 flex-1">
-        {/* Staff codes go by email, customer codes by SMS — show where each one went. */}
-        <p className="truncate text-xs text-charcoal-muted">{row.email ?? row.phone}{row.email ? ' · email' : ' · SMS'}</p>
-        <p className="figure mt-0.5 text-2xl tracking-[0.3em] text-charcoal">{row.codePlain}</p>
-      </div>
-      <div className="shrink-0 text-right">
-        <p className="figure text-xs text-charcoal-muted">Expires in {expiresIn}m</p>
-        <button
-          onClick={copy}
-          className="mt-1 rounded text-xs font-medium text-navy underline underline-offset-2 hover:no-underline"
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-      </div>
-    </div>
+    <BreakdownSection
+      revenue={settled(revenue)}
+      expenses={settled(expenses)}
+      month={month}
+      current={current}
+      canOpenJobsAndCosts={canOpenJobsAndCosts}
+    />
+  );
+}
+
+function OwnershipSummary({
+  month, current, canManageOwnership, refusals,
+}: {
+  month: YearMonth;
+  current: YearMonth;
+  canManageOwnership: boolean;
+  refusals: Refusals;
+}) {
+  const summary = useOwnershipSummary(month);
+  const settled = useReAskOnRefusal('ownership', [summary], refusals);
+  return (
+    <OwnershipSummarySection
+      summary={settled(summary)}
+      month={month}
+      current={current}
+      canManageOwnership={canManageOwnership}
+    />
   );
 }

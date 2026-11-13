@@ -1,51 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { contrastRatio as ratio, declaredTokens, parseTokenValue, tokenColour, type Rgb } from './contrast';
 
 /**
  * The admin's colour tokens, measured where they are defined. The test reads
  * `app/globals.css` from disk, so a token changed there is re-measured here.
  */
 
-type Rgb = [number, number, number];
-
 const css = readFileSync(fileURLToPath(new URL('../../app/globals.css', import.meta.url)), 'utf8');
 
 /** Every `--name: value;` in the token file. */
-const declared = new Map<string, string>();
-for (const match of css.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)) declared.set(match[1]!, match[2]!.trim());
+const declared = declaredTokens(css);
 
-/**
- * A token as red, green and blue. UI tokens are stored as channels
- * (`19 58 104`), chart tokens as a hex colour or as `rgb(var(--token))`, and a
- * token may simply point at another (`var(--teal)`).
- */
-function token(name: string): Rgb {
-  const value = declared.get(name);
-  if (value === undefined) throw new Error(`--${name} is not defined in app/globals.css`);
-  const pointer = /^(?:rgb\()?var\(--([a-z0-9-]+)\)\)?$/.exec(value);
-  if (pointer) return token(pointer[1]!);
-  const channels = /^(\d{1,3}) (\d{1,3}) (\d{1,3})$/.exec(value);
-  if (channels) return [Number(channels[1]), Number(channels[2]), Number(channels[3])];
-  const hex = /^#([0-9a-f]{6})$/i.exec(value);
-  if (hex) return [0, 2, 4].map((i) => parseInt(hex[1]!.slice(i, i + 2), 16)) as Rgb;
-  throw new Error(`--${name} holds "${value}", which is not channels, a hex colour or a reference`);
-}
-
-/** WCAG 2 relative luminance. */
-function luminance([r, g, b]: Rgb): number {
-  const linear = (v: number) => {
-    const s = v / 255;
-    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
-}
-
-/** WCAG 2 contrast ratio, from 1 (identical) to 21 (black on white). */
-function ratio(a: Rgb, b: Rgb): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
-  return (hi + 0.05) / (lo + 0.05);
-}
+/** A token as red, green and blue. */
+const token = (name: string): Rgb => tokenColour(declared, name);
 
 /** `colour` painted at `alpha` over `under`, as an opacity class such as `bg-danger/10` does. */
 function over(colour: Rgb, alpha: number, under: Rgb): Rgb {
@@ -56,11 +25,46 @@ const WHITE: Rgb = [255, 255, 255];
 
 /** Tokens that may colour text. Gold is decoration only, so it is not here; `brass` is the readable gold. */
 const TEXT_TOKENS = ['ink', 'muted', 'navy', 'teal', 'brass', 'amber', 'red'];
-/** The surfaces text sits on: the warm page and the white card. */
+/** The surfaces text sits on: the near-white page and the white card. */
 const SURFACES = ['page', 'surface'];
 /** Good, needs attention, bad: each also sits on a tint of itself (`bg-danger/10 text-danger`). */
 const STATUS_TOKENS = ['teal', 'amber', 'red'];
-const CHART_TOKENS = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5', 'chart-6'];
+/**
+ * The edges of the charts' filled marks. The fills are bright and most are too
+ * pale to be held to 3:1, so the edge drawn round each one is.
+ */
+const CHART_EDGE_TOKENS = [
+  'chart-1-edge',
+  'chart-2-edge',
+  'chart-3-edge',
+  'chart-4-edge',
+  'chart-5-edge',
+  'chart-other-edge',
+  'chart-accent-deep',
+  'chart-target-edge',
+];
+
+/** The raw colours of the white-led look, one hue to a row: the light tint, the strong shade and the deep shade. */
+const HUES = [
+  { tint: 'tint-mint', strong: 'strong-teal', deep: 'deep-teal' },
+  { tint: 'tint-sky', strong: 'strong-sky', deep: 'deep-sky' },
+  { tint: 'tint-butter', strong: 'strong-gold', deep: 'deep-gold' },
+  { tint: 'tint-blush', strong: 'strong-coral', deep: 'deep-coral' },
+  { tint: 'tint-lavender', strong: 'strong-violet', deep: 'deep-violet' },
+];
+const SHADES = ['tint', 'strong', 'deep'] as const;
+/** The names components use. Each must point at a raw colour of the shade its name says. */
+const SECTIONS = ['attention', 'month', 'trend', 'breakdown', 'ownership'];
+/** Good, needs attention, overdue or a fall. The bare name is the deep shade, the one for text. */
+const MEANINGS = ['positive', 'attention', 'overdue'];
+
+/** The token that holds the colour `name` ends up at, following the tokens it points at. */
+function rawTokenBehind(name: string): string {
+  const value = declared.get(name);
+  if (value === undefined) throw new Error(`--${name} is not defined in app/globals.css`);
+  const parsed = parseTokenValue(value);
+  return parsed !== null && 'ref' in parsed ? rawTokenBehind(parsed.ref) : name;
+}
 
 const AA_TEXT = 4.5;
 const AA_MARK = 3;
@@ -98,8 +102,47 @@ describe('status colours on their own tint', () => {
   }
 });
 
-describe('chart marks and the focus ring', () => {
-  for (const name of CHART_TOKENS) {
+describe('text on the light tints', () => {
+  // A tint is a background only. What is written on it is ink, muted or the deep shade of its own hue.
+  for (const { tint } of HUES) {
+    for (const name of ['ink', 'muted']) {
+      it(`${name} on ${tint} is at least ${AA_TEXT}:1`, () => {
+        expect(ratio(token(name), token(tint))).toBeGreaterThanOrEqual(AA_TEXT);
+      });
+    }
+  }
+});
+
+describe('deep shades', () => {
+  for (const { tint, deep } of HUES) {
+    for (const background of [...SURFACES, tint]) {
+      it(`${deep} on ${background} is at least ${AA_TEXT}:1`, () => {
+        expect(ratio(token(deep), token(background))).toBeGreaterThanOrEqual(AA_TEXT);
+      });
+    }
+  }
+});
+
+describe('section and meaning tokens', () => {
+  const semantic = [
+    ...SECTIONS.flatMap((section) => SHADES.map((shade) => ({ name: `section-${section}-${shade}`, shade }))),
+    ...MEANINGS.flatMap((meaning) => [
+      { name: meaning, shade: 'deep' as const },
+      { name: `${meaning}-tint`, shade: 'tint' as const },
+      { name: `${meaning}-strong`, shade: 'strong' as const },
+    ]),
+  ];
+
+  for (const { name, shade } of semantic) {
+    it(`${name} points at a raw ${shade} that holds a colour`, () => {
+      expect(HUES.map((hue) => hue[shade])).toContain(rawTokenBehind(name));
+      expect(() => token(name)).not.toThrow();
+    });
+  }
+});
+
+describe('chart edges and the focus ring', () => {
+  for (const name of CHART_EDGE_TOKENS) {
     it(`${name} on the card surface is at least ${AA_MARK}:1`, () => {
       expect(ratio(token(name), token('surface'))).toBeGreaterThanOrEqual(AA_MARK);
     });

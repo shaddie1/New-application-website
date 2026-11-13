@@ -1,15 +1,20 @@
 import type { CSSProperties } from 'react';
 
-import { CATEGORICAL, OTHER_GREY } from '../charts';
+import { edgedFill, positionColour, type ChartColour } from '../chart-palette';
 
 /**
  * The chart colour for a colour index from `colourIndexOf` in split.ts: a
- * holder's own colour, or the solid neutral for holders past the fifth and
- * for "Others". What the business retains is not a colour at all: see
+ * holder's own fill and edge, or the solid neutral for holders past the fifth
+ * and for "Others". What the business retains is not a colour at all: see
  * `retainedFill`.
  */
-export function chartColour(colourIndex: number | null): string {
-  return (colourIndex === null ? undefined : CATEGORICAL[colourIndex]) ?? OTHER_GREY;
+export function chartColour(colourIndex: number | null): ChartColour {
+  return positionColour(colourIndex);
+}
+
+/** A holder's part as a CSS fill: their colour, with its darker edge just inside the part. */
+export function holderFill(colourIndex: number | null): CSSProperties {
+  return edgedFill(chartColour(colourIndex));
 }
 
 /** The line colour of the outline and hatching that mark what the business retains. */

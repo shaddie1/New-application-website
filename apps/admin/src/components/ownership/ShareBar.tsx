@@ -1,6 +1,6 @@
 import { cn } from '../../lib/cn';
 import { money } from '../../lib/money';
-import { chartColour, retainedFill } from './colours';
+import { holderFill, retainedFill } from './colours';
 import type { SplitSegment } from './split';
 import { formatPercentShort } from './stakes';
 
@@ -17,8 +17,10 @@ const largeChip = `${initialsChip} h-7 min-w-7 px-1.5 text-[11px] [@container_(m
  * their initials inside when the part is wide enough to hold them. Each part
  * is a size container, so "wide enough" is decided by the part's own width
  * at any screen size. A sliver too thin for a chip has none; the table under
- * the bar names every holder. What the business retains is hatched, not
- * filled, so it is never read as one more holder.
+ * the bar names every holder. A holder's part is their bright fill with the
+ * darker edge of the same colour just inside it, so the gaps between parts
+ * stay. What the business retains is hatched, not filled, so it is never read
+ * as one more holder.
  */
 export function ShareBar({
   segments, amounts,
@@ -44,7 +46,7 @@ export function ShareBar({
           title={describe(s)}
           style={{
             width: `${s.widthPercent}%`,
-            ...(s.kind === 'retained' ? retainedFill : { backgroundColor: chartColour(s.colourIndex) }),
+            ...(s.kind === 'retained' ? retainedFill : holderFill(s.colourIndex)),
           }}
           className={cn(
             'flex min-w-0 items-center justify-center rounded-[3px] [container-type:inline-size]',

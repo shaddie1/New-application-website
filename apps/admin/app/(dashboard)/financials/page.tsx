@@ -530,7 +530,7 @@ export default function FinancialsPage() {
                   onChange={(e) => setJobForm((f) => ({ ...f, clientLocation: e.target.value }))}
                 />
               </div>
-              {/* Classification — feeds the revenue breakdown charts on Insights. */}
+              {/* Classification — feeds the revenue breakdown charts on the Dashboard. */}
               <div>
                 <label className="block text-xs text-text-muted mb-1">Service line</label>
                 <select

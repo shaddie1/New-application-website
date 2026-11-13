@@ -7,7 +7,8 @@ import { cn } from '../../lib/cn';
 import { money } from '../../lib/money';
 import { Skeleton } from '../dashboard/BlockState';
 import { enoughToDraw, segmentPath, stackedBars, type StackGeometry, type StackLayout, type StackSegment } from '../stacked-bars';
-import { chartColour, RETAINED_HATCH_GAP, RETAINED_LINE, retainedFill } from './colours';
+import { EDGE_PX } from '../chart-palette';
+import { chartColour, holderFill, RETAINED_HATCH_GAP, RETAINED_LINE, retainedFill } from './colours';
 import {
   amountWithoutUnit, isPhone, monthAxisLabels, monthTableColumns, tableMonthIndexes, type HistorySeries, type OwnershipHistory,
 } from './history';
@@ -86,7 +87,7 @@ function Swatch({ series }: { series: HistorySeries }) {
     <span
       aria-hidden="true"
       className="h-3 w-3 shrink-0 rounded-[3px]"
-      style={series.kind === 'retained' ? retainedFill : { backgroundColor: chartColour(series.colourIndex) }}
+      style={series.kind === 'retained' ? retainedFill : holderFill(series.colourIndex)}
     />
   );
 }
@@ -232,7 +233,7 @@ function Drawing({
               )}
               {bar.segments.map((segment) => {
                 const series = history.series[segment.seriesIndex]!;
-                const colour = chartColour(series.colourIndex);
+                const { fill, edge } = chartColour(series.colourIndex);
                 // Nobody's share: hatched and outlined, never a solid colour.
                 if (series.kind === 'retained') {
                   return (
@@ -245,22 +246,24 @@ function Drawing({
                     />
                   );
                 }
-                // The month still running: each share in outline with a light
-                // fill, so even a small part-month amount keeps its full colour
-                // at the edge. A sliver too thin to outline stays solid.
-                if (month.partial && segment.height >= 4) {
-                  return (
-                    <path
-                      key={segment.seriesKey}
-                      d={segmentPath(inset(segment, 0.75), BAR_RADIUS)}
-                      fill={colour}
-                      fillOpacity="0.3"
-                      stroke={colour}
-                      strokeWidth="1.5"
-                    />
-                  );
+                // A sliver too thin to outline is all edge, so it is solid in the edge's colour.
+                if (segment.height < 4) {
+                  return <path key={segment.seriesKey} d={segmentPath(segment, BAR_RADIUS)} fill={edge} />;
                 }
-                return <path key={segment.seriesKey} d={segmentPath(segment, BAR_RADIUS)} fill={colour} />;
+                // Each share is its bright fill inside the darker edge of the
+                // same colour. The edge is drawn within the segment, so the
+                // gaps between segments stay. The month still running has a
+                // light fill inside the same edge.
+                return (
+                  <path
+                    key={segment.seriesKey}
+                    d={segmentPath(inset(segment, EDGE_PX / 2), BAR_RADIUS)}
+                    fill={fill}
+                    fillOpacity={month.partial ? 0.3 : undefined}
+                    stroke={edge}
+                    strokeWidth={EDGE_PX}
+                  />
+                );
               })}
               {label && (
                 <text x={centre} y={HEIGHT - pad.bottom + 18} textAnchor="middle" fontSize={narrow ? 11 : 12} fill="var(--chart-ink)">

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { isSameMonth, monthLabel, monthRange, nairobiYearMonth, nextMonth, previousMonth } from './month';
+import {
+  followsMonth,
+  isSameMonth,
+  monthLabel,
+  monthRange,
+  nairobiYearMonth,
+  nextMonth,
+  previousMonth,
+} from './month';
 
 describe('nairobiYearMonth', () => {
   it('reads the month from the Nairobi calendar, not the UTC one', () => {
@@ -43,6 +51,22 @@ describe('monthRange', () => {
   it('knows a leap February from an ordinary one', () => {
     expect(monthRange({ year: 2028, month: 2 }).to).toBe('2028-02-29');
     expect(monthRange({ year: 2027, month: 2 }).to).toBe('2027-02-28');
+  });
+});
+
+describe('followsMonth', () => {
+  it('is true when the month’s figures, the breakdown or the ownership summary is on screen', () => {
+    expect(followsMonth(['attention', 'month', 'trend', 'breakdown', 'ownership'])).toBe(true);
+    expect(followsMonth(['month', 'trend', 'breakdown'])).toBe(true);
+    expect(followsMonth(['breakdown'])).toBe(true);
+    // A shareholder with no other section still chooses the month of the split.
+    expect(followsMonth(['ownership'])).toBe(true);
+    expect(followsMonth(['attention', 'ownership'])).toBe(true);
+  });
+
+  it('is false when only "Needs attention" is on screen, which always shows the present', () => {
+    expect(followsMonth(['attention'])).toBe(false);
+    expect(followsMonth([])).toBe(false);
   });
 });
 

@@ -1,0 +1,19 @@
+Chart palette check, 2026-11-13. Order: teal, violet, gold, sky, coral. Surface: white card.
+
+Neighbouring colours (the gate):
+
+Palette (light, surface #FFFFFF, categorical): 5 slots
+  [FAIL] Lightness band         outside band: [["#E8B53A",0.799]]
+  [PASS] Chroma floor           all 5 >= 0.1
+  [PASS] CVD separation         worst adjacent #7C6CF0↔#14B8A6 ΔE 20.9 (deutan) · tritan 14.1
+  [PASS] Normal-vision floor    worst adjacent #7C6CF0↔#14B8A6 ΔE 26.4 (normal)
+
+Every pair (for the record; sky and violet are the closest pair, which is why the order keeps them apart):
+
+Palette (light, surface #FFFFFF, categorical): 5 slots
+  [FAIL] Lightness band         outside band: [["#E8B53A",0.799]]
+  [PASS] Chroma floor           all 5 >= 0.1
+  [PASS] CVD separation         worst all-pairs #3B9EFF↔#7C6CF0 ΔE 8.1 (deutan) · tritan 3.5
+  [FAIL] Normal-vision floor    worst all-pairs #3B9EFF↔#7C6CF0 ΔE 12.9 (normal) — below 15, hard to tell apart even with full color vision
+
+Accepted as the owner's choice of bright fills: the lightness-band result for gold and the contrast warning on the pale fills. Relief: every filled mark has a darker edge of its own colour, and every segment is named with its value.

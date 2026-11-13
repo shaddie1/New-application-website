@@ -125,4 +125,14 @@ describe('donutLayout', () => {
 
     expect(layout.segments).toEqual([]);
   });
+
+  // `DonutChart` shows its empty message when there are no legend rows. With
+  // segments gone and rows left it would draw a legend of shares of nothing.
+  it('has no legend rows and a total of 0 when there is nothing to take a share of', () => {
+    const nothing = { total: 0, rows: [], segments: [] };
+
+    expect(donutLayout([], GEOMETRY)).toEqual(nothing);
+    expect(donutLayout([{ key: 'homes', label: 'Homes', value: 0 }], GEOMETRY)).toEqual(nothing);
+    expect(donutLayout([{ key: 'homes', label: 'Homes', value: 100 }], GEOMETRY, { total: 0 })).toEqual(nothing);
+  });
 });

@@ -80,6 +80,12 @@ describe('GET /admin/finance/overview', () => {
         previousNetCents: 2_500_000,
         previousJobCount: 1,
         series: [
+          { year: 2025, month: 12, label: 'Dec', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 1, label: 'Jan', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 2, label: 'Feb', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 3, label: 'Mar', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 4, label: 'Apr', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 5, label: 'May', revenueCents: 0, netCents: 0, jobCount: 0 },
           { year: 2026, month: 6, label: 'Jun', revenueCents: 0, netCents: 0, jobCount: 0 },
           { year: 2026, month: 7, label: 'Jul', revenueCents: 0, netCents: 0, jobCount: 0 },
           { year: 2026, month: 8, label: 'Aug', revenueCents: 0, netCents: 0, jobCount: 0 },
@@ -243,11 +249,11 @@ describe('GET /admin/finance/overview', () => {
     });
   });
 
-  describe('series: the six months ending at the month asked for', () => {
-    it('gives November six entries, June to November, oldest first, each from its own first day to its last', async () => {
+  describe('series: the twelve months ending at the month asked for', () => {
+    it('gives November twelve entries, December of the year before to November, oldest first, each from its own first day to its last', async () => {
       clockAt('2026-11-12T09:00:00.000Z');
       t.jobs = [
-        // 31 May is before the series starts and 1 December is after it ends.
+        // 31 May is the last day of the month before June and 1 December is after the series ends.
         job('may31', '2026-05-31', 9_900_000),
         job('jun1', '2026-06-01', 100_000),
         job('jun30', '2026-06-30', 200_000, { status: 'APPROVED' }),
@@ -271,6 +277,12 @@ describe('GET /admin/finance/overview', () => {
       const { series } = await overviewFor(2026, 11);
 
       expect(series).toEqual([
+        { year: 2025, month: 12, label: 'Dec', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 1, label: 'Jan', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 2, label: 'Feb', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 3, label: 'Mar', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 4, label: 'Apr', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 5, label: 'May', revenueCents: 9_900_000, netCents: 9_900_000, jobCount: 1 },
         { year: 2026, month: 6, label: 'Jun', revenueCents: 300_000, netCents: 180_000, jobCount: 2 },
         { year: 2026, month: 7, label: 'Jul', revenueCents: 400_000, netCents: 400_000, jobCount: 1 },
         { year: 2026, month: 8, label: 'Aug', revenueCents: 750_000, netCents: -250_000, jobCount: 1 },
@@ -286,13 +298,48 @@ describe('GET /admin/finance/overview', () => {
 
       const { series } = await overviewFor(2026, 11);
 
-      expect(series.map((m) => m.month)).toEqual([6, 7, 8, 9, 10, 11]);
-      expect(series[2]).toEqual({ year: 2026, month: 8, label: 'Aug', revenueCents: 500_000, netCents: 500_000, jobCount: 1 });
-      expect(series[3]).toEqual({ year: 2026, month: 9, label: 'Sep', revenueCents: 0, netCents: 0, jobCount: 0 });
-      expect(series[4]).toEqual({ year: 2026, month: 10, label: 'Oct', revenueCents: 700_000, netCents: 700_000, jobCount: 1 });
+      expect(series.map((m) => m.month)).toEqual([12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+      expect(series[8]).toEqual({ year: 2026, month: 8, label: 'Aug', revenueCents: 500_000, netCents: 500_000, jobCount: 1 });
+      expect(series[9]).toEqual({ year: 2026, month: 9, label: 'Sep', revenueCents: 0, netCents: 0, jobCount: 0 });
+      expect(series[10]).toEqual({ year: 2026, month: 10, label: 'Oct', revenueCents: 700_000, netCents: 700_000, jobCount: 1 });
     });
 
-    it('spans August of the year before to January when January is asked for', async () => {
+    it('ends with the same six entries the six-month series held, after the six months before them', async () => {
+      clockAt('2026-11-12T09:00:00.000Z');
+      t.jobs = [
+        // 30 November of the year before is before the series starts; 1 December is its first day.
+        job('nov30', '2025-11-30', 9_900_000),
+        job('dec1', '2025-12-01', 100_000),
+        job('may31', '2026-05-31', 200_000),
+        job('jun1', '2026-06-01', 400_000),
+        job('oct15', '2026-10-15', 800_000, { status: 'APPROVED' }),
+        job('nov5', '2026-11-05', 1_600_000),
+      ];
+      t.expenses = [cost('e1', 'may31', 50_000, '2026-05-31'), cost('e2', 'oct15', 300_000, '2026-10-15')];
+
+      const { series } = await overviewFor(2026, 11);
+
+      // June to November: the whole of the series while it covered six months.
+      expect(series.slice(-6)).toEqual([
+        { year: 2026, month: 6, label: 'Jun', revenueCents: 400_000, netCents: 400_000, jobCount: 1 },
+        { year: 2026, month: 7, label: 'Jul', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 8, label: 'Aug', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 9, label: 'Sep', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 10, label: 'Oct', revenueCents: 800_000, netCents: 500_000, jobCount: 1 },
+        { year: 2026, month: 11, label: 'Nov', revenueCents: 1_600_000, netCents: 1_600_000, jobCount: 1 },
+      ]);
+      expect(series).toHaveLength(12);
+      expect(series.slice(0, 6)).toEqual([
+        { year: 2025, month: 12, label: 'Dec', revenueCents: 100_000, netCents: 100_000, jobCount: 1 },
+        { year: 2026, month: 1, label: 'Jan', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 2, label: 'Feb', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 3, label: 'Mar', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 4, label: 'Apr', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 5, label: 'May', revenueCents: 200_000, netCents: 150_000, jobCount: 1 },
+      ]);
+    });
+
+    it('spans February of the year before to January when January is asked for', async () => {
       clockAt('2027-03-10T09:00:00.000Z');
       t.jobs = [
         job('jul31', '2026-07-31', 9_900_000),
@@ -307,6 +354,12 @@ describe('GET /admin/finance/overview', () => {
       const { series } = await overviewFor(2027, 1);
 
       expect(series).toEqual([
+        { year: 2026, month: 2, label: 'Feb', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 3, label: 'Mar', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 4, label: 'Apr', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 5, label: 'May', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 6, label: 'Jun', revenueCents: 0, netCents: 0, jobCount: 0 },
+        { year: 2026, month: 7, label: 'Jul', revenueCents: 9_900_000, netCents: 9_900_000, jobCount: 1 },
         { year: 2026, month: 8, label: 'Aug', revenueCents: 100_000, netCents: 100_000, jobCount: 1 },
         { year: 2026, month: 9, label: 'Sep', revenueCents: 0, netCents: 0, jobCount: 0 },
         { year: 2026, month: 10, label: 'Oct', revenueCents: 0, netCents: 0, jobCount: 0 },
@@ -328,10 +381,10 @@ describe('GET /admin/finance/overview', () => {
       const overview = await overviewFor(2026, 11);
 
       expect(overview.comparison.current).toEqual({ revenueCents: 7_000_000, netCents: 5_500_000, jobCount: 1 });
-      expect(overview.series[5]).toEqual({
+      expect(overview.series[11]).toEqual({
         year: 2026, month: 11, label: 'Nov', revenueCents: 10_000_000, netCents: 8_000_000, jobCount: 2,
       });
-      expect(overview.series[5]).toMatchObject({
+      expect(overview.series[11]).toMatchObject({
         revenueCents: overview.revenue.actual,
         netCents: overview.netProfit.actual,
         jobCount: overview.jobs.actual,
@@ -346,8 +399,8 @@ describe('GET /admin/finance/overview', () => {
       const res = await as('admin', 'GET', '/admin/finance/overview?year=2026&month=11');
 
       expect(res.statusCode).toBe(200);
-      expect(res.json().overview.series).toHaveLength(6);
-      expect(res.json().overview.series[5]).toMatchObject({ month: 11, revenueCents: 7_000_000, jobCount: 1 });
+      expect(res.json().overview.series).toHaveLength(12);
+      expect(res.json().overview.series[11]).toMatchObject({ month: 11, revenueCents: 7_000_000, jobCount: 1 });
     });
   });
 });

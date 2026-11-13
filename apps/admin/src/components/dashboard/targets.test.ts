@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Block } from './block-state';
 import {
-  maySetTargets,
+  nextMonthTargets,
   overviewTargets,
   parseTargetsForm,
   targetsFormFields,
@@ -52,38 +53,21 @@ describe('overviewTargets', () => {
   });
 });
 
-describe('maySetTargets', () => {
-  it('lets the owner, an admin and the financial manager set targets', () => {
-    expect(maySetTargets({ isOwner: true, role: 'ADMIN' })).toBe(true);
-    expect(maySetTargets({ isOwner: false, role: 'ADMIN' })).toBe(true);
-    expect(maySetTargets({ isOwner: false, role: 'FINANCIAL_MANAGER' })).toBe(true);
-  });
-
-  it('does not let a shareholder-role account or other staff set targets', () => {
-    expect(maySetTargets({ isOwner: false, role: 'SHAREHOLDER' })).toBe(false);
-    expect(maySetTargets({ isOwner: false, role: 'SUPPORT' })).toBe(false);
-    expect(maySetTargets({ role: 'SHAREHOLDER' })).toBe(false);
-  });
-});
-
+// The month does not come into it: a past month with no targets is prompted
+// for as the current one is, and a past month's targets can still be edited.
 describe('targetsView', () => {
-  it('prompts for targets in the current month when there are none and the viewer may set them', () => {
-    expect(targetsView({ values: null, isCurrentMonth: true, maySet: true })).toEqual({ kind: 'prompt' });
-    expect(targetsView({ values: targets(0, 0, 0), isCurrentMonth: true, maySet: true })).toEqual({ kind: 'prompt' });
-  });
-
-  it('is read-only for a past month with no targets, whoever is looking', () => {
-    expect(targetsView({ values: null, isCurrentMonth: false, maySet: true })).toEqual({ kind: 'read-only' });
-    expect(targetsView({ values: targets(0, 0, 0), isCurrentMonth: false, maySet: true })).toEqual({ kind: 'read-only' });
-    expect(targetsView({ values: null, isCurrentMonth: false, maySet: false })).toEqual({ kind: 'read-only' });
+  it('prompts for targets when there are none and the viewer may set them', () => {
+    expect(targetsView({ values: null, canSetTargets: true })).toEqual({ kind: 'prompt' });
+    expect(targetsView({ values: targets(0, 0, 0), canSetTargets: true })).toEqual({ kind: 'prompt' });
   });
 
   it('never prompts a viewer who may not set targets', () => {
-    expect(targetsView({ values: null, isCurrentMonth: true, maySet: false })).toEqual({ kind: 'read-only' });
+    expect(targetsView({ values: null, canSetTargets: false })).toEqual({ kind: 'read-only' });
+    expect(targetsView({ values: targets(0, 0, 0), canSetTargets: false })).toEqual({ kind: 'read-only' });
   });
 
   it('shows rings for the targets that are set, and marks the one that is not', () => {
-    expect(targetsView({ values: targets(40_000_000, 0, 12), isCurrentMonth: true, maySet: true })).toEqual({
+    expect(targetsView({ values: targets(40_000_000, 0, 12), canSetTargets: true })).toEqual({
       kind: 'rings',
       set: { revenue: true, netProfit: false, jobs: true },
       canEdit: true,
@@ -91,16 +75,76 @@ describe('targetsView', () => {
   });
 
   it('shows the rings without the edit link to a viewer who may not set targets', () => {
-    expect(targetsView({ values: targets(40_000_000, 12_000_000, 12), isCurrentMonth: true, maySet: false })).toEqual({
+    expect(targetsView({ values: targets(40_000_000, 12_000_000, 12), canSetTargets: false })).toEqual({
       kind: 'rings',
       set: { revenue: true, netProfit: true, jobs: true },
       canEdit: false,
     });
   });
+});
 
-  it('keeps the edit link on a past month that has targets', () => {
-    const view = targetsView({ values: targets(40_000_000, 0, 12), isCurrentMonth: false, maySet: true });
-    expect(view).toMatchObject({ kind: 'rings', canEdit: true });
+describe('nextMonthTargets', () => {
+  const NOVEMBER = { year: 2026, month: 11 };
+  const DECEMBER = { year: 2026, month: 12 };
+
+  const record = (year: number, month: number, revenueTargetCents: number, netProfitTargetCents: number, jobsTarget: number) => ({
+    year, month, revenueTargetCents, netProfitTargetCents, jobsTarget, notes: null,
+  });
+  type Saved = ReturnType<typeof record>[];
+  const loaded = (data: Saved): Block<Saved> => ({ status: 'loaded', data, refreshing: false });
+  const onCurrentMonth = { canSetTargets: true, isCurrentMonth: true, current: NOVEMBER };
+
+  it('offers the form for next month on the current month, to a viewer who may set targets', () => {
+    expect(nextMonthTargets({ ...onCurrentMonth, saved: loaded([]) })).toEqual({
+      kind: 'ready',
+      month: DECEMBER,
+      values: null,
+    });
+  });
+
+  it('is not offered on a past month', () => {
+    expect(nextMonthTargets({ ...onCurrentMonth, isCurrentMonth: false, saved: loaded([]) })).toEqual({ kind: 'hidden' });
+  });
+
+  it('is not offered to a viewer who may not set targets, whatever the month', () => {
+    expect(nextMonthTargets({ ...onCurrentMonth, canSetTargets: false, saved: loaded([]) })).toEqual({ kind: 'hidden' });
+    expect(
+      nextMonthTargets({ canSetTargets: false, isCurrentMonth: false, current: NOVEMBER, saved: loaded([]) }),
+    ).toEqual({ kind: 'hidden' });
+  });
+
+  it('opens with next month’s saved targets when they exist', () => {
+    const saved = loaded([record(2026, 11, 40_000_000, 12_000_000, 12), record(2026, 12, 45_000_000, 0, 14)]);
+    expect(nextMonthTargets({ ...onCurrentMonth, saved })).toEqual({
+      kind: 'ready',
+      month: DECEMBER,
+      values: targets(45_000_000, 0, 14),
+    });
+  });
+
+  it('opens empty when only other months have targets', () => {
+    const saved = loaded([record(2026, 11, 40_000_000, 12_000_000, 12), record(2025, 12, 30_000_000, 0, 9)]);
+    expect(nextMonthTargets({ ...onCurrentMonth, saved })).toMatchObject({ kind: 'ready', values: null });
+  });
+
+  it('takes January of the next year as the month after December', () => {
+    const saved = loaded([record(2027, 1, 50_000_000, 15_000_000, 16)]);
+    expect(nextMonthTargets({ ...onCurrentMonth, current: DECEMBER, saved })).toEqual({
+      kind: 'ready',
+      month: { year: 2027, month: 1 },
+      values: targets(50_000_000, 15_000_000, 16),
+    });
+  });
+
+  it('offers no form while the saved targets load, or after they could not be read', () => {
+    // A form opened blank here would save over figures that may exist.
+    expect(nextMonthTargets({ ...onCurrentMonth, saved: { status: 'loading' } })).toEqual({ kind: 'loading' });
+    expect(nextMonthTargets({ ...onCurrentMonth, saved: { status: 'failed', httpStatus: 500 } })).toEqual({ kind: 'failed' });
+  });
+
+  it('keeps offering the form while the saved targets are asked for again', () => {
+    const saved: Block<Saved> = { status: 'loaded', data: [record(2026, 12, 45_000_000, 0, 14)], refreshing: true };
+    expect(nextMonthTargets({ ...onCurrentMonth, saved })).toMatchObject({ kind: 'ready', values: targets(45_000_000, 0, 14) });
   });
 });
 

@@ -3,7 +3,7 @@
  * it can be tested without a DOM.
  */
 
-import { colourIndexOf } from '../ownership/split';
+import type { Block } from './block-state';
 
 /** The key the server files revenue under when a job has no service line or client segment. */
 export const UNKNOWN_KEY = '__unknown';
@@ -74,36 +74,45 @@ export function revenueSlices(items: RevenueItem[]): ChartSlice[] {
   }));
 }
 
-// ── Profit share ────────────────────────────────────────────────────────────
-
-type Allocation = { shareholder: { id: string; name: string }; periodShareCents: number };
-
-export type HolderSlice = { key: string; label: string; value: number; color: string };
-
 /**
- * One slice per holder, in table order. A holder's colour is the colour of
- * their place in the table, so it is the same here and on Ownership and does
- * not move when the shares change: the first five take a colour, the rest
- * share the neutral grey. The label is the name alone: the chart's legend
- * already gives each share.
+ * Whether anything was spent: a month with no expense in any category has no
+ * whole to take shares of, so its card says so and draws no chart.
  */
-export function holderSlices(allocations: Allocation[]): HolderSlice[] {
-  return allocations.map((a, position) => {
-    const colourIndex = colourIndexOf(position);
-    return {
-      key: a.shareholder.id,
-      label: a.shareholder.name,
-      value: Math.max(0, a.periodShareCents),
-      color: colourIndex === null ? 'var(--chart-other)' : `var(--chart-${colourIndex + 1})`,
-    };
-  });
+export function hasExpenses(byCategoryCents: Record<string, number>): boolean {
+  return Object.values(byCategoryCents).some((cents) => cents > 0);
 }
 
-/** A loss or a break-even month has no profit to share, whoever holds what. */
-export function profitShareView(overview: {
-  periodNetCents: number;
-  allocations: Allocation[];
-}): 'chart' | 'no-profit' | 'no-holders' {
-  if (overview.periodNetCents <= 0) return 'no-profit';
-  return overview.allocations.length === 0 ? 'no-holders' : 'chart';
+// ── The section's cards ─────────────────────────────────────────────────────
+
+/** One card of the breakdown section, and what it holds. */
+export type BreakdownCard =
+  | { card: 'service-line' | 'segment'; state: 'loading' | RevenueChartView }
+  /** Both revenue charts as one card: their one request failed, or neither list is classified. */
+  | { card: 'revenue'; state: 'failed' | 'nudge' }
+  | { card: 'expenses'; state: 'loading' | 'failed' | 'chart' };
+
+/**
+ * The section's cards, in order, from its two requests. Each request answers
+ * for its own cards only: expenses that fail to load leave the revenue charts
+ * drawn, and the other way round. The revenue request feeds two charts, so
+ * its failure is one card with one Retry. A failed request is never one of
+ * the "nothing recorded" states: those are for a month the server answered for.
+ */
+export function breakdownCards(
+  revenue: Block<{ byServiceLine: RevenueItem[]; bySegment: RevenueItem[] }>,
+  expenses: Block<unknown>,
+): BreakdownCard[] {
+  const expensesCard: BreakdownCard = {
+    card: 'expenses',
+    state: expenses.status === 'loading' ? 'loading' : expenses.status === 'failed' ? 'failed' : 'chart',
+  };
+
+  if (revenue.status === 'loading') {
+    return [{ card: 'service-line', state: 'loading' }, { card: 'segment', state: 'loading' }, expensesCard];
+  }
+  if (revenue.status === 'failed') return [{ card: 'revenue', state: 'failed' }, expensesCard];
+
+  const views = revenueViews(revenue.data);
+  if (views.combinedNudge) return [{ card: 'revenue', state: 'nudge' }, expensesCard];
+  return [{ card: 'service-line', state: views.serviceLine }, { card: 'segment', state: views.segment }, expensesCard];
 }

@@ -1,31 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, type Reducer } from 'react';
+
+import { blockReducer, initialBlockState, type BlockEvent, type BlockResult, type BlockState } from './block-state';
 
 /**
- * One block of the Dashboard and the request behind it. Each block loads,
- * fails and retries by itself, so one refused or slow request never blanks
- * the rest of the page.
- */
-export type Block<T> =
-  | { status: 'loading' }
-  | { status: 'loaded'; data: T }
-  /** Loaded, and `isEmpty` says there is nothing in it to show. */
-  | { status: 'empty'; data: T }
-  | { status: 'failed' };
-
-/**
- * Runs `load` when the block appears and again whenever `deps` change. Only
- * the latest request's answer is kept: an earlier month's figures arriving
- * late never replace the month on screen.
+ * Runs `load` when the block appears and again whenever `deps` change. A
+ * change of `deps` is a fresh load: the block goes back to loading and the
+ * earlier answer is dropped. `retry` asks the same question again, and a block
+ * that has already loaded keeps showing its data, marked `refreshing`, until
+ * the new answer arrives. The rules are `blockReducer`'s; this hook sends the
+ * request and numbers it, so only the latest request's answer is kept.
  */
 export function useBlock<T>(
   load: () => Promise<T>,
   deps: readonly unknown[],
   isEmpty?: (data: T) => boolean,
-): Block<T> & { retry: () => void } {
-  const [block, setBlock] = useState<Block<T>>({ status: 'loading' });
-  const [attempt, setAttempt] = useState(0);
+): BlockResult<T> {
+  const [state, dispatch] = useReducer<Reducer<BlockState<T>, BlockEvent<T>>>(blockReducer, initialBlockState<T>());
   const latest = useRef(0);
   // The newest `load` and `isEmpty`, without making every render a new request.
   const loadRef = useRef(load);
@@ -33,25 +25,20 @@ export function useBlock<T>(
   const isEmptyRef = useRef(isEmpty);
   isEmptyRef.current = isEmpty;
 
-  useEffect(() => {
+  const send = useCallback((type: 'load' | 'retry') => {
     const request = ++latest.current;
-    setBlock({ status: 'loading' });
+    dispatch({ type, request });
     loadRef.current().then(
-      (data) => {
-        if (request !== latest.current) return;
-        setBlock({ status: isEmptyRef.current?.(data) ? 'empty' : 'loaded', data });
-      },
-      () => {
-        if (request === latest.current) setBlock({ status: 'failed' });
-      },
+      (data) => dispatch({ type: 'answered', request, data, empty: isEmptyRef.current?.(data) ?? false }),
+      (error: unknown) => dispatch({ type: 'failed', request, error }),
     );
-    return () => {
-      // Leaving the page, or moving on to the next request: this answer is no longer wanted.
-      latest.current++;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, attempt]);
+  }, []);
 
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return { ...block, retry };
+  useEffect(() => {
+    send('load');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  const retry = useCallback(() => send('retry'), [send]);
+  return { ...state.block, retry };
 }
