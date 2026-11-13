@@ -211,6 +211,7 @@ export default function EquityPage() {
       />
       <EditDetails
         holder={detailsFor}
+        holders={holders.map((h) => h.shareholder)}
         onOpenChange={(open) => { if (!open) setDetailsFor(null); }}
         onSaved={reload}
       />

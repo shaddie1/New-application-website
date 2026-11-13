@@ -106,8 +106,11 @@ export function HoldersTable({
                           <span className="rounded-full border border-gold/70 px-2 py-0.5 text-xs text-charcoal-muted">Company</span>
                         )}
                       </div>
+                      {/* The linked account is labelled: bare, its name reads as a second name for the holder. */}
                       {(s.title || s.userName) && (
-                        <p className="mt-0.5 text-xs text-charcoal-muted">{[s.title, s.userName].filter(Boolean).join(' · ')}</p>
+                        <p className="mt-0.5 text-xs text-charcoal-muted">
+                          {[s.title, s.userName && `Sign-in: ${s.userName}`].filter(Boolean).join(' · ')}
+                        </p>
                       )}
                     </div>
                   </div>

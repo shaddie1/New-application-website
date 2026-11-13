@@ -9,6 +9,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { isBackOfficeAccount } from '../dashboard/access.js';
 import { isConfigured, presignUpload } from '../storage/r2.js';
 
 const CATEGORIES = [
@@ -132,18 +133,20 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
 };
 
 /**
- * Shareholders only: the owner, or a user actually linked to a cap-table entry.
- * A role alone never grants this — an admin who is not a shareholder is refused,
- * which is the whole point of the tab.
+ * Shareholders only: the owner, or a back-office account actually linked to a
+ * cap-table entry. A role alone never grants this — an admin who is not a
+ * shareholder is refused, which is the whole point of the tab. The link alone
+ * does not grant it either: removing a staff member resets the role to customer
+ * and leaves the link in place, and that account must not keep the documents.
  */
 async function requireShareholder(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const user = await prisma.user.findUnique({
     where: { id: req.auth.sub },
-    select: { isOwner: true, shareholder: { select: { id: true } } },
+    select: { role: true, isOwner: true, shareholder: { select: { id: true } } },
   });
   if (!user) return reply.code(401).send({ error: 'unauthorized' });
-  if (!user.isOwner && !user.shareholder) {
+  if (!user.isOwner && !(isBackOfficeAccount(user) && user.shareholder)) {
     return reply.code(403).send({ error: 'shareholder access required' });
   }
 }

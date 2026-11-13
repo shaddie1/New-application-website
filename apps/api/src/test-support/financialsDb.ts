@@ -1,10 +1,11 @@
 /**
- * Route-test support for Financials, project money and the finance overview:
- * an in-memory stand-in for the Prisma calls those routes make on users,
- * projects, jobs, costs, monthly targets, shareholders and declared payouts,
- * and one helper that signs a token and calls a route under /admin/financials
- * or /admin/finance. A test file mocks
- * '../db.js' with `db` and seeds the tables in `t`. Not built:
+ * Route-test support for Financials, project money, the finance overview and
+ * the Dashboard: an in-memory stand-in for the Prisma calls those routes make
+ * on users, projects, jobs, costs, monthly targets, shareholders, declared
+ * payouts, bookings and their crew, quote requests, marketing spend, assets,
+ * investments and the list of company documents, and one helper that signs a
+ * token and calls a route under /admin/financials or /admin/finance. A test
+ * file mocks '../db.js' with `db` and seeds the tables in `t`. Not built:
  * tsconfig.build.json excludes this folder.
  */
 import Fastify from 'fastify';
@@ -20,6 +21,14 @@ export const t = {
   monthlyTargets: [] as Row[],
   shareholders: [] as Row[],
   profitDistributions: [] as Row[],
+  bookings: [] as Row[],
+  /** One row for each crew member on a booking: `{ bookingId, userId, role }`. */
+  bookingCrew: [] as Row[],
+  quoteRequests: [] as Row[],
+  marketingSpends: [] as Row[],
+  assets: [] as Row[],
+  investments: [] as Row[],
+  companyDocuments: [] as Row[],
 };
 
 export function resetDb() {
@@ -30,6 +39,13 @@ export function resetDb() {
   t.monthlyTargets = [];
   t.shareholders = [];
   t.profitDistributions = [];
+  t.bookings = [];
+  t.bookingCrew = [];
+  t.quoteRequests = [];
+  t.marketingSpends = [];
+  t.assets = [];
+  t.investments = [];
+  t.companyDocuments = [];
   seq = 0;
 }
 
@@ -100,6 +116,33 @@ function withHolderAndCreator(payout: Row) {
     createdBy: creator ? { fullName: creator.fullName } : null,
   };
 }
+
+/** A row with whoever recorded it, as `include: { createdBy }` gives it. */
+function withCreator(row: Row) {
+  const creator = t.users.find((u) => u.id === row.createdById);
+  return { ...row, createdBy: creator ? { fullName: creator.fullName } : null };
+}
+
+/** A company document with whoever uploaded it, as `include: { uploadedBy }` gives it. */
+function withUploader(document: Row) {
+  const uploader = t.users.find((u) => u.id === document.uploadedById);
+  return { ...document, uploadedBy: uploader ? { fullName: uploader.fullName } : null };
+}
+
+/** An investment with whoever recorded it and the shareholder it came from, if any. */
+function withCreatorAndHolder(investment: Row) {
+  const holder = t.shareholders.find((s) => s.id === investment.shareholderId);
+  return { ...withCreator(investment), shareholder: holder ? { name: holder.name } : null };
+}
+
+/** A booking against `where`. `crew: { none: {} }`, the one crew filter the routes use, asks for a booking with no crew rows. */
+function bookingMatches(booking: Row, { crew, ...own }: Row = {}) {
+  if (!matches(booking, own)) return false;
+  return crew === undefined || !t.bookingCrew.some((c) => c.bookingId === booking.id);
+}
+
+/** The values a write sets: Prisma leaves a column alone when its value is `undefined`. */
+const given = (data: Row) => Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
 
 let seq = 0;
 
@@ -178,6 +221,37 @@ export const db = {
   monthlyTarget: {
     /** Looked up by its compound key, `{ year_month: { year, month } }`. */
     findUnique: vi.fn(async ({ where }: Where) => t.monthlyTargets.find((m) => matches(m, where.year_month)) ?? null),
+    findMany: vi.fn(async ({ orderBy }: Sorted = {}) => ordered(t.monthlyTargets, orderBy)),
+    /** Found by the same compound key; a new row gets the columns the database fills in. */
+    upsert: vi.fn(async ({ where, create, update }: Where & { create: Row; update: Row }) => {
+      const existing = t.monthlyTargets.find((m) => matches(m, where.year_month));
+      if (existing) return Object.assign(existing, given(update), { updatedAt: new Date() });
+      const target = { id: `mt${++seq}`, notes: null, createdAt: new Date(), updatedAt: new Date(), ...given(create) };
+      t.monthlyTargets.push(target);
+      return target;
+    }),
+  },
+  booking: {
+    count: vi.fn(async ({ where }: Partial<Where> = {}) => t.bookings.filter((b) => bookingMatches(b, where)).length),
+  },
+  quoteRequest: {
+    count: vi.fn(async ({ where }: Partial<Where> = {}) => t.quoteRequests.filter((q) => matches(q, where)).length),
+  },
+  marketingSpend: {
+    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
+      ordered(t.marketingSpends.filter((m) => matches(m, where)), orderBy).map(withCreator)),
+  },
+  asset: {
+    /** There is no maintenance table: every asset comes back with none. */
+    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
+      ordered(t.assets.filter((a) => matches(a, where)), orderBy).map((a) => ({ ...withCreator(a), maintenance: [] }))),
+  },
+  investment: {
+    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
+      ordered(t.investments.filter((i) => matches(i, where)), orderBy).map(withCreatorAndHolder)),
+  },
+  companyDocument: {
+    findMany: vi.fn(async ({ orderBy }: Sorted = {}) => ordered(t.companyDocuments, orderBy).map(withUploader)),
   },
   shareholder: {
     findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
@@ -227,11 +301,13 @@ export const db = {
 
 export async function as(userId: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) {
   const { signAccessToken } = await import('../auth/jwt.js');
-  const { financialsRoutes } = await import('../routes/financials.js');
-  const { financeRoutes } = await import('../routes/finance.js');
+  const { financialsRoutes, financialsDashboardRoutes } = await import('../routes/financials.js');
+  const { financeRoutes, financeDashboardRoutes } = await import('../routes/finance.js');
   const { token } = await signAccessToken(userId, t.users.find((u) => u.id === userId)!.role);
   const server = Fastify();
   await server.register(financialsRoutes, { prefix: '/admin/financials' });
+  await server.register(financialsDashboardRoutes, { prefix: '/admin/financials' });
   await server.register(financeRoutes, { prefix: '/admin/finance' });
+  await server.register(financeDashboardRoutes, { prefix: '/admin/finance' });
   return server.inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });
 }

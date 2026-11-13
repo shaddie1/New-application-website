@@ -32,6 +32,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { attachDashboardActor, requireSection, requireTargetSetter } from '../dashboard/guards.js';
 import {
   comparisonWindow,
   monthDays,
@@ -302,48 +303,6 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ ok: true });
   });
 
-  // ── Revenue breakdown ─────────────────────────────────────────────────────
-
-  app.get('/revenue-breakdown', async (req, reply) => {
-    const parsed = DateRangeSchema.safeParse(req.query);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
-
-    const jobs = await prisma.job.findMany({
-      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
-      select: {
-        incomeCents: true,
-        discountCents: true,
-        serviceLineCode: true,
-        region: true,
-        clientSegment: true,
-      },
-    });
-
-    const tally = (pick: (j: (typeof jobs)[number]) => string | null, unknownLabel: string) => {
-      const map = new Map<string, RevenueBreakdownItem>();
-      for (const job of jobs) {
-        const key = pick(job) ?? '__unknown';
-        const label = key === '__unknown' ? unknownLabel : humanise(key);
-        const entry = map.get(key) ?? { key, label, incomeCents: 0, jobCount: 0 };
-        entry.incomeCents += job.incomeCents - job.discountCents;
-        entry.jobCount += 1;
-        map.set(key, entry);
-      }
-      return [...map.values()].sort((a, b) => b.incomeCents - a.incomeCents);
-    };
-
-    const breakdown: RevenueBreakdown = {
-      byServiceLine: tally((j) => j.serviceLineCode, 'Unclassified'),
-      byRegion: tally((j) => j.region, 'Unspecified'),
-      bySegment: tally((j) => j.clientSegment, 'Unspecified'),
-      totalIncomeCents: jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0),
-      fromDate: parsed.data.from,
-      toDate: parsed.data.to,
-    };
-    return reply.send({ breakdown });
-  });
-
   // ── Reconciliation: what is missing a source document ─────────────────────
 
   app.get('/unreconciled', async (req, reply) => {
@@ -406,93 +365,6 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: 'unknown record kind' });
     }
     return reply.send({ ok: true });
-  });
-
-  // ── Targets & dashboard overview ──────────────────────────────────────────
-
-  app.get('/targets', async (_req, reply) => {
-    const rows = await prisma.monthlyTarget.findMany({ orderBy: [{ year: 'desc' }, { month: 'desc' }] });
-    return reply.send({ targets: rows.map(toTargetDto) });
-  });
-
-  app.put('/targets', async (req, reply) => {
-    const Schema = z.object({
-      year: z.number().int().min(2000).max(2100),
-      month: z.number().int().min(1).max(12),
-      revenueTargetCents: z.number().int().nonnegative(),
-      netProfitTargetCents: z.number().int().nonnegative(),
-      jobsTarget: z.number().int().nonnegative(),
-      notes: z.string().trim().max(500).optional(),
-    });
-    const parsed = Schema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-    const { year, month, ...rest } = parsed.data;
-    const row = await prisma.monthlyTarget.upsert({
-      where: { year_month: { year, month } },
-      create: { year, month, ...rest, createdById: req.auth!.sub },
-      update: rest,
-    });
-    return reply.send({ target: toTargetDto(row) });
-  });
-
-  /** Headline numbers for one month, each paired with its target. */
-  app.get('/overview', async (req, reply) => {
-    const Schema = z.object({
-      year: z.coerce.number().int().min(2000).max(2100),
-      month: z.coerce.number().int().min(1).max(12),
-    });
-    const parsed = Schema.safeParse(req.query);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const { year, month } = parsed.data;
-
-    // The headline is always the whole month: the last month of the series.
-    // The change figures compare the window's two ranges. Unless this month
-    // is still running those are two whole months, the last two of the
-    // series, so their totals are used again and not added up twice.
-    const window = comparisonWindow(year, month, nairobiToday());
-    const seriesMonths = monthsEndingAt(year, month, SERIES_MONTHS);
-    const wholeMonths = window.mode === 'full-month';
-
-    // Every query sits directly in this one Promise.all, so a query that
-    // fails is always caught here and answered as an error. A promise made
-    // on the side and then left unused would take the whole server down.
-    const [monthly, currentRange, previousRange, target] = await Promise.all([
-      Promise.all(seriesMonths.map((m) => monthTotals(m.year, m.month))),
-      wholeMonths ? null : rangeTotals(window.current),
-      wholeMonths ? null : rangeTotals(window.previous),
-      prisma.monthlyTarget.findUnique({ where: { year_month: { year, month } } }),
-    ]);
-    const current = monthly[monthly.length - 1]!;
-    const currentSide = currentRange ?? current;
-    const previousSide = previousRange ?? monthly[monthly.length - 2]!;
-
-    const progress = (actual: number, goal: number): TargetProgress => ({
-      actual,
-      target: goal,
-      percent: goal > 0 ? Math.round((actual / goal) * 100) : 0,
-    });
-
-    const overview: DashboardOverview = {
-      year,
-      month,
-      monthLabel: new Date(year, month - 1, 1).toLocaleDateString('en-KE', { month: 'long', year: 'numeric' }),
-      revenue: progress(current.incomeCents, target?.revenueTargetCents ?? 0),
-      netProfit: progress(current.netCents, target?.netProfitTargetCents ?? 0),
-      jobs: progress(current.jobCount, target?.jobsTarget ?? 0),
-      previousRevenueCents: previousSide.incomeCents,
-      previousNetCents: previousSide.netCents,
-      previousJobCount: previousSide.jobCount,
-      comparison: {
-        mode: window.mode,
-        cutoffDay: window.cutoffDay,
-        current: toComparisonFigures(currentSide),
-        previous: toComparisonFigures(previousSide),
-      },
-      series: seriesMonths.map((m, i) => ({ ...m, ...toComparisonFigures(monthly[i]!) })),
-      hasTargets: Boolean(target),
-    };
-    return reply.send({ overview });
   });
 
   // ── Profit distributions (cap-table holders and the owner only) ───────────
@@ -607,6 +479,148 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
   );
 };
 
+/**
+ * The finance figures the Dashboard draws: the revenue breakdown, the targets
+ * and the overview of a month with its series. They keep their addresses under
+ * the prefix financeRoutes has, and answer to the access list of the Dashboard
+ * in place of requireFinanceAccess. They sit in a plugin of their own because
+ * a plugin hook runs before a route hook: inside financeRoutes a route could
+ * be narrowed, never opened to an account that plugin refuses.
+ */
+export const financeDashboardRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
+  app.addHook('preHandler', attachDashboardActor);
+
+  // ── Revenue breakdown ─────────────────────────────────────────────────────
+
+  app.get('/revenue-breakdown', { preHandler: requireSection('breakdown') }, async (req, reply) => {
+    const parsed = DateRangeSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
+
+    const jobs = await prisma.job.findMany({
+      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+      select: {
+        incomeCents: true,
+        discountCents: true,
+        serviceLineCode: true,
+        region: true,
+        clientSegment: true,
+      },
+    });
+
+    const tally = (pick: (j: (typeof jobs)[number]) => string | null, unknownLabel: string) => {
+      const map = new Map<string, RevenueBreakdownItem>();
+      for (const job of jobs) {
+        const key = pick(job) ?? '__unknown';
+        const label = key === '__unknown' ? unknownLabel : humanise(key);
+        const entry = map.get(key) ?? { key, label, incomeCents: 0, jobCount: 0 };
+        entry.incomeCents += job.incomeCents - job.discountCents;
+        entry.jobCount += 1;
+        map.set(key, entry);
+      }
+      return [...map.values()].sort((a, b) => b.incomeCents - a.incomeCents);
+    };
+
+    const breakdown: RevenueBreakdown = {
+      byServiceLine: tally((j) => j.serviceLineCode, 'Unclassified'),
+      byRegion: tally((j) => j.region, 'Unspecified'),
+      bySegment: tally((j) => j.clientSegment, 'Unspecified'),
+      totalIncomeCents: jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0),
+      fromDate: parsed.data.from,
+      toDate: parsed.data.to,
+    };
+    return reply.send({ breakdown });
+  });
+
+  // ── Targets & dashboard overview ──────────────────────────────────────────
+
+  app.get('/targets', { preHandler: requireSection('month') }, async (_req, reply) => {
+    const rows = await prisma.monthlyTarget.findMany({ orderBy: [{ year: 'desc' }, { month: 'desc' }] });
+    return reply.send({ targets: rows.map(toTargetDto) });
+  });
+
+  app.put('/targets', { preHandler: requireTargetSetter }, async (req, reply) => {
+    const Schema = z.object({
+      year: z.number().int().min(2000).max(2100),
+      month: z.number().int().min(1).max(12),
+      revenueTargetCents: z.number().int().nonnegative(),
+      netProfitTargetCents: z.number().int().nonnegative(),
+      jobsTarget: z.number().int().nonnegative(),
+      notes: z.string().trim().max(500).optional(),
+    });
+    const parsed = Schema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const { year, month, ...rest } = parsed.data;
+    const row = await prisma.monthlyTarget.upsert({
+      where: { year_month: { year, month } },
+      create: { year, month, ...rest, createdById: req.auth!.sub },
+      update: rest,
+    });
+    return reply.send({ target: toTargetDto(row) });
+  });
+
+  /** Headline numbers for one month, each paired with its target. */
+  app.get('/overview', { preHandler: requireSection('month') }, async (req, reply) => {
+    const Schema = z.object({
+      year: z.coerce.number().int().min(2000).max(2100),
+      month: z.coerce.number().int().min(1).max(12),
+    });
+    const parsed = Schema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { year, month } = parsed.data;
+
+    // The headline is always the whole month: the last month of the series.
+    // The change figures compare the window's two ranges. Unless this month
+    // is still running those are two whole months, the last two of the
+    // series, so their totals are used again and not added up twice.
+    const window = comparisonWindow(year, month, nairobiToday());
+    const seriesMonths = monthsEndingAt(year, month, SERIES_MONTHS);
+    const wholeMonths = window.mode === 'full-month';
+
+    // Every query sits directly in this one Promise.all, so a query that
+    // fails is always caught here and answered as an error. A promise made
+    // on the side and then left unused would take the whole server down.
+    const [monthly, currentRange, previousRange, target] = await Promise.all([
+      Promise.all(seriesMonths.map((m) => monthTotals(m.year, m.month))),
+      wholeMonths ? null : rangeTotals(window.current),
+      wholeMonths ? null : rangeTotals(window.previous),
+      prisma.monthlyTarget.findUnique({ where: { year_month: { year, month } } }),
+    ]);
+    const current = monthly[monthly.length - 1]!;
+    const currentSide = currentRange ?? current;
+    const previousSide = previousRange ?? monthly[monthly.length - 2]!;
+
+    const progress = (actual: number, goal: number): TargetProgress => ({
+      actual,
+      target: goal,
+      percent: goal > 0 ? Math.round((actual / goal) * 100) : 0,
+    });
+
+    const overview: DashboardOverview = {
+      year,
+      month,
+      monthLabel: new Date(year, month - 1, 1).toLocaleDateString('en-KE', { month: 'long', year: 'numeric' }),
+      revenue: progress(current.incomeCents, target?.revenueTargetCents ?? 0),
+      netProfit: progress(current.netCents, target?.netProfitTargetCents ?? 0),
+      jobs: progress(current.jobCount, target?.jobsTarget ?? 0),
+      previousRevenueCents: previousSide.incomeCents,
+      previousNetCents: previousSide.netCents,
+      previousJobCount: previousSide.jobCount,
+      comparison: {
+        mode: window.mode,
+        cutoffDay: window.cutoffDay,
+        current: toComparisonFigures(currentSide),
+        previous: toComparisonFigures(previousSide),
+      },
+      series: seriesMonths.map((m, i) => ({ ...m, ...toComparisonFigures(monthly[i]!) })),
+      hasTargets: Boolean(target),
+    };
+    return reply.send({ overview });
+  });
+};
+
 // ── Access control ──────────────────────────────────────────────────────────
 
 /** Finance data: the owner, admins, the financial manager, and shareholders. */
@@ -682,7 +696,7 @@ function monthTotals(year: number, month: number) {
 }
 
 /** How many months an overview's series covers, the requested month included. */
-const SERIES_MONTHS = 6;
+const SERIES_MONTHS = 12;
 
 /** Income, net and job count over a range of calendar days. */
 async function rangeTotals(range: DayRange) {

@@ -21,11 +21,13 @@ import type {
   EquityOverview,
   EquityHistory,
   EquityHistoryMonth,
+  OwnershipSummary,
   UnsortedJobDto,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { attachDashboardActor, requireSection } from '../dashboard/guards.js';
 import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
 import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
 import { suggester } from '../projectMoney/suggest.js';
@@ -126,50 +128,6 @@ const STAKES_CHANGED = 'The stakes changed since you opened this form. Reload an
 export const financialsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', requireOwner);
-
-  // ── Summary ────────────────────────────────────────────────────────────────
-
-  app.get('/summary', async (req, reply) => {
-    const parsed = DateRangeSchema.safeParse(req.query);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
-
-    const [jobs, expenses] = await Promise.all([
-      prisma.job.findMany({
-        where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
-        select: { incomeCents: true, discountCents: true },
-      }),
-      prisma.expense.findMany({
-        where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
-        select: { category: true, amountCents: true },
-      }),
-    ]);
-
-    const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-
-    const catTotal = (cat: ExpenseCategory): number =>
-      expenses.filter((e) => e.category === cat).reduce((acc, e) => acc + e.amountCents, 0);
-    const expensesByCategoryCents: Record<ExpenseCategory, number> = {
-      MATERIALS: catTotal('MATERIALS'),
-      TRANSPORT: catTotal('TRANSPORT'),
-      EMPLOYEE_PAY: catTotal('EMPLOYEE_PAY'),
-      LUNCH: catTotal('LUNCH'),
-      MISCELLANEOUS: catTotal('MISCELLANEOUS'),
-    };
-
-    const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
-
-    const summary: FinancialSummary = {
-      incomeCents,
-      expensesByCategoryCents,
-      totalExpensesCents,
-      netCents: incomeCents - totalExpensesCents,
-      fromDate: parsed.data.from,
-      toDate: parsed.data.to,
-    };
-    return reply.send({ summary });
-  });
 
   // ── Monthly trends ─────────────────────────────────────────────────────────
 
@@ -637,6 +595,109 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const history: EquityHistory = { months };
     return reply.send({ history });
+  });
+};
+
+/**
+ * The Financials figures the Dashboard draws. The summary keeps its address
+ * under the prefix financialsRoutes has, the ownership summary is new, and
+ * both answer to the access list of the Dashboard in place of requireOwner. They sit in a plugin of their own because
+ * a plugin hook runs before a route hook: inside financialsRoutes a route
+ * could never be opened to anyone but the owner.
+ */
+export const financialsDashboardRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
+  app.addHook('preHandler', attachDashboardActor);
+
+  // ── Summary ────────────────────────────────────────────────────────────────
+
+  app.get('/summary', { preHandler: requireSection('breakdown') }, async (req, reply) => {
+    const parsed = DateRangeSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
+
+    const [jobs, expenses] = await Promise.all([
+      prisma.job.findMany({
+        where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+        select: { incomeCents: true, discountCents: true },
+      }),
+      prisma.expense.findMany({
+        where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
+        select: { category: true, amountCents: true },
+      }),
+    ]);
+
+    const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
+
+    const catTotal = (cat: ExpenseCategory): number =>
+      expenses.filter((e) => e.category === cat).reduce((acc, e) => acc + e.amountCents, 0);
+    const expensesByCategoryCents: Record<ExpenseCategory, number> = {
+      MATERIALS: catTotal('MATERIALS'),
+      TRANSPORT: catTotal('TRANSPORT'),
+      EMPLOYEE_PAY: catTotal('EMPLOYEE_PAY'),
+      LUNCH: catTotal('LUNCH'),
+      MISCELLANEOUS: catTotal('MISCELLANEOUS'),
+    };
+
+    const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+
+    const summary: FinancialSummary = {
+      incomeCents,
+      expensesByCategoryCents,
+      totalExpensesCents,
+      netCents: incomeCents - totalExpensesCents,
+      fromDate: parsed.data.from,
+      toDate: parsed.data.to,
+    };
+    return reply.send({ summary });
+  });
+
+  // ── Ownership summary ──────────────────────────────────────────────────────
+  // What an account that holds shares sees on the Dashboard: the split the
+  // equity overview gives for the same month, without the income, expenses,
+  // job counts, notes and account links the overview carries. It takes a month
+  // and not a date range, so it cannot be asked for one day's profit.
+
+  app.get('/ownership-summary', { preHandler: requireSection('ownership') }, async (req, reply) => {
+    const MonthSchema = z.object({
+      year: z.coerce.number().int().min(2000).max(2100),
+      month: z.coerce.number().int().min(1).max(12),
+    });
+    const parsed = MonthSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { year, month } = parsed.data;
+
+    // The first and last day of the month: the range Ownership asks the equity overview for.
+    const { from, to } = monthDays(year, month);
+    const [shareholders, figures, allTime] = await Promise.all([
+      listShareholders(),
+      periodFigures(from, to),
+      allTimeTotals(),
+    ]);
+
+    const period = allocate(figures.netCents, shareholders);
+    const lifetime = allocate(allTime.totalNetCents, shareholders);
+
+    // Each field is named, so a field added to a holder's details later is not sent here by default.
+    const summary: OwnershipSummary = {
+      year,
+      month,
+      holders: shareholders.map((s, i) => ({
+        id: s.id,
+        name: s.name,
+        kind: s.kind,
+        basisPoints: s.basisPoints,
+        periodShareCents: period.shares[i]!,
+        allTimeShareCents: lifetime.shares[i]!,
+      })),
+      totalBasisPoints: shareholders.reduce((acc, s) => acc + s.basisPoints, 0),
+      unallocatedPeriodCents: period.unallocatedCents,
+      unallocatedAllTimeCents: lifetime.unallocatedCents,
+      periodNetCents: figures.netCents,
+      allTimeNetCents: allTime.totalNetCents,
+    };
+    return reply.send({ summary });
   });
 };
 

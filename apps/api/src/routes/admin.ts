@@ -29,6 +29,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { devToolsEnabled } from '../auth/otp.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
 import { STAFF_ROLES } from '../auth/staff.js';
+import { attachDashboardActor, requireSection } from '../dashboard/guards.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
 import { canViewEstimate, loadActor } from '../quotes/access.js';
 import { adminQuoteInclude, toAdminQuoteDto } from '../quotes/dto.js';
@@ -71,19 +72,33 @@ const UpdateStaffSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(200),
 }) satisfies z.ZodType<UpdateStaffInput>;
 
+/**
+ * How far back "unpaid bookings past their date" looks. Staff cannot cancel an
+ * unpaid booking or mark it paid, so a count with no limit would only grow.
+ */
+const UNPAID_PAST_DATE_DAYS = 30;
+
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', requireAdminRole);
 
-  // Dashboard counts.
-  app.get('/stats', async (_req, reply) => {
-    const [pendingPayment, confirmed, inProgress, pendingQuotes] = await Promise.all([
+  // Dashboard counts, for the accounts that see "Needs attention".
+  app.get('/stats', { preHandler: [attachDashboardActor, requireSection('attention')] }, async (_req, reply) => {
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - UNPAID_PAST_DATE_DAYS * 24 * 60 * 60 * 1000);
+    const [pendingPayment, confirmed, inProgress, pendingQuotes, unassignedBookings, unpaidPastDate] = await Promise.all([
       prisma.booking.count({ where: { status: BookingStatus.PENDING_PAYMENT } }),
       prisma.booking.count({ where: { status: BookingStatus.CONFIRMED } }),
       prisma.booking.count({ where: { status: { in: [BookingStatus.EN_ROUTE, BookingStatus.IN_PROGRESS] } } }),
       prisma.quoteRequest.count({ where: { status: QuoteStatus.PENDING } }),
+      prisma.booking.count({ where: { status: BookingStatus.CONFIRMED, crew: { none: {} } } }),
+      prisma.booking.count({
+        where: { status: BookingStatus.PENDING_PAYMENT, scheduledAt: { gte: windowStart, lte: now } },
+      }),
     ]);
-    const stats: AdminStats = { pendingPayment, confirmed, inProgress, pendingQuotes };
+    const stats: AdminStats = {
+      pendingPayment, confirmed, inProgress, pendingQuotes, unassignedBookings, unpaidPastDate,
+    };
     return reply.send({ stats });
   });
 
