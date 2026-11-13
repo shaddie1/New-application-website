@@ -47,11 +47,12 @@ export default function BookingsPage() {
     <div>
       <h1 className="font-serif text-3xl">Bookings</h1>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div role="group" aria-label="Filter by status" className="mt-4 flex flex-wrap gap-2">
         {BOOKING_STATUS_FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setStatus(f.value)}
+            aria-pressed={status === f.value}
             className={`rounded-full px-3 py-1.5 text-sm border ${status === f.value ? 'bg-surface-dark text-text-on-dark border-surface-dark' : 'bg-surface text-text-muted border-border'}`}
           >
             {f.label}

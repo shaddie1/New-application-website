@@ -29,7 +29,14 @@ export function StatusStrip({ stats }: { stats: AdminStats }) {
         <Link
           key={counter.key}
           href={counter.href}
-          className={cn('min-w-0 border-line px-4 py-4 transition-colors hover:bg-mist sm:px-5', DIVIDERS[i])}
+          // The card clips what leaves it, and the focus ring of app/globals.css
+          // sits outside its link, so here the ring is drawn just inside the
+          // cell. It is rounded as the card is, which keeps it whole in the
+          // card's corners. `!` is what lets the offset win over that rule.
+          className={cn(
+            'min-w-0 border-line px-4 py-4 transition-colors hover:bg-mist focus-visible:rounded-xl focus-visible:!outline-offset-[-2px] sm:px-5',
+            DIVIDERS[i],
+          )}
         >
           {/* A little tighter on a phone, so "Awaiting payment" fits half the screen whole. */}
           <span className="block text-[11px] uppercase tracking-wider text-charcoal-muted sm:text-xs sm:tracking-widest">

@@ -105,33 +105,36 @@ function MonthBody({
 
   if (block.status === 'loading') {
     return (
-      <div aria-busy="true">
-        <span className="sr-only">Loading the figures and targets for {label}</span>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {['Revenue', 'Net profit', 'Jobs completed', 'Margin'].map((tile) => (
-            // The tile's two shapes: figure left and sparkline right on a
-            // phone, one column from 640px (see `StatTile`). The bars add up
-            // to the height of a loaded tile, so the row below keeps its place.
-            <Card
-              key={tile}
-              accent="month"
-              className="grid min-w-0 grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-center gap-x-3 p-4 sm:block sm:p-5"
-            >
-              <div className="min-w-0">
-                <p className={cardTitle}>{tile}</p>
-                <Skeleton className="mt-2 h-7 w-28 sm:mt-3 sm:h-8 sm:w-32" />
-                <Skeleton className="mt-2.5 h-5 w-24 rounded-full sm:mt-3" />
-                <Skeleton className="mt-2 h-4 w-32 sm:hidden" />
-              </div>
-              <Skeleton className="h-10 w-full sm:mt-5 sm:h-14" />
-              <Skeleton className="mt-3.5 hidden h-3.5 w-36 sm:block" />
-            </Card>
-          ))}
+      <>
+        {/* Said from outside the busy part: a screen reader may hold back what is inside it. */}
+        <span role="status" className="sr-only">Loading the figures and targets for {label}</span>
+        <div aria-busy="true">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {['Revenue', 'Net profit', 'Jobs completed', 'Margin'].map((tile) => (
+              // The tile's two shapes: figure left and sparkline right on a
+              // phone, one column from 640px (see `StatTile`). The bars add up
+              // to the height of a loaded tile, so the row below keeps its place.
+              <Card
+                key={tile}
+                accent="month"
+                className="grid min-w-0 grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-center gap-x-3 p-4 sm:block sm:p-5"
+              >
+                <div className="min-w-0">
+                  <p className={cardTitle}>{tile}</p>
+                  <Skeleton className="mt-2 h-7 w-28 sm:mt-3 sm:h-8 sm:w-32" />
+                  <Skeleton className="mt-2.5 h-5 w-24 rounded-full sm:mt-3" />
+                  <Skeleton className="mt-2 h-4 w-32 sm:hidden" />
+                </div>
+                <Skeleton className="h-10 w-full sm:mt-5 sm:h-14" />
+                <Skeleton className="mt-3.5 hidden h-3.5 w-36 sm:block" />
+              </Card>
+            ))}
+          </div>
+          <Card accent="month" className="mt-4 px-5 py-4">
+            <Skeleton className="h-5 w-48" />
+          </Card>
         </div>
-        <Card accent="month" className="mt-4 px-5 py-4">
-          <Skeleton className="h-5 w-48" />
-        </Card>
-      </div>
+      </>
     );
   }
 
@@ -316,8 +319,8 @@ function MonthBody({
       {canSetTargets && (
         <TargetsForm open={formOpen} onOpenChange={setFormOpen} month={month} values={targets} onSaved={block.retry} />
       )}
-      {/* Next month's form opens with what is saved for next month, so a save
-          edits those figures and never replaces ones it has not shown. */}
+      {/* Next month's form opens with the figures saved for next month as of
+          when the page loaded. */}
       {next.kind === 'ready' && (
         <TargetsForm
           open={nextFormOpen}
@@ -346,17 +349,19 @@ function NextMonthAction({
   if (next.kind === 'hidden') return null;
   if (next.kind === 'loading') {
     return (
-      <span aria-busy="true">
-        <span className="sr-only">Loading next month’s targets</span>
-        <Skeleton className="h-5 w-44" />
-      </span>
+      <>
+        <span aria-busy="true">
+          <Skeleton className="h-5 w-44" />
+        </span>
+        <span role="status" className="sr-only">Loading next month’s targets</span>
+      </>
     );
   }
   if (next.kind === 'failed') {
     return (
       <span role="alert" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-charcoal-muted">
         Could not load next month’s targets.
-        <Button variant="outline" size="sm" onClick={onRetry}>
+        <Button variant="outline" size="sm" onClick={onRetry} aria-label="Retry loading next month’s targets">
           <RotateCw aria-hidden="true" />
           Retry
         </Button>

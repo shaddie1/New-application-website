@@ -75,14 +75,17 @@ export function OwnershipSummarySection({
       )}
 
       {summary.status === 'loading' && (
-        <Card accent="ownership" className="p-5 sm:p-6" aria-busy="true">
-          <span className="sr-only">Loading the ownership summary for {label}</span>
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="mt-5 h-11 w-full rounded-lg" />
-          <Skeleton className="mt-6 h-4 w-2/3" />
-          <Skeleton className="mt-4 h-4 w-1/2" />
-          <Skeleton className="mt-4 h-4 w-3/5" />
-        </Card>
+        <>
+          {/* Said from outside the busy card: a screen reader may hold back what is inside it. */}
+          <span role="status" className="sr-only">Loading the ownership summary for {label}</span>
+          <Card accent="ownership" className="p-5 sm:p-6" aria-busy="true">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="mt-5 h-11 w-full rounded-lg" />
+            <Skeleton className="mt-6 h-4 w-2/3" />
+            <Skeleton className="mt-4 h-4 w-1/2" />
+            <Skeleton className="mt-4 h-4 w-3/5" />
+          </Card>
+        </>
       )}
 
       {(summary.status === 'loaded' || summary.status === 'empty') && (

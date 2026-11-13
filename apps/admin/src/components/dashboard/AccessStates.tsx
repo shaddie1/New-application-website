@@ -19,19 +19,22 @@ import { BlockFailed, Skeleton } from './BlockState';
  */
 export function AccessLoading() {
   return (
-    <div aria-busy="true">
-      <span className="sr-only">Loading your Dashboard</span>
-      <div className="mb-4 flex items-center gap-3">
-        <Skeleton className="size-9 rounded-lg" />
-        <Skeleton className="h-6 w-48" />
+    <>
+      {/* Said from outside the busy part: a screen reader may hold back what is inside it. */}
+      <span role="status" className="sr-only">Loading your Dashboard</span>
+      <div aria-busy="true">
+        <div className="mb-4 flex items-center gap-3">
+          <Skeleton className="size-9 rounded-lg" />
+          <Skeleton className="h-6 w-48" />
+        </div>
+        <Card className="p-5 sm:p-6">
+          <Skeleton className="h-5 w-56 max-w-full" />
+          <Skeleton className="mt-5 h-4 w-full" />
+          <Skeleton className="mt-3 h-4 w-4/5" />
+          <Skeleton className="mt-3 h-4 w-3/5" />
+        </Card>
       </div>
-      <Card className="p-5 sm:p-6">
-        <Skeleton className="h-5 w-56 max-w-full" />
-        <Skeleton className="mt-5 h-4 w-full" />
-        <Skeleton className="mt-3 h-4 w-4/5" />
-        <Skeleton className="mt-3 h-4 w-3/5" />
-      </Card>
-    </div>
+    </>
   );
 }
 

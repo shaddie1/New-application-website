@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../lib/api';
 import { Button } from '../ui/button';
@@ -53,10 +53,21 @@ export function TargetsForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // A save the form refuses puts focus in the first field that is wrong. It
+  // waits for the errors to be drawn, so the field is announced with its reason.
+  const refused = useRef(false);
+  useEffect(() => {
+    if (!refused.current) return;
+    refused.current = false;
+    const first = FIELDS.find((field) => errors[field.name]);
+    if (first) document.getElementById(`${id}-${first.name}`)?.focus();
+  }, [errors, id]);
+
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     const parsed = parseTargetsForm(fields);
     if (!parsed.ok) {
+      refused.current = true;
       setErrors(parsed.errors);
       return;
     }

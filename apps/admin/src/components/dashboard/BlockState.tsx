@@ -33,7 +33,8 @@ export function BlockFailed({ what, onRetry, className }: { what: string; onRetr
         <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
         <span className="min-w-0">Could not load {what}.</span>
       </span>
-      <Button variant="outline" size="sm" onClick={onRetry}>
+      {/* Its name says what it retries, so one Retry can be told from the next in a list of buttons. */}
+      <Button variant="outline" size="sm" onClick={onRetry} aria-label={`Retry loading ${what}`}>
         <RotateCw aria-hidden="true" />
         Retry
       </Button>

@@ -258,9 +258,12 @@ function useTrendFragment(
       // Focus follows, so the next Tab starts from the trend and a screen
       // reader says where the page has gone. The heading takes focus from
       // here only, as a dialog's title does: -1 keeps it out of the Tab
-      // order, and it is not a control, so it shows no focus ring.
+      // order, and it is not a control, so it shows no focus ring. Someone
+      // who has already put focus in a control keeps it there: the page
+      // scrolls, and they are not pulled away from where they are.
       const heading = document.getElementById('trend-heading');
-      if (heading) {
+      const focused = document.activeElement;
+      if (heading && (focused === null || focused === document.body)) {
         heading.tabIndex = -1;
         heading.classList.add('outline-none');
         heading.focus({ preventScroll: true });

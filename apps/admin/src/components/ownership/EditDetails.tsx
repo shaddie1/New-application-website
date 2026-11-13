@@ -161,7 +161,9 @@ function DetailsForm({
             <div id={`${id}-link-state`} role="alert" className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-danger">
               <span>Could not load the sign-ins.</span>
               {/* Not a submit button: this sits inside the form. */}
-              <Button type="button" variant="outline" size="sm" onClick={staffBlock.retry}>Retry</Button>
+              <Button type="button" variant="outline" size="sm" onClick={staffBlock.retry} aria-label="Retry loading the sign-ins">
+                Retry
+              </Button>
             </div>
           )}
         </div>

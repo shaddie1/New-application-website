@@ -72,15 +72,18 @@ function AttentionBody({ stats }: { stats: BlockResult<AdminStats> }) {
   // nothing under the section moves when the counts land.
   if (stats.status === 'loading') {
     return (
-      <Card
-        accent="attention"
-        className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-4"
-        aria-busy="true"
-      >
-        <span className="sr-only">Loading what needs attention</span>
-        <Skeleton className="h-5 w-52" />
-        <Skeleton className="h-5 w-40" />
-      </Card>
+      <>
+        {/* Said from outside the busy card: a screen reader may hold back what is inside it. */}
+        <span role="status" className="sr-only">Loading what needs attention</span>
+        <Card
+          accent="attention"
+          className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-4"
+          aria-busy="true"
+        >
+          <Skeleton className="h-5 w-52" />
+          <Skeleton className="h-5 w-40" />
+        </Card>
+      </>
     );
   }
 

@@ -79,8 +79,9 @@ function ChartLoading({ title, className, chartClassName }: { title: string; cla
           <Skeleton className="h-4 w-4/5" />
           <Skeleton className="h-4 w-3/5" />
         </div>
-        <span className="sr-only">Loading</span>
       </div>
+      {/* Said from outside the busy part, and by the card's own name: "Loading revenue by service line". */}
+      <span role="status" className="sr-only">Loading {title.charAt(0).toLowerCase() + title.slice(1)}</span>
     </ChartCard>
   );
 }

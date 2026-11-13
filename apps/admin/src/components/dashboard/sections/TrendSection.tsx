@@ -50,13 +50,16 @@ export function TrendSection({
       )}
 
       {view.kind === 'loading' && (
-        <Card accent="trend" className="p-5" aria-busy="true">
-          <span className="sr-only">Loading the monthly trend to {monthLabel(month)}</span>
-          <Skeleton className="h-5 w-56" />
-          {/* About the height of the plot at each width, so the sections below keep their place. */}
-          <Skeleton className="mt-4 h-36 w-full rounded-lg sm:h-64" />
-          <Skeleton className="mt-4 h-4 w-40" />
-        </Card>
+        <>
+          {/* Said from outside the busy card: a screen reader may hold back what is inside it. */}
+          <span role="status" className="sr-only">Loading the monthly trend to {monthLabel(month)}</span>
+          <Card accent="trend" className="p-5" aria-busy="true">
+            <Skeleton className="h-5 w-56" />
+            {/* About the height of the plot at each width, so the sections below keep their place. */}
+            <Skeleton className="mt-4 h-36 w-full rounded-lg sm:h-64" />
+            <Skeleton className="mt-4 h-4 w-40" />
+          </Card>
+        </>
       )}
 
       {view.kind === 'chart' && <TrendChart data={view.points} accent="trend" />}

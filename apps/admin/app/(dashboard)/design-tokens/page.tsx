@@ -61,12 +61,12 @@ export default function DesignTokensPage() {
     setValues(read);
   }, []);
 
-  if (session === undefined) return <div className="text-text-muted">Loading…</div>;
+  if (session === undefined) return <div role="status" className="text-text-muted">Loading…</div>;
   if (!session) return null;
   if (!session.user.isOwner) {
     return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Owner access required.</div>;
   }
-  if (values === null) return <div className="text-text-muted">Loading…</div>;
+  if (values === null) return <div role="status" className="text-text-muted">Loading…</div>;
 
   const pairGroups = [...new Set(CONTRAST_PAIRS.map((pair) => pair.group))];
 
@@ -162,12 +162,12 @@ export default function DesignTokensPage() {
             <table className="mt-3 w-full text-left text-sm">
               <thead className="text-charcoal-muted">
                 <tr>
-                  <th className="py-1 pr-4 font-medium">Sample</th>
-                  <th className="py-1 pr-4 font-medium">Colour</th>
-                  <th className="py-1 pr-4 font-medium">On</th>
-                  <th className="figure py-1 pr-4 text-right font-medium">Ratio</th>
-                  <th className="figure py-1 pr-4 text-right font-medium">Needs</th>
-                  <th className="py-1 font-medium">Result</th>
+                  <th scope="col" className="py-1 pr-4 font-medium">Sample</th>
+                  <th scope="col" className="py-1 pr-4 font-medium">Colour</th>
+                  <th scope="col" className="py-1 pr-4 font-medium">On</th>
+                  <th scope="col" className="figure py-1 pr-4 text-right font-medium">Ratio</th>
+                  <th scope="col" className="figure py-1 pr-4 text-right font-medium">Needs</th>
+                  <th scope="col" className="py-1 font-medium">Result</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line/70">
@@ -180,6 +180,7 @@ export default function DesignTokensPage() {
                       <td className="py-2 pr-4">
                         {fore && back && (
                           <span
+                            aria-hidden="true"
                             className="inline-block rounded px-3 py-1 font-medium"
                             style={{ color: paint(fore), backgroundColor: paint(back), outline: '1px solid var(--chart-grid)' }}
                           >

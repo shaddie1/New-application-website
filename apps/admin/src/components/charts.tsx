@@ -164,7 +164,9 @@ export function StatTile({
  * the deep shade of the same colour as its text. With
  * no earlier figure there is nothing to give, so the pill says so instead of
  * leaving a bare label. The arrow is decoration; "Up" and "Down" are there for
- * screen readers.
+ * screen readers, each with a space after it so it is read as a word of its
+ * own ("Up 6%"). The space is a no-break one: a plain space at the end of the
+ * hidden word is one a browser may drop.
  */
 function ChangeChip({ change, unit }: { change: number | null | undefined; unit: ChangeUnit }) {
   const tone = changeTone(change);
@@ -184,7 +186,7 @@ function ChangeChip({ change, unit }: { change: number | null | undefined; unit:
   return (
     <span className={pill}>
       <Arrow className="size-3.5" aria-hidden="true" />
-      <span className="sr-only">{up ? 'Up' : 'Down'}</span>
+      <span className="sr-only">{up ? 'Up' : 'Down'}&nbsp;</span>
       <ChangeSize size={Math.abs(change as number)} unit={unit} />
     </span>
   );
@@ -224,7 +226,8 @@ const SPARK_COLOR = ACCENT.edge;
  * line stops before it and starts again after it. The dotted zero line, with
  * a "0" at its left end, is there only when a month is below zero. Draws
  * nothing when fewer than two months have a figure. Each month answers a hover
- * with its own figure.
+ * with its own figure, and the text alternative gives every month's figure in
+ * order, so nothing is left to the hover alone.
  */
 export function Sparkline({
   label,
@@ -247,7 +250,6 @@ export function Sparkline({
 
   const { points, runs, zeroY } = layout;
   const { width, height } = SPARK_GEOMETRY;
-  const first = points[0]!;
   const last = points[points.length - 1]!;
   const path = (pts: typeof points) => pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const dotAt = (p: { x: number; y: number }) => `M ${p.x} ${p.y} h 0.01`;
@@ -256,6 +258,14 @@ export function Sparkline({
   // The axis under the plot names the first and last month of the stretch, figure or not.
   const firstMonth = months[0]!;
   const lastMonth = months[months.length - 1]!;
+  // Every month in order, as one sentence: "KSh 54,000 in Mar, no revenue in Apr, KSh 61,000 in May so far".
+  const figures = months
+    .map((m, i) =>
+      m.value === null
+        ? `${gapLabel} in ${m.label}`
+        : `${format(m.value)} in ${m.label}${partMonthLast && i === months.length - 1 ? ' so far' : ''}`,
+    )
+    .join(', ');
 
   return (
     // The zero line is named, so it is not taken for a target. Its "0" stands
@@ -277,7 +287,7 @@ export function Sparkline({
         preserveAspectRatio="none"
         className="block h-10 w-full"
         role="img"
-        aria-label={`${label} over ${months.length} months: ${format(first.value)} in ${first.label}, ${format(last.value)} in ${last.label}${last.partMonth ? ' so far' : ''}`}
+        aria-label={`${label} over ${months.length} months: ${figures}`}
       >
         {zeroY !== null && (
           <line
@@ -455,6 +465,11 @@ const TREND_PLOTS = {
  * the Dashboard section it sits in. The plot is drawn at two sizes and the
  * card's own width, not the screen's, picks the one that shows, so the chart
  * also holds beside a side menu.
+ *
+ * A plot gives a month's figures only under the pointer, so both plots are
+ * hidden from screen readers and the months are given once more as a table
+ * that only they read: the same labels and amounts the pointer shows. With no
+ * figures to chart there is no table; the line beside the title says so.
  */
 export function TrendChart({ data, accent }: { data: TrendPoint[]; accent?: CardAccent }) {
   const hasData = hasFigures(data);
@@ -478,6 +493,31 @@ export function TrendChart({ data, accent }: { data: TrendPoint[]; accent?: Card
           <TrendPlot data={data} hasData={hasData} size="wide" />
         </div>
       </div>
+
+      {hasData && (
+        // The wrapper is what is hidden: a table does not keep to a size of its own.
+        <div className="sr-only">
+          <table>
+            <caption>Income and net profit by month</caption>
+            <thead>
+              <tr>
+                <th scope="col">Month</th>
+                <th scope="col">Income</th>
+                <th scope="col">Net profit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((d, i) => (
+                <tr key={`${d.label}-${i}`}>
+                  <th scope="row">{d.label}</th>
+                  <td>{money(d.incomeCents)}</td>
+                  <td>{money(d.netCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="mt-3 flex items-center gap-4 text-xs text-charcoal-muted">
         <span className="flex items-center gap-1.5">
@@ -531,8 +571,8 @@ function TrendPlot({ data, hasData, size }: { data: TrendPoint[]; hasData: boole
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="w-full"
-        role="img"
-        aria-label="Monthly income area with a net profit line"
+        // The months' figures are in the table `TrendChart` renders for screen readers.
+        aria-hidden="true"
         onMouseLeave={() => setHover(null)}
       >
         {ticks.map((t) => (

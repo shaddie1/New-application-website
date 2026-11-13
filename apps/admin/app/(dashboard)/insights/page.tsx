@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 /**
@@ -21,5 +22,14 @@ export default function InsightsRedirect() {
     router.replace('/#trend');
   }, [router]);
 
-  return null;
+  // One line for the moment the page is on screen, so it is never blank, and
+  // a link for a visitor the redirect does not carry.
+  return (
+    <p role="status" className="text-sm text-charcoal-muted">
+      Taking you to the Dashboard.{' '}
+      <Link href="/#trend" className="font-medium text-navy underline underline-offset-4">
+        Open the Dashboard
+      </Link>
+    </p>
+  );
 }
