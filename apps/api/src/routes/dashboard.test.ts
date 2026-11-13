@@ -179,3 +179,32 @@ describe('the guards other routes put in front of a section', () => {
     expect((await guarded(null, '/targets')).statusCode).toBe(401);
   });
 });
+
+describe('a token that is still valid for an account that no longer exists', () => {
+  // The token passes requireAuth; it is the missing record that refuses it.
+  it.each([ACCESS, '/admin/stats'])('GET %s answers 401', async (url) => {
+    t.users = t.users.filter((u) => u.id !== 'support');
+
+    const res = await requestAs('support', 'GET', url);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'unauthorized' });
+  });
+});
+
+describe('a token that says less than the record', () => {
+  // /admin/stats sits behind the back-office gate of /admin, which reads the
+  // role in the token before the Dashboard's guard reads the record. A role
+  // raised after sign-in is therefore held back there, and only there.
+  it('token says CUSTOMER, record says SUPPORT: access lists "attention", and stats stays refused until the token is renewed', async () => {
+    t.users.find((u) => u.id === 'customer')!.role = 'SUPPORT';
+
+    const access = await requestAs('customer', 'GET', ACCESS);
+    const stats = await requestAs('customer', 'GET', '/admin/stats');
+
+    expect(access.statusCode).toBe(200);
+    expect(access.json().access.sections).toEqual(['attention']);
+    expect(stats.statusCode).toBe(403);
+    expect(stats.json()).toEqual({ error: 'admin access required' });
+  });
+});

@@ -79,13 +79,22 @@ const PLUGINS: Array<{ prefix: string; load: () => Promise<FastifyPluginAsync> }
   { prefix: '/admin/financials', load: async () => (await import('../routes/financials.js')).financialsDashboardRoutes },
   { prefix: '/admin/finance', load: async () => (await import('../routes/finance.js')).financeRoutes },
   { prefix: '/admin/finance', load: async () => (await import('../routes/finance.js')).financeDashboardRoutes },
+  { prefix: '/admin/documents', load: async () => (await import('../routes/documents.js')).documentRoutes },
 ];
 
 /**
- * Calls a route as a cast account, or with no sign-in when `who` is null. The
- * token carries the role the account signed in with, which for `demoted` is
- * not the role on its record.
+ * The headers a cast account's request carries, or none when `who` is null.
+ * The token carries the role the account signed in with, which for `demoted`
+ * is not the role on its record.
  */
+export async function headersFor(who: CastId | null): Promise<Record<string, string>> {
+  if (!who) return {};
+  const { signAccessToken } = await import('../auth/jwt.js');
+  const { role, tokenRole }: CastMember = CAST[who];
+  return { authorization: `Bearer ${(await signAccessToken(who, tokenRole ?? role)).token}` };
+}
+
+/** Calls a route as a cast account, or with no sign-in when `who` is null. */
 export async function requestAs(
   who: CastId | null,
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -95,11 +104,5 @@ export async function requestAs(
   const server = Fastify();
   for (const { prefix, load } of PLUGINS) await server.register(await load(), { prefix });
 
-  const headers: Record<string, string> = {};
-  if (who) {
-    const { signAccessToken } = await import('../auth/jwt.js');
-    const { role, tokenRole }: CastMember = CAST[who];
-    headers.authorization = `Bearer ${(await signAccessToken(who, tokenRole ?? role)).token}`;
-  }
-  return server.inject({ method, url, payload, headers });
+  return server.inject({ method, url, payload, headers: await headersFor(who) });
 }

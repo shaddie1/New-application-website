@@ -2,10 +2,10 @@
  * Route-test support for Financials, project money, the finance overview and
  * the Dashboard: an in-memory stand-in for the Prisma calls those routes make
  * on users, projects, jobs, costs, monthly targets, shareholders, declared
- * payouts, bookings and their crew, quote requests, marketing spend, assets
- * and investments, and one helper that signs a token and calls a route under
- * /admin/financials or /admin/finance. A test file mocks
- * '../db.js' with `db` and seeds the tables in `t`. Not built:
+ * payouts, bookings and their crew, quote requests, marketing spend, assets,
+ * investments and the list of company documents, and one helper that signs a
+ * token and calls a route under /admin/financials or /admin/finance. A test
+ * file mocks '../db.js' with `db` and seeds the tables in `t`. Not built:
  * tsconfig.build.json excludes this folder.
  */
 import Fastify from 'fastify';
@@ -28,6 +28,7 @@ export const t = {
   marketingSpends: [] as Row[],
   assets: [] as Row[],
   investments: [] as Row[],
+  companyDocuments: [] as Row[],
 };
 
 export function resetDb() {
@@ -44,6 +45,7 @@ export function resetDb() {
   t.marketingSpends = [];
   t.assets = [];
   t.investments = [];
+  t.companyDocuments = [];
   seq = 0;
 }
 
@@ -119,6 +121,12 @@ function withHolderAndCreator(payout: Row) {
 function withCreator(row: Row) {
   const creator = t.users.find((u) => u.id === row.createdById);
   return { ...row, createdBy: creator ? { fullName: creator.fullName } : null };
+}
+
+/** A company document with whoever uploaded it, as `include: { uploadedBy }` gives it. */
+function withUploader(document: Row) {
+  const uploader = t.users.find((u) => u.id === document.uploadedById);
+  return { ...document, uploadedBy: uploader ? { fullName: uploader.fullName } : null };
 }
 
 /** An investment with whoever recorded it and the shareholder it came from, if any. */
@@ -241,6 +249,9 @@ export const db = {
   investment: {
     findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
       ordered(t.investments.filter((i) => matches(i, where)), orderBy).map(withCreatorAndHolder)),
+  },
+  companyDocument: {
+    findMany: vi.fn(async ({ orderBy }: Sorted = {}) => ordered(t.companyDocuments, orderBy).map(withUploader)),
   },
   shareholder: {
     findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
