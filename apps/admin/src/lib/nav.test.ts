@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { JOB_REPORTS, OPERATIONS, OWNER_FINANCE, OWNER_GOVERNANCE, WEBSITE, isActivePath } from './nav';
+import {
+  JOB_REPORTS, OPERATIONS, OWNER_FINANCE, OWNER_GOVERNANCE, WEBSITE, isActivePath, menuSections,
+} from './nav';
 
 // The two menus the layout builds: the owner's, and everyone else's at its fullest.
 const OWNER = [...OPERATIONS, ...OWNER_FINANCE, ...OWNER_GOVERNANCE, ...WEBSITE];
@@ -40,6 +42,59 @@ describe('isActivePath', () => {
 
   it('highlights exactly the item whose page is open, for every item in both menus', () => {
     for (const menu of [OWNER, STAFF]) {
+      for (const item of menu) {
+        expect(highlighted(item.href, menu)).toEqual([item.label]);
+      }
+    }
+  });
+});
+
+describe('menuSections', () => {
+  const owner = { isOwner: true, canPublishWebsite: true };
+  const staff = { isOwner: false, canPublishWebsite: false };
+
+  /** Each section as its title and its items' labels. */
+  const labels = (viewer: Parameters<typeof menuSections>[0]) =>
+    menuSections(viewer).map((section) => [section.title, section.items.map((item) => item.label)]);
+  const items = (viewer: Parameters<typeof menuSections>[0]) => menuSections(viewer).flatMap((section) => section.items);
+
+  it('puts Machines under Finance for an owner who may see the register', () => {
+    expect(labels({ ...owner, canViewMachines: true })).toEqual([
+      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes']],
+      ['Finance', ['Insights', 'Jobs & costs', 'Company finance', 'Quote rates', 'Machines']],
+      ['Governance', ['Ownership', 'Documents', 'Team']],
+      ['Website', ['Website jobs']],
+    ]);
+  });
+
+  it('gives any other viewer of the register a Finance section holding only Machines', () => {
+    expect(labels({ ...staff, canViewMachines: true })).toEqual([
+      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
+      ['Finance', ['Machines']],
+    ]);
+    expect(labels({ isOwner: false, canPublishWebsite: true, canViewMachines: true }).map(([title]) => title)).toEqual([
+      'Operations', 'Finance', 'Website',
+    ]);
+  });
+
+  it('leaves Machines out, and the Finance section with it, for someone who may not see the register', () => {
+    expect(labels({ ...staff, canViewMachines: false })).toEqual([
+      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
+    ]);
+    expect(labels({ ...owner, canViewMachines: false })).toEqual([
+      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes']],
+      ['Finance', ['Insights', 'Jobs & costs', 'Company finance', 'Quote rates']],
+      ['Governance', ['Ownership', 'Documents', 'Team']],
+      ['Website', ['Website jobs']],
+    ]);
+  });
+
+  it('highlights Machines only on /machines, in the owner’s menu and in a viewer’s', () => {
+    for (const menu of [items({ ...owner, canViewMachines: true }), items({ ...staff, canViewMachines: true })]) {
+      expect(highlighted('/machines', menu)).toEqual(['Machines']);
+      expect(highlighted('/machines/abc', menu)).toEqual(['Machines']);
+      expect(highlighted('/machines-old', menu)).toEqual([]);
+      // On every other page of the menu, only that page's own item is highlighted.
       for (const item of menu) {
         expect(highlighted(item.href, menu)).toEqual([item.label]);
       }

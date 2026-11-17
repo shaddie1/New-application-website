@@ -67,6 +67,9 @@ import type {
   ProjectMoneyTable,
   ProjectMoneyDetail,
   UnsortedJobDto,
+  MachinesAccessDto,
+  MachineRegisterDto,
+  MachineDetailDto,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -553,6 +556,19 @@ export const api = {
       `/admin/project-money/projects/${encodeURIComponent(projectId)}`,
       { method: 'GET', auth: true },
     ),
+
+  // ── Machines (owner, admin, financial manager, COO, current shareholders) ─
+  /** What this account may do on the Machines page. Answered for any back-office account, never refused. */
+  machinesAccess: () =>
+    request<{ access: MachinesAccessDto }>('/admin/machines/access', { method: 'GET', auth: true }),
+
+  machineRegister: () =>
+    request<{ register: MachineRegisterDto }>('/admin/machines', { method: 'GET', auth: true }),
+
+  machine: (machineId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}`, {
+      method: 'GET', auth: true,
+    }),
 
   // ── Company documents (shareholders only) ────────────────────────────────
   documents: () => request<DocumentsResult>('/admin/documents', { method: 'GET', auth: true }),

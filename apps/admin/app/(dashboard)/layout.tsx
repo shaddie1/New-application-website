@@ -7,6 +7,7 @@ import {
   ChartPie,
   ClipboardCheck,
   ClipboardList,
+  Cog,
   FileText,
   FolderLock,
   Globe,
@@ -22,16 +23,10 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { api } from '../../src/lib/api';
 import { useAuth, useRequireAdmin } from '../../src/lib/auth';
 import { cn } from '../../src/lib/cn';
-import {
-  JOB_REPORTS,
-  OPERATIONS,
-  OWNER_FINANCE,
-  OWNER_GOVERNANCE,
-  WEBSITE,
-  isActivePath,
-} from '../../src/lib/nav';
+import { isActivePath, menuSections } from '../../src/lib/nav';
 
 /** One small icon per menu item, by address. */
 const ICONS: Record<string, LucideIcon> = {
@@ -45,6 +40,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/financials': Receipt,
   '/finance': Landmark,
   '/rates': Tags,
+  '/machines': Cog,
   '/equity': ChartPie,
   '/documents': FolderLock,
   '/team': Users,
@@ -67,25 +63,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
+  // Who may see the machine register is the server's to say: it depends on the
+  // role and on whether the account is linked to a current shareholder. Asked
+  // once for each account that signs in. Until it answers, and if it cannot be
+  // asked, the menu item stays hidden.
+  const userId = session?.user.id;
+  const [canViewMachines, setCanViewMachines] = useState(false);
+  useEffect(() => {
+    if (!userId) return;
+    let live = true;
+    setCanViewMachines(false);
+    api
+      .machinesAccess()
+      .then((r) => { if (live) setCanViewMachines(r.access.canView); })
+      .catch(() => { /* The item stays hidden. */ });
+    return () => { live = false; };
+  }, [userId]);
+
   if (session === undefined) {
     return <div className="min-h-screen flex items-center justify-center text-charcoal-muted">Loading…</div>;
   }
   if (!session) return null; // redirecting to /login
 
   const { role, isOwner } = session.user;
-  const canPublishWebsite = isOwner || role === 'ADMIN' || role === 'MARKETING';
-
-  // Grouped so the menu reads as sections rather than one long list.
-  const sections = [
-    ...(isOwner
-      ? [
-          { title: 'Operations', items: OPERATIONS },
-          { title: 'Finance', items: OWNER_FINANCE },
-          { title: 'Governance', items: OWNER_GOVERNANCE },
-        ]
-      : [{ title: 'Operations', items: [...OPERATIONS, JOB_REPORTS] }]),
-    ...(canPublishWebsite ? [{ title: 'Website', items: WEBSITE }] : []),
-  ];
+  const canPublishWebsite = isOwner === true || role === 'ADMIN' || role === 'MARKETING';
+  const sections = menuSections({ isOwner: isOwner === true, canPublishWebsite, canViewMachines });
 
   const menuLinks = (
     <nav aria-label="Main menu" className="space-y-6">
