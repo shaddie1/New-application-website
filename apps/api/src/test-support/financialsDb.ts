@@ -1,7 +1,8 @@
 /**
  * Route-test support for Financials, project money, the finance overview and
  * the machine register: an in-memory stand-in for the Prisma calls those
- * routes make on users, projects, jobs, costs, machine lines, monthly targets,
+ * routes make on users, projects, jobs, costs, assets and their repairs,
+ * machine lines, machine investors and their payments, monthly targets,
  * shareholders and declared payouts,
  * and one helper that signs a token and calls a route under /admin/financials,
  * /admin/finance or /admin/machines. A test file mocks
@@ -74,15 +75,23 @@ const withCosts = (job: Row) => ({
   machineLines: t.machineLines.filter((l) => l.jobId === job.id).map(withMachine),
 });
 
+/** Whoever entered a row, as `createdBy: { select: { fullName } }` gives them. */
+const creatorOf = (row: Row) => {
+  const creator = t.users.find((u) => u.id === row.createdById);
+  return creator ? { fullName: creator.fullName } : null;
+};
+
 /**
- * An asset with its repairs, its machine lines (each with its whole job row)
- * and its investors (each with their payments), as the machine register
- * selects them. The whole rows come back, whatever was selected, in the order
- * they were seeded.
+ * An asset with whoever entered it, its repairs (each with whoever entered
+ * it), its machine lines (each with its whole job row) and its investors (each
+ * with their payments), as the machine register and the asset list select
+ * them. The whole rows come back, whatever was selected, in the order they
+ * were seeded.
  */
 const withRegister = (asset: Row) => ({
   ...asset,
-  maintenance: t.assetMaintenance.filter((m) => m.assetId === asset.id),
+  createdBy: creatorOf(asset),
+  maintenance: t.assetMaintenance.filter((m) => m.assetId === asset.id).map((m) => ({ ...m, createdBy: creatorOf(m) })),
   machineLines: t.machineLines
     .filter((l) => l.assetId === asset.id)
     .map((l) => ({ ...l, job: t.jobs.find((j) => j.id === l.jobId) })),
@@ -143,6 +152,13 @@ function costMatches(cost: Row, { job, ...own }: Row = {}) {
   if (job === undefined) return true;
   const parent = t.jobs.find((j) => j.id === cost.jobId);
   return parent !== undefined && matches(parent, job);
+}
+
+function payoutMatches(payout: Row, { investor, ...own }: Row = {}) {
+  if (!matches(payout, own)) return false;
+  if (investor === undefined) return true;
+  const paid = t.machineInvestors.find((i) => i.id === payout.investorId);
+  return paid !== undefined && matches(paid, investor);
 }
 
 /** Prisma's `aggregate` over the rows: `_sum`, `_min` and `_max` of the named columns (null over no rows) and `_count._all`. */
@@ -220,11 +236,79 @@ export const db = {
       const asset = t.assets.find((a) => matches(a, where));
       return asset ? withRegister(asset) : null;
     }),
+    findUniqueOrThrow: vi.fn(async ({ where }: Where) => withRegister(t.assets.find((a) => matches(a, where))!)),
+    /** The columns the database fills in when a row is created without them. */
+    create: vi.fn(async ({ data }: Data) => {
+      const asset = {
+        id: `asset${++seq}`, supplier: null, serialNumber: null, location: null, usefulLifeMonths: null,
+        salvageValueCents: 0, condition: 'GOOD', retiredAt: null, notes: null, receiptRef: null, receiptUrl: null,
+        dailyRateCents: null, countsFrom: null, createdAt: new Date(), updatedAt: new Date(), ...data,
+      };
+      t.assets.push(asset);
+      return withRegister(asset);
+    }),
+    update: vi.fn(async ({ where, data }: Where & Data) =>
+      withRegister(Object.assign(t.assets.find((a) => matches(a, where))!, data, { updatedAt: new Date() }))),
+    /**
+     * The asset's repairs and investors go with it, as the database deletes
+     * them. Like the database, it refuses while the asset has a machine line
+     * or one of its investors has a payment.
+     */
+    delete: vi.fn(async ({ where }: Where) => {
+      const asset = t.assets.find((a) => matches(a, where))!;
+      const investorIds = t.machineInvestors.filter((i) => i.assetId === asset.id).map((i) => i.id);
+      if (t.machineLines.some((l) => l.assetId === asset.id) || t.machinePayouts.some((p) => investorIds.includes(p.investorId))) {
+        throw new Error('Foreign key constraint violated: the asset has machine lines or payments');
+      }
+      t.assets = t.assets.filter((a) => a !== asset);
+      t.assetMaintenance = t.assetMaintenance.filter((m) => m.assetId !== asset.id);
+      t.machineInvestors = t.machineInvestors.filter((i) => i.assetId !== asset.id);
+      return asset;
+    }),
+  },
+  assetMaintenance: {
+    findUnique: vi.fn(async ({ where }: Where) => t.assetMaintenance.find((m) => matches(m, where)) ?? null),
+    /** The columns the database fills in when a row is created without them. */
+    create: vi.fn(async ({ data }: Data) => {
+      const repair = { id: `repair${++seq}`, costCents: 0, performedBy: null, receiptRef: null, createdAt: new Date(), ...data };
+      t.assetMaintenance.push(repair);
+      return repair;
+    }),
+    delete: vi.fn(async ({ where }: Where) => {
+      const repair = t.assetMaintenance.find((m) => matches(m, where))!;
+      t.assetMaintenance = t.assetMaintenance.filter((m) => m !== repair);
+      return repair;
+    }),
   },
   machineLine: {
     /** `where` may filter on the line's own columns and on its `job`, as a cost's may. */
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.machineLines.filter((l) => costMatches(l, where)).map(withMachine)),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.machineLines.filter((l) => costMatches(l, args.where)), args)),
+    count: vi.fn(async ({ where }: Partial<Where> = {}) => t.machineLines.filter((l) => costMatches(l, where)).length),
+  },
+  machineInvestor: {
+    /** Each row gets a later `createdAt` than the one before it, so the list reads back in the order it was sent. */
+    createMany: vi.fn(async ({ data }: { data: Row[] }) => {
+      const now = Date.now();
+      data.forEach((d, i) => {
+        const at = new Date(now + i);
+        t.machineInvestors.push({ id: `investor${++seq}`, createdAt: at, updatedAt: at, ...d });
+      });
+      return { count: data.length };
+    }),
+    /** Like the database, it refuses while one of the investors has a payment. */
+    deleteMany: vi.fn(async ({ where }: Partial<Where> = {}) => {
+      const gone = t.machineInvestors.filter((i) => matches(i, where));
+      if (t.machinePayouts.some((p) => gone.some((i) => i.id === p.investorId))) {
+        throw new Error('Foreign key constraint violated: an investor has payments');
+      }
+      t.machineInvestors = t.machineInvestors.filter((i) => !gone.includes(i));
+      return { count: gone.length };
+    }),
+  },
+  machinePayout: {
+    /** `where` may filter on the payment's own columns and on its `investor`. */
+    count: vi.fn(async ({ where }: Partial<Where> = {}) => t.machinePayouts.filter((p) => payoutMatches(p, where)).length),
   },
   monthlyTarget: {
     /** Looked up by its compound key, `{ year_month: { year, month } }`. */
