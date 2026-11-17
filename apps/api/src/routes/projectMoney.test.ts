@@ -24,7 +24,7 @@ const users: Record<string, { role: string; isOwner: boolean; fullName: string; 
   demoted: { role: 'SUPPORT', isOwner: false, fullName: 'Dan Demoted', tokenRole: 'ADMIN' },
 };
 
-const t = { projects: [] as Row[], jobs: [] as Row[], expenses: [] as Row[] };
+const t = { projects: [] as Row[], jobs: [] as Row[], expenses: [] as Row[], machineLines: [] as Row[] };
 
 /** The subset of Prisma's `where` these routes use: equality and `in`. */
 const matches = (row: Row, where: Row = {}) =>
@@ -43,12 +43,17 @@ function sorted(rows: Row[], orderBy: Row | Row[] = []) {
   });
 }
 
-/** A job with its costs, each cost with who entered it. The whole row comes back, whatever was selected. */
+/** A job with its costs and machine lines, each with who entered it. The whole row comes back, whatever was selected. */
 const withCosts = (job: Row, costOrder?: Row) => ({
   ...job,
   expenses: sorted(t.expenses.filter((e) => e.jobId === job.id), costOrder).map((e) => ({
     ...e,
     createdBy: { fullName: users[e.createdById]!.fullName },
+  })),
+  machineLines: t.machineLines.filter((l) => l.jobId === job.id).map((l) => ({
+    ...l,
+    asset: { name: l.assetName ?? 'Machine' },
+    createdBy: { fullName: users[l.createdById]!.fullName },
   })),
 });
 
@@ -162,6 +167,7 @@ beforeEach(() => {
   t.projects = [];
   t.jobs = [];
   t.expenses = [];
+  t.machineLines = [];
 });
 
 describe.each([TABLE, contract('p1')])('who may open %s', (url) => {

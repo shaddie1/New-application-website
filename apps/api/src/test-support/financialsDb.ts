@@ -1,7 +1,8 @@
 /**
- * Route-test support for Financials, project money and the finance overview:
- * an in-memory stand-in for the Prisma calls those routes make on users,
- * projects, jobs, costs, monthly targets, shareholders and declared payouts,
+ * Route-test support for Financials, project money, the finance overview and
+ * the machine register: an in-memory stand-in for the Prisma calls those
+ * routes make on users, projects, jobs, costs, machine lines, monthly targets,
+ * shareholders and declared payouts,
  * and one helper that signs a token and calls a route under /admin/financials
  * or /admin/finance. A test file mocks
  * '../db.js' with `db` and seeds the tables in `t`. Not built:
@@ -20,6 +21,11 @@ export const t = {
   monthlyTargets: [] as Row[],
   shareholders: [] as Row[],
   profitDistributions: [] as Row[],
+  assets: [] as Row[],
+  assetMaintenance: [] as Row[],
+  machineLines: [] as Row[],
+  machineInvestors: [] as Row[],
+  machinePayouts: [] as Row[],
 };
 
 export function resetDb() {
@@ -30,6 +36,11 @@ export function resetDb() {
   t.monthlyTargets = [];
   t.shareholders = [];
   t.profitDistributions = [];
+  t.assets = [];
+  t.assetMaintenance = [];
+  t.machineLines = [];
+  t.machineInvestors = [];
+  t.machinePayouts = [];
   seq = 0;
 }
 
@@ -53,8 +64,15 @@ const matches = (row: Row, where: Row = {}) =>
     : typeof v === 'object' && BOUNDS.some((b) => b in v) ? withinBounds(row[k], v)
     : row[k] === v);
 
-/** A job with its costs, as `include` or `select` of `expenses` gives it. */
-const withCosts = (job: Row) => ({ ...job, expenses: t.expenses.filter((e) => e.jobId === job.id) });
+/** A machine line with its machine's name, as selecting `asset` gives it. */
+const withMachine = (line: Row) => ({ ...line, asset: { name: t.assets.find((a) => a.id === line.assetId)?.name ?? 'Machine' } });
+
+/** A job with its costs and its machine lines, as `include` or `select` of `expenses` and `machineLines` gives it. */
+const withCosts = (job: Row) => ({
+  ...job,
+  expenses: t.expenses.filter((e) => e.jobId === job.id),
+  machineLines: t.machineLines.filter((l) => l.jobId === job.id).map(withMachine),
+});
 
 /** A job with its costs, its project and whoever reported it, as the job routes include them. */
 function withRelations(job: Row) {
@@ -174,6 +192,11 @@ export const db = {
   expense: {
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.expenses.filter((e) => costMatches(e, where))),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.expenses.filter((e) => costMatches(e, args.where)), args)),
+  },
+  machineLine: {
+    /** `where` may filter on the line's own columns and on its `job`, as a cost's may. */
+    findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.machineLines.filter((l) => costMatches(l, where)).map(withMachine)),
+    aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.machineLines.filter((l) => costMatches(l, args.where)), args)),
   },
   monthlyTarget: {
     /** Looked up by its compound key, `{ year_month: { year, month } }`. */
