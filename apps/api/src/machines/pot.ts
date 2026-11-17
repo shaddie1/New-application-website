@@ -71,7 +71,14 @@ export type PotFigures = {
 
 const WHOLE_BPS = 10_000;
 
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+export const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Newest first by calendar day, and by when it was entered within a day. */
+export function newestFirst<T>(rows: T[], dayOf: (row: T) => Date, enteredAt: (row: T) => Date): T[] {
+  return [...rows].sort(
+    (a, b) => dayOf(b).getTime() - dayOf(a).getTime() || enteredAt(b).getTime() - enteredAt(a).getTime(),
+  );
+}
 
 /** Whether a repair dated `date` counts for a machine whose start day is `startDay`: on that day or after it. */
 export function countsFromStartDay(date: Date, startDay: Date): boolean {
@@ -92,7 +99,7 @@ function shareOf(amount: number, part: number, whole: number): number {
   return Number(quotient);
 }
 
-const sum = (amounts: number[]) => amounts.reduce((total, a) => total + a, 0);
+export const sum = (amounts: number[]) => amounts.reduce((total, a) => total + a, 0);
 
 export function potFigures(input: PotInput): PotFigures {
   const { priceCents } = input;

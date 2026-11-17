@@ -41,7 +41,7 @@ import {
   type DayRange,
 } from '../finance/comparison.js';
 import { machineAmountCents } from '../machines/amounts.js';
-import { loadMachineRules, machineDeleteRefusal, priceChangeRefusal } from './machines.js';
+import { loadMachineRules, machineDeleteRefusal, priceChangeRefusal } from '../machines/rules.js';
 
 const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
 const BASIS_POINTS_TOTAL = 10_000;
