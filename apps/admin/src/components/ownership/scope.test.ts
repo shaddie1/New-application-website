@@ -89,6 +89,29 @@ describe('scopeFigures', () => {
 
     expect(scopeFigures(received, 'all-time')).toEqual(ALL_TIME);
   });
+
+  it('has no machines amount when the server sends none', () => {
+    expect(scopeFigures(overview, 'this-month')).not.toHaveProperty('machineCents');
+    expect(scopeFigures(overview, 'all-time')).not.toHaveProperty('machineCents');
+  });
+
+  it("gives each scope its own amount set aside for machines", () => {
+    const withMachines: EquityOverview = {
+      ...overview,
+      periodMachineCents: 50_000,
+      allTime: { ...overview.allTime, totalMachineCents: 620_000 },
+    };
+
+    expect(scopeFigures(withMachines, 'this-month').machineCents).toBe(50_000);
+    expect(scopeFigures(withMachines, 'all-time').machineCents).toBe(620_000);
+  });
+
+  it('has no machines amount for a month with none, whatever was set aside before it', () => {
+    const earlierOnly: EquityOverview = { ...overview, allTime: { ...overview.allTime, totalMachineCents: 620_000 } };
+
+    expect(scopeFigures(earlierOnly, 'this-month')).not.toHaveProperty('machineCents');
+    expect(scopeFigures(earlierOnly, 'all-time').machineCents).toBe(620_000);
+  });
 });
 
 describe('nairobiMonth', () => {

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   DashboardOverview,
   EquityOverview,
-  ExpenseCategory,
   FinancialSummary,
   MonthlyTrendItem,
   RevenueBreakdown,
@@ -13,18 +12,11 @@ import type {
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { changeLabel, overviewChanges } from '../../../src/lib/change';
+import { costGroupRows } from '../../../src/lib/costGroups';
 import { DonutChart, StatTile, TargetMeter, TrendChart, moneyShort } from '../../../src/components/charts';
 import { money as formatMoney } from '../../../src/lib/money';
 
 const money = (cents: number) => formatMoney(cents, { whole: true });
-
-const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
-  MATERIALS: 'Materials',
-  TRANSPORT: 'Transport',
-  EMPLOYEE_PAY: 'Employee pay',
-  LUNCH: 'Lunch',
-  MISCELLANEOUS: 'Miscellaneous',
-};
 
 /** A titled panel around a chart, so every donut sits in the same frame. */
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -66,10 +58,11 @@ export default function InsightsPage() {
 
   const { from, to } = monthRange(year, month);
 
+  // The five expense groups, and Machines when the month has machine days.
   const expenseSlices = summary
-    ? (Object.entries(summary.expensesByCategoryCents) as [ExpenseCategory, number][]).map(
-        ([category, cents]) => ({ key: category, label: EXPENSE_LABELS[category], value: cents }),
-      )
+    ? costGroupRows(summary.expensesByCategoryCents, 'charts').map((group) => ({
+        key: group.key, label: group.label, value: group.cents,
+      }))
     : [];
 
   const load = useCallback(async () => {
@@ -243,6 +236,9 @@ export default function InsightsPage() {
             <ChartCard title={`Where the money went — ${overview?.monthLabel ?? ''}`}>
               <DonutChart
                 slices={expenseSlices}
+                // Every group keeps a slice of its own: with Machines there are six, and
+                // folding the smallest into "Other" would take a named group off the chart.
+                maxSlices={expenseSlices.length}
                 centreLabel="total expenses"
                 emptyLabel="No expenses recorded this month."
               />

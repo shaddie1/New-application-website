@@ -1,10 +1,10 @@
 'use client';
 
 import { Tags } from 'lucide-react';
-import type { ExpenseCategory } from '@onyxhawk/types';
 
 import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
+import { costGroupRows } from '../../lib/costGroups';
 import { money } from '../../lib/money';
 import { DonutChart } from '../charts';
 import { Card } from '../ui/card';
@@ -27,14 +27,6 @@ import { useBlock } from './useBlock';
  * meant to sit straight in the page's two-column grid, and each makes its own
  * request, so one that fails says so in its own card and the others stay.
  */
-
-const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
-  MATERIALS: 'Materials',
-  TRANSPORT: 'Transport',
-  EMPLOYEE_PAY: 'Employee pay',
-  LUNCH: 'Lunch',
-  MISCELLANEOUS: 'Miscellaneous',
-};
 
 // `min-w-0` lets a card shrink below its longest legend label, so a long name
 // wraps inside the card instead of pushing the page sideways on a phone.
@@ -238,7 +230,7 @@ export function RevenueCharts({
 // Mount these two for the owner alone: mounting one is what sends its request,
 // and the server refuses both to everyone else.
 
-/** The month's job expenses by category. */
+/** The month's job expenses by category, and its machine days when it has any. */
 export function ExpensesChart({ month }: { month: YearMonth }) {
   const { from, to } = monthRange(month);
   const block = useBlock(() => api.financialSummary(from, to).then((res) => res.summary), [from, to]);
@@ -246,15 +238,24 @@ export function ExpensesChart({ month }: { month: YearMonth }) {
 
   if (block.status === 'loading') return <ChartLoading title={title} />;
 
+  const slices =
+    block.status === 'failed'
+      ? []
+      : costGroupRows(block.data.expensesByCategoryCents, 'charts').map((group) => ({
+          key: group.key, label: group.label, value: group.cents,
+        }));
+
   return (
     <ChartCard title={title}>
       {block.status === 'failed' ? (
         <ChartFailed what={`the expenses for ${monthLabel(month)}`} onRetry={block.retry} />
       ) : (
         <DonutChart
-          slices={(Object.entries(block.data.expensesByCategoryCents) as [ExpenseCategory, number][]).map(
-            ([category, cents]) => ({ key: category, label: EXPENSE_LABELS[category], value: cents }),
-          )}
+          slices={slices}
+          // Every group keeps a slice of its own. With Machines there are six,
+          // and folding the smallest into "Other" would take a named group,
+          // perhaps Machines itself, off the chart.
+          maxSlices={slices.length}
           centreLabel="total expenses"
           emptyLabel={`No expenses recorded in ${monthLabel(month)}.`}
         />
