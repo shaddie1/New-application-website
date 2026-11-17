@@ -55,18 +55,44 @@ const withinBounds = (value: any, bounds: Row) => // eslint-disable-line @typesc
   (bounds.gt === undefined || value > bounds.gt) &&
   (bounds.lt === undefined || value < bounds.lt);
 
-/** The subset of Prisma's `where` the routes use: equality (dates by their instant), null, `not`, `in` and ranges. */
+/** Text against `contains`, which ignores case only when `mode` is `insensitive`, as the database does. */
+const containsText = (value: unknown, { contains, mode }: Row) =>
+  typeof value === 'string' &&
+  (mode === 'insensitive' ? value.toLowerCase().includes(contains.toLowerCase()) : value.includes(contains));
+
+/** The subset of Prisma's `where` the routes use: equality (dates by their instant), null, `not`, `in`, `contains` and ranges. */
 const matches = (row: Row, where: Row = {}) =>
   Object.entries(where).every(([k, v]) =>
     v === null ? row[k] == null
     : v instanceof Date ? row[k] instanceof Date && row[k].getTime() === v.getTime()
     : typeof v === 'object' && 'not' in v ? row[k] !== v.not
     : typeof v === 'object' && 'in' in v ? (v.in as unknown[]).includes(row[k])
+    : typeof v === 'object' && 'contains' in v ? containsText(row[k], v)
     : typeof v === 'object' && BOUNDS.some((b) => b in v) ? withinBounds(row[k], v)
     : row[k] === v);
 
-/** A machine line with its machine's name, as selecting `asset` gives it. */
-const withMachine = (line: Row) => ({ ...line, asset: { name: t.assets.find((a) => a.id === line.assetId)?.name ?? 'Machine' } });
+/** A machine line with its machine's name and start day, as selecting `asset` gives it. */
+const withMachine = (line: Row) => {
+  const machine = t.assets.find((a) => a.id === line.assetId);
+  return { ...line, asset: { name: machine?.name ?? 'Machine', countsFrom: machine?.countsFrom ?? null } };
+};
+
+/** One machine line with its whole machine and its whole job, as the routes that change a line select them. */
+const withMachineAndJob = (line: Row) => ({
+  ...line,
+  asset: t.assets.find((a) => a.id === line.assetId),
+  job: t.jobs.find((j) => j.id === line.jobId),
+});
+
+/** The database's checks on a machine line: one per machine and job, and an amount of half days x rate / 2. */
+function checkLine(line: Row) {
+  if (t.machineLines.some((l) => l.id !== line.id && l.assetId === line.assetId && l.jobId === line.jobId)) {
+    throw new Error('Unique constraint failed: the machine already has a line on this job');
+  }
+  if (!(line.halfDays > 0 && line.rateCents > 0 && line.amountCents * 2 === line.halfDays * line.rateCents)) {
+    throw new Error('Check constraint violated: MachineLine_amount_check');
+  }
+}
 
 /** A job with its costs and its machine lines, as `include` or `select` of `expenses` and `machineLines` gives it. */
 const withCosts = (job: Row) => ({
@@ -154,6 +180,13 @@ function costMatches(cost: Row, { job, ...own }: Row = {}) {
   return parent !== undefined && matches(parent, job);
 }
 
+/** A job against its own columns and `machineLines: { none }`: none of the job's machine lines matches. */
+function jobMatches(job: Row, { machineLines, ...own }: Row = {}) {
+  if (!matches(job, own)) return false;
+  if (machineLines === undefined) return true;
+  return !t.machineLines.some((l) => l.jobId === job.id && matches(l, machineLines.none));
+}
+
 function payoutMatches(payout: Row, { investor, ...own }: Row = {}) {
   if (!matches(payout, own)) return false;
   if (investor === undefined) return true;
@@ -193,19 +226,23 @@ export const db = {
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.projects.filter((p) => matches(p, where))),
   },
   job: {
-    /** `orderBy` is honoured for a single ascending or descending column. */
-    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & { orderBy?: Record<string, 'asc' | 'desc'> } = {}) => {
-      const rows = t.jobs.filter((j) => matches(j, where));
-      const [[column, way] = []] = Object.entries(orderBy ?? {});
-      if (column) rows.sort((a, b) => (a[column] < b[column] ? -1 : a[column] > b[column] ? 1 : 0) * (way === 'desc' ? -1 : 1));
-      return rows.map(withRelations);
-    }),
+    /**
+     * `where` may also say `machineLines: { none }`. `orderBy` is one column
+     * or a list of them, and `take` keeps the first rows of the sorted list.
+     */
+    findMany: vi.fn(async ({ where, orderBy, take }: Partial<Where> & Sorted & { take?: number } = {}) =>
+      ordered(t.jobs.filter((j) => jobMatches(j, where)), orderBy).slice(0, take).map(withRelations)),
     findUnique: vi.fn(async ({ where }: Where) => {
       const job = t.jobs.find((j) => matches(j, where));
       return job ? withRelations(job) : null;
     }),
+    /** The columns the database fills in when a row is created without them. */
     create: vi.fn(async ({ data }: Data) => {
-      const job = { id: `job${++seq}`, placement: 'UNSORTED', projectId: null, reportedById: null, createdAt: new Date(), ...data };
+      const job = {
+        id: `job${++seq}`, discountCents: 0, status: 'OWNER_ENTRY', clientName: null, clientPhone: null, clientLocation: null,
+        notes: null, serviceLineCode: null, region: null, clientSegment: null,
+        placement: 'UNSORTED', projectId: null, reportedById: null, createdAt: new Date(), ...data,
+      };
       t.jobs.push(job);
       return withRelations(job);
     }),
@@ -215,10 +252,11 @@ export const db = {
       rows.forEach((j) => Object.assign(j, data));
       return { count: rows.length };
     }),
-    /** The job's machine lines go with it, as the database deletes them. */
+    /** The job's costs and machine lines go with it, as the database deletes them. */
     delete: vi.fn(async ({ where }: Where) => {
       const job = t.jobs.find((j) => matches(j, where))!;
       t.jobs = t.jobs.filter((j) => j !== job);
+      t.expenses = t.expenses.filter((e) => e.jobId !== job.id);
       t.machineLines = t.machineLines.filter((l) => l.jobId !== job.id);
       return job;
     }),
@@ -285,6 +323,34 @@ export const db = {
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.machineLines.filter((l) => costMatches(l, where)).map(withMachine)),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.machineLines.filter((l) => costMatches(l, args.where)), args)),
     count: vi.fn(async ({ where }: Partial<Where> = {}) => t.machineLines.filter((l) => costMatches(l, where)).length),
+    findUnique: vi.fn(async ({ where }: Where) => {
+      const line = t.machineLines.find((l) => matches(l, where));
+      return line ? withMachineAndJob(line) : null;
+    }),
+    /** `where` may filter on the line's own columns and on its `job`. */
+    findFirst: vi.fn(async ({ where }: Partial<Where> = {}) => {
+      const line = t.machineLines.find((l) => costMatches(l, where));
+      return line ? withMachineAndJob(line) : null;
+    }),
+    /** The columns the database fills in, and its checks: one line per machine and job, and the amount. */
+    create: vi.fn(async ({ data }: Data) => {
+      const line = { id: `line${++seq}`, isHire: false, createdAt: new Date(), updatedAt: new Date(), ...data };
+      checkLine(line);
+      t.machineLines.push(line);
+      return withMachineAndJob(line);
+    }),
+    /** The database's checks run on the changed line, and a refused change is not kept. */
+    update: vi.fn(async ({ where, data }: Where & Data) => {
+      const line = t.machineLines.find((l) => matches(l, where))!;
+      checkLine({ ...line, ...data });
+      Object.assign(line, data, { updatedAt: new Date() });
+      return withMachineAndJob(line);
+    }),
+    delete: vi.fn(async ({ where }: Where) => {
+      const line = t.machineLines.find((l) => matches(l, where))!;
+      t.machineLines = t.machineLines.filter((l) => l !== line);
+      return line;
+    }),
   },
   machineInvestor: {
     /** Each row gets a later `createdAt` than the one before it, so the list reads back in the order it was sent. */
@@ -309,6 +375,22 @@ export const db = {
   machinePayout: {
     /** `where` may filter on the payment's own columns and on its `investor`. */
     count: vi.fn(async ({ where }: Partial<Where> = {}) => t.machinePayouts.filter((p) => payoutMatches(p, where)).length),
+    /** The payment with its whole investor, as selecting `investor` gives it. */
+    findUnique: vi.fn(async ({ where }: Where) => {
+      const payout = t.machinePayouts.find((p) => matches(p, where));
+      return payout ? { ...payout, investor: t.machineInvestors.find((i) => i.id === payout.investorId) } : null;
+    }),
+    /** The columns the database fills in when a row is created without them. */
+    create: vi.fn(async ({ data }: Data) => {
+      const payout = { id: `payout${++seq}`, reference: null, createdAt: new Date(), ...data };
+      t.machinePayouts.push(payout);
+      return payout;
+    }),
+    delete: vi.fn(async ({ where }: Where) => {
+      const payout = t.machinePayouts.find((p) => matches(p, where))!;
+      t.machinePayouts = t.machinePayouts.filter((p) => p !== payout);
+      return payout;
+    }),
   },
   monthlyTarget: {
     /** Looked up by its compound key, `{ year_month: { year, month } }`. */
