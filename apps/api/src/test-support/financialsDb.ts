@@ -108,11 +108,20 @@ const creatorOf = (row: Row) => {
 };
 
 /**
+ * A line's whole job row with every machine's line on that job, each with its
+ * machine's name, as selecting `job.machineLines` gives it.
+ */
+const jobWithLines = (line: Row) => {
+  const job = t.jobs.find((j) => j.id === line.jobId);
+  return job && { ...job, machineLines: t.machineLines.filter((l) => l.jobId === job.id).map(withMachine) };
+};
+
+/**
  * An asset with whoever entered it, its repairs (each with whoever entered
- * it), its machine lines (each with its whole job row) and its investors (each
- * with their payments), as the machine register and the asset list select
- * them. The whole rows come back, whatever was selected, in the order they
- * were seeded.
+ * it), its machine lines (each with its whole job row and that job's machine
+ * lines) and its investors (each with their payments), as the machine register
+ * and the asset list select them. The whole rows come back, whatever was
+ * selected, in the order they were seeded.
  */
 const withRegister = (asset: Row) => ({
   ...asset,
@@ -120,7 +129,7 @@ const withRegister = (asset: Row) => ({
   maintenance: t.assetMaintenance.filter((m) => m.assetId === asset.id).map((m) => ({ ...m, createdBy: creatorOf(m) })),
   machineLines: t.machineLines
     .filter((l) => l.assetId === asset.id)
-    .map((l) => ({ ...l, job: t.jobs.find((j) => j.id === l.jobId) })),
+    .map((l) => ({ ...l, job: jobWithLines(l) })),
   machineInvestors: t.machineInvestors
     .filter((i) => i.assetId === asset.id)
     .map((i) => ({ ...i, payouts: t.machinePayouts.filter((p) => p.investorId === i.id) })),

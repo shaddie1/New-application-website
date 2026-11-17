@@ -36,7 +36,8 @@ const PRIVATE = {
   assetNotes: 'bought on credit',
 };
 const HIRE_CUSTOMER = 'Jane Wanjiru';
-const HIRE_TITLE = 'Hire: Floor polisher, Jane Wanjiru';
+// An older row: a hire's job used to be titled after its customer too. A new one is "Hire: <machine>".
+const HIRE_TITLE = 'Hire: Floor polisher to Jane Wanjiru';
 
 const holder = (id: string, name: string, over: object = {}) => ({
   id, name, title: null, kind: 'INDIVIDUAL', basisPoints: 2500, notes: null, userId: null, sortOrder: 0, removedAt: null,
@@ -343,6 +344,47 @@ describe('GET /admin/machines/:id', () => {
       expect(res.body).not.toMatch(/customerName/);
     },
   );
+
+  describe('when a second machine has days on the hire\'s job', () => {
+    // One day of the scrubber on the polisher's hire job, whose older title still names the customer.
+    const ON_HIRE_JOB = {
+      id: 'ml4', jobId: 'hireJob', date: '2026-11-03', halfDays: 2, rateCents: ksh(1_500), amountCents: ksh(1_500),
+      isHire: false, chargedCents: null,
+    };
+
+    beforeEach(() => {
+      t.machineLines.push(line('ml4', 'scrubber', 'hireJob', 2, 1_500));
+    });
+
+    it.each(['admin', 'finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
+      'R31: %s opens the second machine and is sent that job as "Hire", with the customer nowhere',
+      async (userId) => {
+        const res = await as(userId, 'GET', machineUrl('scrubber'));
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body).not.toContain(HIRE_CUSTOMER);
+        expect(res.body).not.toMatch(/customerName/);
+        expect(res.json().machine.lines[0]).toEqual({ ...ON_HIRE_JOB, jobTitle: 'Hire' });
+      },
+    );
+
+    it('the owner is sent the job\'s title on the second machine, and the customer on the hire itself', async () => {
+      expect((await machine('scrubber')).lines[0]).toEqual({ ...ON_HIRE_JOB, jobTitle: HIRE_TITLE });
+      expect((await machine('polisher')).lines[0]).toMatchObject({ id: 'ml2', isHire: true, customerName: HIRE_CUSTOMER });
+    });
+
+    it('R11: only the owner\'s hire lists the second machine, whose days go when the hire is removed', async () => {
+      expect((await machine('polisher')).lines[0]).toEqual({
+        ...HIRE_LINE, jobTitle: HIRE_TITLE, customerName: HIRE_CUSTOMER,
+        otherMachines: [{ machineName: 'Auto scrubber', halfDays: 2, amountCents: ksh(1_500) }],
+      });
+
+      const res = await as('coo', 'GET', machineUrl('polisher'));
+
+      expect(res.json().machine.lines[0]).toEqual({ ...HIRE_LINE, jobTitle: 'Hire' });
+      expect(res.body).not.toMatch(/otherMachines/);
+    });
+  });
 
   it('answers 404 for an asset with no daily rate', async () => {
     const res = await as('owner', 'GET', machineUrl('laptop'));

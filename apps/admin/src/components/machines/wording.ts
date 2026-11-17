@@ -94,3 +94,27 @@ export function hireChargeText({ chargedCents, amountCents }: Pick<MachineLineDt
 export function hireLabel({ customerName }: Pick<MachineLineDto, 'customerName'>): string {
   return customerName ? `Hire to ${customerName}` : 'Hire';
 }
+
+/**
+ * What the page says before a hire is removed. Removing a hire deletes its
+ * one-off job, and every other machine's days on that job go with it, so the
+ * message names each of those machines, its days and the amount that leaves
+ * its pot. The lines are separated by line breaks.
+ */
+export function removeHireMessage({
+  chargedCents, amountCents, otherMachines = [],
+}: Pick<MachineLineDto, 'chargedCents' | 'amountCents' | 'otherMachines'>): string {
+  const hire =
+    `The hire’s one-off job in Jobs & costs is deleted with it: its income of ${money(chargedCents ?? 0)} ` +
+    `and any costs logged on that job. ${money(amountCents)} leaves the pot.`;
+  const last = 'This cannot be undone.';
+  if (otherMachines.length === 0) return `${hire} ${last}`;
+  return [
+    hire,
+    '',
+    'The days logged on that job for other machines are removed too. Each amount leaves that machine’s pot:',
+    ...otherMachines.map((other) => `${other.machineName}, ${daysText(other.halfDays)}: ${money(other.amountCents)}`),
+    '',
+    last,
+  ].join('\n');
+}

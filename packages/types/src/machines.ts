@@ -90,7 +90,11 @@ export interface MachineLineDto {
   jobId: string;
   /** The job's date: a line has no date of its own. For a hire, its start date. */
   date: string; // YYYY-MM-DD
-  /** For a hire, only the owner's copy names the customer here. */
+  /**
+   * The job's title. A hire's job is titled "Hire: <machine>"; anyone but the
+   * owner is sent "Hire" instead, on the hire and on any other machine's days
+   * on that job. The customer is never in a title: see `customerName`.
+   */
   jobTitle: string;
   /** Days are counted in halves: 5 is two and a half days. */
   halfDays: number;
@@ -103,6 +107,23 @@ export interface MachineLineDto {
   chargedCents: number | null;
   /** For a hire, and sent to the owner only. */
   customerName?: string;
+  /**
+   * For a hire, and sent to the owner only: the other machines with days on
+   * the hire's job. Left out when there are none.
+   */
+  otherMachines?: HireOtherMachineDto[];
+}
+
+/**
+ * Another machine's days on a hire's job. Removing the hire deletes its job,
+ * and these days go with it.
+ */
+export interface HireOtherMachineDto {
+  machineName: string;
+  /** Days are counted in halves: 5 is two and a half days. */
+  halfDays: number;
+  /** What leaves that machine's pot when the hire is removed. */
+  amountCents: number;
 }
 
 /** A repair that comes out of the pot. The same record as the asset's maintenance entry. */

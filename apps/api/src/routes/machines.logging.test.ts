@@ -467,7 +467,7 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
     const hired = await logHire('scrubber', { ...JANE_HIRE, customerName: '  Jane Wanjiru ' });
 
     expect(hireJobs()).toEqual([expect.objectContaining({
-      title: 'Hire: Floor scrubber to Jane Wanjiru', date: day('2026-11-03'), incomeCents: ksh(10_500), discountCents: 0,
+      title: 'Hire: Floor scrubber', date: day('2026-11-03'), incomeCents: ksh(10_500), discountCents: 0,
       status: 'OWNER_ENTRY', placement: 'STANDALONE', projectId: null, clientName: 'Jane Wanjiru', createdById: 'owner',
     })]);
     const [hireJob] = hireJobs();
@@ -477,7 +477,7 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
     });
     expect(hired).toMatchObject({ earnedCents: ksh(6_000), potCents: ksh(6_000) });
     expect(hired.lines).toEqual([{
-      id: expect.any(String), jobId: hireJob!.id, date: '2026-11-03', jobTitle: 'Hire: Floor scrubber to Jane Wanjiru',
+      id: expect.any(String), jobId: hireJob!.id, date: '2026-11-03', jobTitle: 'Hire: Floor scrubber',
       halfDays: 6, rateCents: 200_000, amountCents: 600_000, isHire: true, chargedCents: ksh(10_500),
       customerName: 'Jane Wanjiru',
     }]);
@@ -487,7 +487,7 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
     await logHire();
 
     expect((await jobsIn(NOVEMBER)).find((j) => j.id === hireJobs()[0]!.id)).toMatchObject({
-      title: 'Hire: Floor scrubber to Jane Wanjiru', date: '2026-11-03', status: 'OWNER_ENTRY', placement: 'STANDALONE',
+      title: 'Hire: Floor scrubber', date: '2026-11-03', status: 'OWNER_ENTRY', placement: 'STANDALONE',
       projectId: null, projectTitle: null, clientName: 'Jane Wanjiru', actualIncomeCents: ksh(10_500),
       machineCents: ksh(6_000), totalExpensesCents: ksh(6_000), netCents: ksh(4_500),
     });
@@ -581,6 +581,27 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
       machineCents: ksh(7_000), netCents: ksh(3_500),
     });
   });
+
+  it('R31: a second machine\'s days on a hire\'s job name the customer to nobody, and the owner still sees the customer on the hire', async () => {
+    await logHire();
+    const [hireJob] = hireJobs();
+    answered(await as('owner', 'POST', linesUrl('steamer'), { jobId: hireJob!.id, halfDays: 2 }), 201);
+
+    // The COO opens the second machine: the job reads "Hire" and the customer is nowhere in the answer.
+    const res = await as('coo', 'GET', machineUrl('steamer'));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain('Jane Wanjiru');
+    expect(res.json().machine.lines).toEqual([{
+      id: expect.any(String), jobId: hireJob!.id, date: '2026-11-03', jobTitle: 'Hire', halfDays: 2,
+      rateCents: 100_000, amountCents: 100_000, isHire: false, chargedCents: null,
+    }]);
+
+    // The owner reads the job by its title, which names the machine only, and the customer on the hire itself.
+    expect((await machine('steamer')).lines[0]).toMatchObject({ jobTitle: 'Hire: Floor scrubber', isHire: false });
+    expect((await machine('scrubber')).lines[0]).toMatchObject({
+      jobTitle: 'Hire: Floor scrubber', isHire: true, customerName: 'Jane Wanjiru',
+    });
+  });
 });
 
 describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
@@ -594,7 +615,7 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
     const edited = answered(await as('owner', 'PATCH', hireUrl(lineId), CORRECTED));
 
     expect(hireJobs()).toEqual([expect.objectContaining({
-      title: 'Hire: Floor scrubber to Jane W. Kamau', clientName: 'Jane W. Kamau', date: day('2026-10-28'),
+      title: 'Hire: Floor scrubber', clientName: 'Jane W. Kamau', date: day('2026-10-28'),
       incomeCents: ksh(9_000), status: 'OWNER_ENTRY', placement: 'STANDALONE', projectId: null,
     })]);
     expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({
@@ -602,7 +623,7 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
     });
     expect(edited.earnedCents).toBe(ksh(4_000));
     expect(edited.lines).toEqual([{
-      id: lineId, jobId: hireJobs()[0]!.id, date: '2026-10-28', jobTitle: 'Hire: Floor scrubber to Jane W. Kamau',
+      id: lineId, jobId: hireJobs()[0]!.id, date: '2026-10-28', jobTitle: 'Hire: Floor scrubber',
       halfDays: 4, rateCents: 200_000, amountCents: 400_000, isHire: true, chargedCents: ksh(9_000),
       customerName: 'Jane W. Kamau',
     }]);
@@ -711,6 +732,25 @@ describe('DELETE /admin/machines/hires/:lineId: remove a hire', () => {
     answered(await as('owner', 'DELETE', hireUrl(lineId)));
 
     expect((await jobsIn(NOVEMBER)).map((j) => j.id)).toEqual(['novJob']);
+  });
+
+  it('R11: the owner\'s hire names the other machine with days on its job, and removing the hire removes those days from that machine too', async () => {
+    const lineId = hireLineId(await logHire());
+    // One day of the steamer on the hire's job: KSh 1,000 into the steamer's pot.
+    answered(await as('owner', 'POST', linesUrl('steamer'), { jobId: hireJobs()[0]!.id, halfDays: 2 }), 201);
+    expect(await machine('steamer')).toMatchObject({ earnedCents: ksh(1_000), potCents: ksh(1_000) });
+
+    // What the Remove hire question lists before anything is removed.
+    expect((await machine('scrubber')).lines.find((l) => l.id === lineId)!.otherMachines).toEqual([
+      { machineName: 'Steam cleaner', halfDays: 2, amountCents: ksh(1_000) },
+    ]);
+
+    const removed = answered(await as('owner', 'DELETE', hireUrl(lineId)));
+
+    expect(removed).toMatchObject({ id: 'scrubber', earnedCents: 0, potCents: 0, lines: [] });
+    expect(hireJobs()).toEqual([]);
+    expect(t.machineLines.map((l) => l.id)).toEqual(['pl1']);
+    expect(await machine('steamer')).toMatchObject({ earnedCents: 0, potCents: 0, lines: [] });
   });
 
   it.each(['nope', 'pl1'])('answers 404 for %s, which is not a hire', async (lineId) => {
@@ -898,7 +938,7 @@ describe('the register and the lines agree', () => {
 describe.each(['coo', 'admin'])('R22: %s, who sees the register and is not the owner', (userId) => {
   beforeEach(() => {
     // A hire and a payment already there, to be left alone.
-    t.jobs.push(job('hireJob', 'Hire: Floor scrubber to Jane Wanjiru', '2026-11-03', 10_500, { clientName: 'Jane Wanjiru' }));
+    t.jobs.push(job('hireJob', 'Hire: Floor scrubber', '2026-11-03', 10_500, { clientName: 'Jane Wanjiru' }));
     t.machineLines.push(line('hl1', 'scrubber', 'hireJob', 6, 2_000, { isHire: true }));
     t.machinePayouts = [payment('p1', 'inv1', '2026-11-10', 1_000)];
   });

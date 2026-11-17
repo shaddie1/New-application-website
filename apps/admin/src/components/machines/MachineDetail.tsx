@@ -22,7 +22,8 @@ import { Figure, HEADINGS, LoadFailed, NAME_CELL, Pot, ROW, RetiredMark } from '
 import { PayoutForm } from './PayoutForm';
 import { RepairForm } from './RepairForm';
 import {
-  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, ownedBy, priceText, stillOwedText,
+  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, ownedBy, priceText,
+  removeHireMessage, stillOwedText,
 } from './wording';
 
 /** The owner's form that is open over the machine's view. */
@@ -298,9 +299,8 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
   const removeHire = (l: MachineLineDto) => change(
     {
       title: l.customerName ? `Remove the hire to ${l.customerName}?` : 'Remove this hire?',
-      description:
-        `The hire’s one-off job in Jobs & costs is deleted with it: its income of ${money(l.chargedCents ?? 0)} ` +
-        `and any costs logged on that job. ${money(l.amountCents)} leaves the pot. This cannot be undone.`,
+      // The message lists any other machine with days on the hire's job, one to a line.
+      description: <span className="whitespace-pre-line">{removeHireMessage(l)}</span>,
       confirmLabel: 'Remove hire',
       destructive: true,
     },

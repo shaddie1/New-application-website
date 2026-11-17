@@ -95,7 +95,7 @@ export function LogDaysForm({
             id={`${id}-search`}
             type="search"
             autoComplete="off"
-            placeholder="Search by job or contract"
+            placeholder="Search by job title"
             className={field}
             value={search}
             onChange={(e) => setSearch(e.target.value)}

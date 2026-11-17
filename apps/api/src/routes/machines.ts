@@ -8,7 +8,8 @@
  *
  * Job data is opened to more roles here, so each query selects only the
  * fields it serves: no client phone, location or job notes for anyone, and a
- * hire customer's name for the owner alone.
+ * hire customer's name for the owner alone. The name is kept in the hire job's
+ * client name and never in its title, which other pages show to other people.
  */
 import type { Prisma } from '@prisma/client';
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
@@ -86,7 +87,21 @@ const machineDetailSelect = {
       isHire: true,
       createdAt: true,
       // A line has no date of its own, and a hire's charge is its job's income.
-      job: { select: { date: true, title: true, incomeCents: true, discountCents: true, clientName: true } },
+      // The job's lines say whether it is a hire's job, whichever machine's line this is,
+      // and which other machines lose their days when a hire, and its job with it, is removed.
+      job: {
+        select: {
+          date: true,
+          title: true,
+          incomeCents: true,
+          discountCents: true,
+          clientName: true,
+          machineLines: {
+            select: { id: true, isHire: true, halfDays: true, amountCents: true, asset: { select: { name: true } } },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          },
+        },
+      },
     },
   },
   machineInvestors: {
@@ -165,22 +180,34 @@ function toMachineRow(asset: OnRegister<RowAsset>): MachineRowDto {
 }
 
 /**
- * One line as its viewer may see it. A hire's job is named after its customer,
- * so for anyone but the owner the title reads "Hire" and the name is not sent.
+ * One line as its viewer may see it. Only the owner is sent a hire's customer
+ * (R31). A hire's job is titled after its machine alone, but a row from before
+ * that rule may still name the customer in its title, so anyone but the owner
+ * is sent "Hire" for the title of a hire's job: on the hire's own line and on
+ * any other machine's days on that job.
+ *
+ * Removing a hire deletes its job, and every other machine's days on that job
+ * go with it (R11), so the owner's copy of a hire lists them: the page names
+ * them before it asks.
  */
 function toLineDto(line: DetailAsset['machineLines'][number], forOwner: boolean): MachineLineDto {
   const { job } = line;
+  const onHireJob = line.isHire || job.machineLines.some((l) => l.isHire);
+  const others = line.isHire && forOwner ? job.machineLines.filter((l) => l.id !== line.id) : [];
   return {
     id: line.id,
     jobId: line.jobId,
     date: isoDay(job.date),
-    jobTitle: line.isHire && !forOwner ? 'Hire' : job.title,
+    jobTitle: onHireJob && !forOwner ? 'Hire' : job.title,
     halfDays: line.halfDays,
     rateCents: line.rateCents,
     amountCents: line.amountCents,
     isHire: line.isHire,
     chargedCents: line.isHire ? job.incomeCents - job.discountCents : null,
     ...(line.isHire && forOwner && job.clientName ? { customerName: job.clientName } : {}),
+    ...(others.length > 0
+      ? { otherMachines: others.map((o) => ({ machineName: o.asset.name, halfDays: o.halfDays, amountCents: o.amountCents })) }
+      : {}),
   };
 }
 
@@ -429,8 +456,12 @@ const sendRefusal = (reply: FastifyReply, refusal: Refusal) => reply.code(refusa
 /** KTD5: half days x rate / 2. A rate is whole shillings, so half a day is a whole number of cents. */
 const lineAmountCents = (halfDays: number, rateCents: number) => (halfDays * rateCents) / 2;
 
-/** A hire's one-off job is named after the machine and the customer. */
-const hireTitle = (machineName: string, customerName: string) => `Hire: ${machineName} to ${customerName}`;
+/**
+ * A hire's one-off job is named after the machine alone. R31: the customer is
+ * the owner's to see, and a job's title is shown to other people, here and in
+ * project money, so the customer is kept in the job's client name only.
+ */
+const hireTitle = (machineName: string) => `Hire: ${machineName}`;
 
 /** R32: why a hire of a machine whose start day is `startDay` cannot start earlier. */
 const hireBeforeStartDay = (startDay: Date): Refusal => ({
@@ -904,7 +935,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
         // One-off with no project, which the Job_placement_project_check constraint requires.
         const job = await tx.job.create({
           data: {
-            title: hireTitle(machine.name, customerName),
+            title: hireTitle(machine.name),
             date,
             incomeCents: chargedCents,
             status: 'OWNER_ENTRY',
@@ -966,7 +997,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
         await tx.job.update({
           where: { id: line.jobId },
           data: {
-            title: hireTitle(line.asset.name, customerName),
+            title: hireTitle(line.asset.name),
             clientName: customerName,
             date,
             // What the customer was charged is income less discount, so the amount typed is stored with nothing off.
@@ -985,7 +1016,8 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
     });
 
     // The hire is its job: the database deletes the job's costs and every
-    // machine's days on it with the job (R11).
+    // machine's days on it with the job (R11). The owner's copy of the hire
+    // lists the other machines, so the page names them before it asks.
     guarded.delete<{ Params: { lineId: string } }>('/hires/:lineId', { preHandler: requireMachinesEdit }, async (req, reply) => {
       const { lineId } = req.params;
       const line = await prisma.machineLine.findUnique({

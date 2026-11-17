@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, ownedBy, potText, priceText,
-  stillOwedText,
+  removeHireMessage, stillOwedText,
 } from './wording';
 
 describe('earnBackLine', () => {
@@ -143,5 +143,38 @@ describe('hireLabel', () => {
 
   it('is only "Hire" for a viewer, who is not sent the name', () => {
     expect(hireLabel({})).toBe('Hire');
+  });
+});
+
+describe('removeHireMessage', () => {
+  // AE2: three days at KSh 2,000, charged KSh 10,500.
+  const hire = { chargedCents: 1_050_000, amountCents: 600_000 };
+
+  it('says the hire\'s job goes with its income and costs, and what leaves the pot', () => {
+    expect(removeHireMessage(hire)).toBe(
+      'The hire’s one-off job in Jobs & costs is deleted with it: its income of KSh 10,500 and any costs logged ' +
+      'on that job. KSh 6,000 leaves the pot. This cannot be undone.',
+    );
+    expect(removeHireMessage({ ...hire, otherMachines: [] })).toBe(removeHireMessage(hire));
+  });
+
+  it('names every other machine with days on the hire\'s job, its days and the amount that leaves its pot', () => {
+    const otherMachines = [
+      { machineName: 'Steam cleaner', halfDays: 2, amountCents: 100_000 },
+      { machineName: 'Carpet extractor', halfDays: 5, amountCents: 375_000 },
+    ];
+
+    expect(removeHireMessage({ ...hire, otherMachines })).toBe(
+      [
+        'The hire’s one-off job in Jobs & costs is deleted with it: its income of KSh 10,500 and any costs logged ' +
+        'on that job. KSh 6,000 leaves the pot.',
+        '',
+        'The days logged on that job for other machines are removed too. Each amount leaves that machine’s pot:',
+        'Steam cleaner, 1 day: KSh 1,000',
+        'Carpet extractor, 2.5 days: KSh 3,750',
+        '',
+        'This cannot be undone.',
+      ].join('\n'),
+    );
   });
 });
