@@ -3,8 +3,8 @@
  * the machine register: an in-memory stand-in for the Prisma calls those
  * routes make on users, projects, jobs, costs, machine lines, monthly targets,
  * shareholders and declared payouts,
- * and one helper that signs a token and calls a route under /admin/financials
- * or /admin/finance. A test file mocks
+ * and one helper that signs a token and calls a route under /admin/financials,
+ * /admin/finance or /admin/machines. A test file mocks
  * '../db.js' with `db` and seeds the tables in `t`. Not built:
  * tsconfig.build.json excludes this folder.
  */
@@ -72,6 +72,23 @@ const withCosts = (job: Row) => ({
   ...job,
   expenses: t.expenses.filter((e) => e.jobId === job.id),
   machineLines: t.machineLines.filter((l) => l.jobId === job.id).map(withMachine),
+});
+
+/**
+ * An asset with its repairs, its machine lines (each with its whole job row)
+ * and its investors (each with their payments), as the machine register
+ * selects them. The whole rows come back, whatever was selected, in the order
+ * they were seeded.
+ */
+const withRegister = (asset: Row) => ({
+  ...asset,
+  maintenance: t.assetMaintenance.filter((m) => m.assetId === asset.id),
+  machineLines: t.machineLines
+    .filter((l) => l.assetId === asset.id)
+    .map((l) => ({ ...l, job: t.jobs.find((j) => j.id === l.jobId) })),
+  machineInvestors: t.machineInvestors
+    .filter((i) => i.assetId === asset.id)
+    .map((i) => ({ ...i, payouts: t.machinePayouts.filter((p) => p.investorId === i.id) })),
 });
 
 /** A job with its costs, its project and whoever reported it, as the job routes include them. */
@@ -195,6 +212,15 @@ export const db = {
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.expenses.filter((e) => costMatches(e, where))),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.expenses.filter((e) => costMatches(e, args.where)), args)),
   },
+  asset: {
+    /** A seeded asset says `dailyRateCents: null` when it has no rate, as the database does. */
+    findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
+      ordered(t.assets.filter((a) => matches(a, where)), orderBy).map(withRegister)),
+    findUnique: vi.fn(async ({ where }: Where) => {
+      const asset = t.assets.find((a) => matches(a, where));
+      return asset ? withRegister(asset) : null;
+    }),
+  },
   machineLine: {
     /** `where` may filter on the line's own columns and on its `job`, as a cost's may. */
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.machineLines.filter((l) => costMatches(l, where)).map(withMachine)),
@@ -250,13 +276,20 @@ export const db = {
   $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>, _options?: unknown) => run(db)),
 };
 
+/**
+ * The token carries the user's role, or the seeded `tokenRole` when the user
+ * signed in before their role was changed in the database.
+ */
 export async function as(userId: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) {
   const { signAccessToken } = await import('../auth/jwt.js');
   const { financialsRoutes } = await import('../routes/financials.js');
   const { financeRoutes } = await import('../routes/finance.js');
-  const { token } = await signAccessToken(userId, t.users.find((u) => u.id === userId)!.role);
+  const { machinesRoutes } = await import('../routes/machines.js');
+  const user = t.users.find((u) => u.id === userId)!;
+  const { token } = await signAccessToken(userId, user.tokenRole ?? user.role);
   const server = Fastify();
   await server.register(financialsRoutes, { prefix: '/admin/financials' });
   await server.register(financeRoutes, { prefix: '/admin/finance' });
+  await server.register(machinesRoutes, { prefix: '/admin/machines' });
   return server.inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });
 }
