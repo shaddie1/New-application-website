@@ -3,7 +3,7 @@
  * added up from its jobs. Served to the owner, the admin, the financial
  * manager and the COO only. Money is in cents (KSh x 100).
  */
-import type { ExpenseCategory, ProjectStage } from './admin.js';
+import type { CostsByGroup, ExpenseCategory, ProjectStage } from './admin.js';
 
 export interface MoneyFiguresDto {
   jobCount: number;
@@ -12,7 +12,10 @@ export interface MoneyFiguresDto {
   discountCents: number;
   /** Typed less discounts: what Financials calls income. */
   chargedCents: number;
+  /** Every cost of the jobs and their machine days. */
   spentCents: number;
+  /** The machine days inside `spentCents`. Sent only when above zero. */
+  machineCents?: number;
   /** Charged less spent. */
   profitCents: number;
 }
@@ -29,16 +32,22 @@ export interface ProjectMoneyTable {
   totals: MoneyFiguresDto;
 }
 
+/**
+ * One line of what a job cost. A machine's days on the job are a line too:
+ * its category is `MACHINES`, its date is the job's, its description is the
+ * machine's name and days, and it has no receipt fields.
+ */
 export interface CostLineDto {
   id: string;
   date: string; // YYYY-MM-DD
-  category: ExpenseCategory;
+  category: ExpenseCategory | 'MACHINES';
   description: string | null;
   amountCents: number;
   enteredByName: string | null;
-  receiptRef: string | null;
-  /** A web address starting with http or https, or null. */
-  receiptUrl: string | null;
+  /** Left out of a `MACHINES` line. */
+  receiptRef?: string | null;
+  /** A web address starting with http or https, or null. Left out of a `MACHINES` line. */
+  receiptUrl?: string | null;
 }
 
 export interface ProjectMoneyJobDto {
@@ -49,7 +58,10 @@ export interface ProjectMoneyJobDto {
   discountCents: number;
   chargedCents: number;
   spentCents: number;
+  /** The machine days inside `spentCents`. Sent only when above zero. */
+  machineCents?: number;
   profitCents: number;
+  /** The job's costs, newest first, then its machine days. */
   costs: CostLineDto[];
 }
 
@@ -57,7 +69,7 @@ export interface ProjectMoneyJobDto {
 export interface ProjectMoneyDetail {
   projectId: string;
   totals: MoneyFiguresDto;
-  spentByGroupCents: Record<ExpenseCategory, number>;
+  spentByGroupCents: CostsByGroup;
   /** A row per calendar month for a contract billed daily, weekly or monthly; empty for a one-off contract. */
   months: (MoneyFiguresDto & { month: string /* YYYY-MM */ })[];
   /** Newest first. */

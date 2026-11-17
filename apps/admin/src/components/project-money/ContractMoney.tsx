@@ -60,7 +60,7 @@ function CostLine({ cost: c }: { cost: CostLineDto }) {
     <li className="border-b border-line py-2 last:border-b-0">
       <div className="flex items-baseline justify-between gap-4">
         <span className="min-w-0 break-words">
-          <span className="font-medium">{GROUP_LABELS[c.category]}</span>
+          <span className="font-medium">{c.category === 'MACHINES' ? 'Machines' : GROUP_LABELS[c.category]}</span>
           {c.description ? ` — ${c.description}` : ''}
         </span>
         <span className="shrink-0 tabular-nums">{money(c.amountCents)}</span>

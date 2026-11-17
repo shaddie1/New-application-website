@@ -2,10 +2,12 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ClientSegment, ExpenseCategory, JobPlacement, JobStatus, Prisma, ShareholderKind } from '@prisma/client';
 import type {
+  CostsByGroup,
   ExpenseDto,
   FinancialSummary,
   CreateExpenseInput,
   JobDto,
+  JobMachineLineDto,
   CreateJobInput,
   UpdateJobInput,
   JobPlaceInput,
@@ -27,6 +29,7 @@ import type {
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
+import { machineAmountCents } from '../machines/amounts.js';
 import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
 import { suggester } from '../projectMoney/suggest.js';
 
@@ -123,6 +126,10 @@ const ReplaceStakesSchema = z.object({
 
 const STAKES_CHANGED = 'The stakes changed since you opened this form. Reload and try again.';
 
+// A job's machine days with each machine's name, oldest first. Every query
+// that feeds toJobDto includes them: its row type requires them.
+const jobMachineLines = { include: { asset: { select: { name: true } } }, orderBy: { createdAt: 'asc' } } as const;
+
 export const financialsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', requireOwner);
@@ -135,7 +142,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const { from, to } = dateRange(parsed.data.from, parsed.data.to);
 
-    const [jobs, expenses] = await Promise.all([
+    const [jobs, expenses, machineCents] = await Promise.all([
       prisma.job.findMany({
         where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
         select: { incomeCents: true, discountCents: true },
@@ -144,21 +151,25 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
         select: { category: true, amountCents: true },
       }),
+      machineAmountCents(from, to),
     ]);
 
     const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
 
     const catTotal = (cat: ExpenseCategory): number =>
       expenses.filter((e) => e.category === cat).reduce((acc, e) => acc + e.amountCents, 0);
-    const expensesByCategoryCents: Record<ExpenseCategory, number> = {
+    // Machines is a group only when it has an amount: a period with no
+    // machine days carries the five groups alone.
+    const expensesByCategoryCents: CostsByGroup = {
       MATERIALS: catTotal('MATERIALS'),
       TRANSPORT: catTotal('TRANSPORT'),
       EMPLOYEE_PAY: catTotal('EMPLOYEE_PAY'),
       LUNCH: catTotal('LUNCH'),
       MISCELLANEOUS: catTotal('MISCELLANEOUS'),
+      ...(machineCents > 0 && { MACHINES: machineCents }),
     };
 
-    const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+    const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
 
     const summary: FinancialSummary = {
       incomeCents,
@@ -195,7 +206,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const results = await Promise.all(
       monthSlots.map(async ({ year, month, label, from, to }) => {
-        const [jobs, expenses] = await Promise.all([
+        const [jobs, expenses, machineCents] = await Promise.all([
           prisma.job.findMany({
             where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
             select: { incomeCents: true, discountCents: true },
@@ -204,11 +215,13 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
             where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
             select: { amountCents: true },
           }),
+          machineAmountCents(from, to),
         ]);
         const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-        const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+        const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
         const item: MonthlyTrendItem = {
           year, month, label, incomeCents, totalExpensesCents,
+          ...(machineCents > 0 && { machineCents }),
           netCents: incomeCents - totalExpensesCents,
           jobCount: jobs.length,
         };
@@ -231,6 +244,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
       include: {
         expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
         reportedBy: { select: { fullName: true } },
         project: { select: { title: true } },
       },
@@ -263,7 +277,12 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...place,
         createdById: req.auth!.sub,
       },
-      include: { expenses: true, reportedBy: { select: { fullName: true } }, project: { select: { title: true } } },
+      include: {
+        expenses: true,
+        machineLines: jobMachineLines,
+        reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
+      },
     });
     return reply.code(201).send({ job: toJobDto(row) });
   });
@@ -297,6 +316,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       },
       include: {
         expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
         reportedBy: { select: { fullName: true } },
         project: { select: { title: true } },
       },
@@ -375,6 +395,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       where: { status: 'PENDING' },
       include: {
         expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
         reportedBy: { select: { fullName: true } },
         project: { select: { title: true } },
       },
@@ -399,6 +420,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       data: { status: 'APPROVED', ...place },
       include: {
         expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
         reportedBy: { select: { fullName: true } },
         project: { select: { title: true } },
       },
@@ -585,6 +607,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       periodNetCents: figures.netCents,
       periodIncomeCents: figures.incomeCents,
       periodExpensesCents: figures.expensesCents,
+      ...(figures.machineCents > 0 && { periodMachineCents: figures.machineCents }),
       periodProjects: figures.jobCount,
       fromDate: parsed.data.from,
       toDate: parsed.data.to,
@@ -644,14 +667,16 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
 /**
  * What a period's net profit is made of: counted jobs dated `fromDate` to
- * `toDate` (YYYY-MM-DD, both inclusive), their income less discounts, and the
- * costs dated in the period on counted jobs. The equity overview and the
- * equity history both split this net figure.
+ * `toDate` (YYYY-MM-DD, both inclusive), their income less discounts, the
+ * costs dated in the period on counted jobs, and the machine days on the
+ * period's jobs. The equity overview and the equity history both split this
+ * net figure. `expensesCents` holds the machine days; `machineCents` is that
+ * part alone.
  */
 async function periodFigures(fromDate: string, toDate: string) {
   const { from, to } = dateRange(fromDate, toDate);
 
-  const [jobs, expenses] = await Promise.all([
+  const [jobs, expenses, machineCents] = await Promise.all([
     prisma.job.findMany({
       where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
       select: { incomeCents: true, discountCents: true },
@@ -660,11 +685,12 @@ async function periodFigures(fromDate: string, toDate: string) {
       where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
       select: { amountCents: true },
     }),
+    machineAmountCents(from, to),
   ]);
 
   const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-  const expensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
-  return { incomeCents, expensesCents, netCents: incomeCents - expensesCents, jobCount: jobs.length };
+  const expensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
+  return { incomeCents, expensesCents, machineCents, netCents: incomeCents - expensesCents, jobCount: jobs.length };
 }
 
 /** The current holders, in table order. Removed holders are left out. */
@@ -842,8 +868,19 @@ type JobRow = {
   projectId: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
+  /** Required, so a query that returns a job without loading them fails typecheck. */
+  machineLines: MachineLineRow[];
   reportedBy: { fullName: string } | null;
   project: { title: string } | null;
+};
+
+type MachineLineRow = {
+  id: string;
+  halfDays: number;
+  rateCents: number;
+  amountCents: number;
+  isHire: boolean;
+  asset: { name: string };
 };
 
 type ExpenseRow = {
@@ -859,7 +896,10 @@ type ExpenseRow = {
 
 function toJobDto(row: JobRow): JobDto {
   const expenses = row.expenses.map(toExpenseDto);
-  const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+  const machineCents = row.machineLines.reduce((acc, l) => acc + l.amountCents, 0);
+  // The machine days are inside the total: the admin works out a job's profit
+  // as income less this total after a cost is added or removed.
+  const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
   const actualIncomeCents = row.incomeCents - row.discountCents;
   return {
     id: row.id,
@@ -884,6 +924,20 @@ function toJobDto(row: JobRow): JobDto {
     totalExpensesCents,
     netCents: actualIncomeCents - totalExpensesCents,
     createdAt: row.createdAt.toISOString(),
+    // Both are left out of a job with no machine days.
+    ...(machineCents > 0 && { machineCents }),
+    ...(row.machineLines.length > 0 && { machineLines: row.machineLines.map(toMachineLineDto) }),
+  };
+}
+
+function toMachineLineDto(row: MachineLineRow): JobMachineLineDto {
+  return {
+    id: row.id,
+    machineName: row.asset.name,
+    halfDays: row.halfDays,
+    rateCents: row.rateCents,
+    amountCents: row.amountCents,
+    isHire: row.isHire,
   };
 }
 

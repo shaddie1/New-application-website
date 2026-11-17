@@ -182,9 +182,11 @@ export const db = {
       rows.forEach((j) => Object.assign(j, data));
       return { count: rows.length };
     }),
+    /** The job's machine lines go with it, as the database deletes them. */
     delete: vi.fn(async ({ where }: Where) => {
       const job = t.jobs.find((j) => matches(j, where))!;
       t.jobs = t.jobs.filter((j) => j !== job);
+      t.machineLines = t.machineLines.filter((l) => l.jobId !== job.id);
       return job;
     }),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.jobs.filter((j) => matches(j, args.where)), args)),

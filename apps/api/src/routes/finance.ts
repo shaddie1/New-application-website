@@ -40,6 +40,7 @@ import {
   utcBounds,
   type DayRange,
 } from '../finance/comparison.js';
+import { machineAmountCents } from '../machines/amounts.js';
 
 const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
 const BASIS_POINTS_TOTAL = 10_000;
@@ -684,11 +685,16 @@ function monthTotals(year: number, month: number) {
 /** How many months an overview's series covers, the requested month included. */
 const SERIES_MONTHS = 6;
 
-/** Income, net and job count over a range of calendar days. */
+/**
+ * Income, net and job count over a range of calendar days. Net is income less
+ * the costs dated in the range and the machine days on the range's jobs.
+ */
 async function rangeTotals(range: DayRange) {
   const { from, to } = utcBounds(range);
 
-  const [jobs, expenses] = await Promise.all([
+  // The machine days are asked for inside this Promise.all, like the other
+  // two, so the overview's rule holds: no query is left on the side.
+  const [jobs, expenses, machineCents] = await Promise.all([
     prisma.job.aggregate({
       where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
       _sum: { incomeCents: true, discountCents: true },
@@ -698,12 +704,13 @@ async function rangeTotals(range: DayRange) {
       where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
       _sum: { amountCents: true },
     }),
+    machineAmountCents(from, to),
   ]);
 
   const incomeCents = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
   return {
     incomeCents,
-    netCents: incomeCents - (expenses._sum.amountCents ?? 0),
+    netCents: incomeCents - (expenses._sum.amountCents ?? 0) - machineCents,
     jobCount: jobs._count._all,
   };
 }
@@ -712,10 +719,14 @@ function toComparisonFigures(totals: Awaited<ReturnType<typeof rangeTotals>>): C
   return { revenueCents: totals.incomeCents, netCents: totals.netCents, jobCount: totals.jobCount };
 }
 
-/** Net profit (counted job income less discounts and expenses) over a period. */
+/**
+ * Net profit over a period: counted job income less discounts, less the costs
+ * dated in the period, less the machine days on the period's jobs. A payout
+ * stores the figure it was declared on, so days logged later do not change it.
+ */
 async function netProfitForPeriod(from: string, to: string): Promise<number> {
   const range = dateRange(from, to);
-  const [jobs, expenses] = await Promise.all([
+  const [jobs, expenses, machineCents] = await Promise.all([
     prisma.job.aggregate({
       where: { date: { gte: range.from, lte: range.to }, status: { in: COUNTED_STATUSES } },
       _sum: { incomeCents: true, discountCents: true },
@@ -724,9 +735,10 @@ async function netProfitForPeriod(from: string, to: string): Promise<number> {
       where: { date: { gte: range.from, lte: range.to }, job: { status: { in: COUNTED_STATUSES } } },
       _sum: { amountCents: true },
     }),
+    machineAmountCents(range.from, range.to),
   ]);
   const income = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
-  return income - (expenses._sum.amountCents ?? 0);
+  return income - (expenses._sum.amountCents ?? 0) - machineCents;
 }
 
 /**

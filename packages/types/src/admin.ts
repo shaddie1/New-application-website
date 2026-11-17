@@ -116,6 +116,14 @@ export interface AdminQuotesResult {
 
 export type ExpenseCategory = 'MATERIALS' | 'TRANSPORT' | 'EMPLOYEE_PAY' | 'LUNCH' | 'MISCELLANEOUS';
 
+/**
+ * Costs added up by group: the five expense categories, and the machines' days
+ * as a group of their own. `MACHINES` is sent only when its amount is above
+ * zero, and a server older than it never sends it, so the admin reads it as
+ * optional. A cost typed into a form is always one of the five.
+ */
+export type CostsByGroup = Record<ExpenseCategory, number> & { MACHINES?: number };
+
 export type JobStatus = 'OWNER_ENTRY' | 'PENDING' | 'APPROVED';
 
 /** Where a job sits for project money. STANDALONE is what the back-office calls a one-off job. */
@@ -142,6 +150,20 @@ export interface CreateExpenseInput {
   date: string; // YYYY-MM-DD
 }
 
+/** One machine's days on a job, as the owner's job list shows them. They are logged on the Machines page. */
+export interface JobMachineLineDto {
+  id: string;
+  machineName: string;
+  /** Days are counted in halves: 5 is two and a half days. */
+  halfDays: number;
+  /** The machine's daily rate when the days were logged. */
+  rateCents: number;
+  /** Days x rate: a cost of the job. */
+  amountCents: number;
+  /** True when the job is the machine's hire to an outside customer. */
+  isHire: boolean;
+}
+
 // A Job represents one cleaning engagement with its own income + expenses.
 export interface JobDto {
   id: string;
@@ -163,9 +185,14 @@ export interface JobDto {
   projectId: string | null; // set only when placement is PROJECT
   projectTitle: string | null;
   expenses: ExpenseDto[];
+  /** Every cost in `expenses` and the job's machine days, so income less this is the job's profit. */
   totalExpensesCents: number;
   netCents: number; // actualIncomeCents - totalExpensesCents
   createdAt: string;
+  /** The machine days inside `totalExpensesCents`. Sent only when above zero. */
+  machineCents?: number;
+  /** The job's machine days. Sent only to the owner, and only when the job has some: a job report carries the amount alone. */
+  machineLines?: JobMachineLineDto[];
 }
 
 export interface CreateJobInput {
@@ -213,7 +240,9 @@ export interface PlaceJobsInput {
 
 export interface FinancialSummary {
   incomeCents: number;
-  expensesByCategoryCents: Record<ExpenseCategory, number>;
+  /** Costs by their own date. Machine days, under `MACHINES`, by the date of their job. */
+  expensesByCategoryCents: CostsByGroup;
+  /** Every group above added up, machine days included. */
   totalExpensesCents: number;
   netCents: number;
   fromDate: string;
@@ -237,6 +266,8 @@ export interface MonthlyTrendItem {
   label: string; // e.g. "Jun 2026"
   incomeCents: number;
   totalExpensesCents: number;
+  /** The machine days inside `totalExpensesCents`, counted in the month of their job. Sent only when above zero. */
+  machineCents?: number;
   netCents: number;
   jobCount: number;
 }
@@ -785,6 +816,8 @@ export interface AllTimeTotals {
   totalProjects: number; // count of counted jobs, ever
   totalIncomeCents: number;
   totalExpensesCents: number;
+  /** The machine days inside `totalExpensesCents`. Sent only when above zero. */
+  totalMachineCents?: number;
   totalNetCents: number;
   firstJobDate: string | null; // YYYY-MM-DD; null when there are no jobs yet
   lastJobDate: string | null; // YYYY-MM-DD
@@ -805,6 +838,9 @@ export interface EquityOverview {
   // older than these fields leaves them out, so the admin reads them as optional.
   periodIncomeCents: number;
   periodExpensesCents: number;
+  // What was set aside for machines in the period: the machine days inside
+  // periodExpensesCents, counted by the date of their job. Sent only when above zero.
+  periodMachineCents?: number;
   periodProjects: number;
   fromDate: string;
   toDate: string;
