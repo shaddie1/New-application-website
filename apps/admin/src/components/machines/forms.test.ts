@@ -1,0 +1,332 @@
+import { describe, expect, it } from 'vitest';
+import type { DeclaredPeriodDto } from '@onyxhawk/types';
+
+import {
+  amountPreview,
+  belowRateWarning,
+  blankInvestorRow,
+  daysAmountCents,
+  declaredPeriodWarning,
+  fieldDays,
+  fieldShillings,
+  investorRowsFor,
+  machineChanges,
+  nairobiDay,
+  parseAmount,
+  parseDays,
+  parsePayment,
+  parsePrice,
+  parseRate,
+  readInvestorsForm,
+  startDayProblem,
+  type InvestorRow,
+} from './forms';
+
+describe('parseRate', () => {
+  it('reads whole shillings as cents', () => {
+    expect(parseRate('2000')).toEqual({ ok: true, cents: 200_000 });
+    expect(parseRate(' 2500 ')).toEqual({ ok: true, cents: 250_000 });
+  });
+
+  it.each([
+    ['2000.50', 'A daily rate is in whole shillings, with no cents.'],
+    ['0', 'A daily rate must be more than KSh 0.'],
+    ['-5', 'A daily rate cannot be negative.'],
+    ['abc', 'Enter a number, such as 2000.'],
+    ['', 'Enter a daily rate.'],
+  ])('refuses "%s" and says why', (typed, reason) => {
+    expect(parseRate(typed)).toEqual({ ok: false, reason });
+  });
+});
+
+describe('parseAmount', () => {
+  it('reads shillings and cents digit by digit', () => {
+    expect(parseAmount('5000')).toEqual({ ok: true, cents: 500_000 });
+    expect(parseAmount('1234.56')).toEqual({ ok: true, cents: 123_456 });
+    expect(parseAmount('1234.5')).toEqual({ ok: true, cents: 123_450 });
+    // 4.35 x 100 is 434.99999999999994 as a fraction; read by its digits it is 435.
+    expect(parseAmount('4.35')).toEqual({ ok: true, cents: 435 });
+  });
+
+  it.each([
+    ['', 'Enter an amount.'],
+    ['0', 'The amount must be more than KSh 0.'],
+    ['-5', 'An amount cannot be negative.'],
+    ['abc', 'Enter a number, such as 1500 or 1500.50.'],
+    ['10.555', 'An amount can have at most two decimal places.'],
+  ])('refuses "%s" and says why', (typed, reason) => {
+    expect(parseAmount(typed)).toEqual({ ok: false, reason });
+  });
+
+  it('takes 0 where nothing is a real amount, and still wants something typed', () => {
+    expect(parseAmount('0', { orZero: true })).toEqual({ ok: true, cents: 0 });
+    expect(parseAmount('', { orZero: true })).toEqual({ ok: false, reason: 'Enter an amount.' });
+  });
+});
+
+describe('parsePrice', () => {
+  it('reads a price, and a blank or 0 as no price', () => {
+    expect(parsePrice('260000')).toEqual({ ok: true, cents: 26_000_000 });
+    expect(parsePrice('')).toEqual({ ok: true, cents: 0 });
+    expect(parsePrice('0')).toEqual({ ok: true, cents: 0 });
+  });
+
+  it('refuses what is not an amount', () => {
+    expect(parsePrice('abc')).toEqual({ ok: false, reason: 'Enter a number, such as 1500 or 1500.50.' });
+    expect(parsePrice('-1')).toEqual({ ok: false, reason: 'An amount cannot be negative.' });
+  });
+});
+
+describe('parsePayment', () => {
+  // AE3: an investor still owed KSh 4,000.
+  it('accepts a payment up to what is still owed', () => {
+    expect(parsePayment('4000', 400_000)).toEqual({ ok: true, cents: 400_000 });
+    expect(parsePayment('1500.50', 400_000)).toEqual({ ok: true, cents: 150_050 });
+  });
+
+  it('refuses a payment above what is still owed', () => {
+    expect(parsePayment('5000', 400_000)).toEqual({
+      ok: false,
+      reason: 'That is more than the KSh 4,000 still owed.',
+    });
+  });
+
+  it('refuses what is not an amount', () => {
+    expect(parsePayment('0', 400_000)).toEqual({ ok: false, reason: 'The amount must be more than KSh 0.' });
+  });
+});
+
+describe('parseDays', () => {
+  it.each([
+    ['2.5', 5],
+    ['2', 4],
+    ['0.5', 1],
+    ['1.0', 2],
+    ['1.50', 3],
+  ])('reads "%s" as %i half days', (typed, halfDays) => {
+    expect(parseDays(typed)).toEqual({ ok: true, halfDays });
+  });
+
+  it.each([
+    ['2.25', 'Days are counted in halves, such as 2 or 2.5.'],
+    ['0', 'Days must be more than 0.'],
+    ['', 'Enter the days.'],
+    ['-1', 'Days cannot be negative.'],
+    ['two', 'Enter a number, such as 1, 2.5 or 0.5.'],
+  ])('refuses "%s" and says why', (typed, reason) => {
+    expect(parseDays(typed)).toEqual({ ok: false, reason });
+  });
+});
+
+describe('what a field starts with', () => {
+  it('writes cents as shillings without "KSh"', () => {
+    expect(fieldShillings(200_000)).toBe('2000');
+    expect(fieldShillings(150_050)).toBe('1500.50');
+    expect(fieldShillings(0)).toBe('');
+  });
+
+  it('writes half days as days', () => {
+    expect(fieldDays(5)).toBe('2.5');
+    expect(fieldDays(4)).toBe('2');
+  });
+});
+
+describe('the amount shown before saving', () => {
+  it('is days x the daily rate', () => {
+    // 2.5 days at KSh 2,000 a day.
+    expect(daysAmountCents(5, 200_000)).toBe(500_000);
+    expect(amountPreview('2.5', 200_000)).toBe('2.5 days at KSh 2,000 a day: KSh 5,000');
+    expect(amountPreview('1', 200_000)).toBe('1 day at KSh 2,000 a day: KSh 2,000');
+  });
+
+  it('is not shown while the days cannot be read', () => {
+    expect(amountPreview('', 200_000)).toBeNull();
+    expect(amountPreview('2.25', 200_000)).toBeNull();
+  });
+});
+
+describe('belowRateWarning', () => {
+  // AE14: a 3-day hire at KSh 2,000 a day.
+  it('warns when the charge is below days x rate', () => {
+    expect(belowRateWarning(6, 200_000, 500_000)).toBe(
+      'This charge is KSh 1,000 below 3 days at the daily rate (KSh 6,000). ' +
+        'The machine still gets its full KSh 6,000, and the hire will show a loss of KSh 1,000.',
+    );
+  });
+
+  it('says nothing at the rate or above it', () => {
+    expect(belowRateWarning(6, 200_000, 600_000)).toBeNull();
+    expect(belowRateWarning(6, 200_000, 1_050_000)).toBeNull();
+  });
+});
+
+describe('declaredPeriodWarning', () => {
+  const october: DeclaredPeriodDto = { label: 'October 2026', periodStart: '2026-10-01', periodEnd: '2026-10-31' };
+
+  // AE16.
+  it('names the payout when the date is inside its period', () => {
+    expect(declaredPeriodWarning('2026-10-14', [october])).toBe(
+      'The payout “October 2026” is already declared, on the higher profit: this amount had not come off it. ' +
+        'You can still save. The declared payout does not change.',
+    );
+  });
+
+  it('counts the first and the last day of the period', () => {
+    expect(declaredPeriodWarning('2026-10-01', [october])).not.toBeNull();
+    expect(declaredPeriodWarning('2026-10-31', [october])).not.toBeNull();
+  });
+
+  it('says nothing outside every declared period', () => {
+    expect(declaredPeriodWarning('2026-11-01', [october])).toBeNull();
+    expect(declaredPeriodWarning('2026-09-30', [october])).toBeNull();
+    expect(declaredPeriodWarning('2026-10-14', [])).toBeNull();
+    expect(declaredPeriodWarning('', [october])).toBeNull();
+  });
+
+  it('names every payout the date is inside', () => {
+    const quarter: DeclaredPeriodDto = { label: 'Q4 2026', periodStart: '2026-10-01', periodEnd: '2026-12-31' };
+    expect(declaredPeriodWarning('2026-10-14', [october, quarter])).toBe(
+      'The payouts “October 2026” and “Q4 2026” are already declared, on the higher profit: this amount had not come off them. ' +
+        'You can still save. The declared payouts do not change.',
+    );
+  });
+});
+
+describe('nairobiDay', () => {
+  it('reads the day from the Nairobi calendar, not the UTC one', () => {
+    // 22:00 UTC on 31 October is 01:00 on 1 November in Nairobi.
+    expect(nairobiDay(new Date('2026-10-31T22:00:00Z'))).toBe('2026-11-01');
+    expect(nairobiDay(new Date('2026-10-31T20:59:00Z'))).toBe('2026-10-31');
+  });
+});
+
+describe('startDayProblem', () => {
+  it('accepts today and earlier days', () => {
+    expect(startDayProblem('2026-11-17', '2026-11-17')).toBeNull();
+    expect(startDayProblem('2026-10-01', '2026-11-17')).toBeNull();
+  });
+
+  it('refuses a day in the future, and no day at all', () => {
+    expect(startDayProblem('2026-11-18', '2026-11-17')).toBe('The start day cannot be in the future.');
+    expect(startDayProblem('', '2026-11-17')).toBe('Choose a start day.');
+  });
+});
+
+describe('machineChanges', () => {
+  const machine = { name: 'Scrubber', priceCents: 26_000_000, dailyRateCents: 200_000, startDay: '2026-11-01' };
+
+  it('sends only what was changed', () => {
+    expect(machineChanges(machine, { ...machine, dailyRateCents: 250_000 })).toEqual({ dailyRateCents: 250_000 });
+    expect(machineChanges(machine, { ...machine, name: 'Floor scrubber', startDay: '2026-10-01' })).toEqual({
+      name: 'Floor scrubber',
+      startDay: '2026-10-01',
+    });
+  });
+
+  it('is null when nothing was changed', () => {
+    expect(machineChanges(machine, { ...machine })).toBeNull();
+  });
+});
+
+describe('readInvestorsForm', () => {
+  /** AE3's machine: priced KSh 260,000, one investor who put in KSh 156,000. */
+  const stored = [{ id: 'i1', name: 'Amina Yusuf', contributionCents: 15_600_000 }];
+  const machine = (over: { earnedCents?: number; investors?: typeof stored } = {}) => ({
+    priceCents: 26_000_000,
+    earnedCents: 0,
+    investors: stored,
+    ...over,
+  });
+  const row = (key: string, name: string, amount: string): InvestorRow => ({ key, name, amount });
+
+  it('opens with one row per investor, at what each put in', () => {
+    expect(investorRowsFor(stored)).toEqual([{ key: 'i1', name: 'Amina Yusuf', amount: '156000' }]);
+    expect(blankInvestorRow('new-1')).toEqual({ key: 'new-1', name: '', amount: '' });
+  });
+
+  it('previews each share of the price, and what is left for the company', () => {
+    const form = readInvestorsForm(machine({ investors: [] }), [row('a', 'Amina Yusuf', '156000')]);
+    expect(form.shares).toEqual({ a: '60%' });
+    expect(form.totalCents).toBe(15_600_000);
+    expect(form.companyLine).toBe('The company keeps the other 40% (KSh 104,000 of the price).');
+    expect(form.blockedReason).toBeNull();
+    expect(form.input).toEqual({ investors: [{ name: 'Amina Yusuf', contributionCents: 15_600_000 }] });
+  });
+
+  it('says so when investors cover the whole price, and when there are none', () => {
+    expect(readInvestorsForm(machine({ investors: [] }), [row('a', 'Amina', '260000')]).companyLine).toBe(
+      'The investors cover the whole price. The company has no share.',
+    );
+    expect(readInvestorsForm(machine(), []).companyLine).toBe('With no investors the machine is the company’s alone.');
+  });
+
+  it('refuses investors who total more than the price, before sending', () => {
+    const form = readInvestorsForm(machine({ investors: [] }), [
+      row('a', 'Amina Yusuf', '156000'),
+      row('b', 'Brian Otieno', '110000'),
+    ]);
+    expect(form.totalCents).toBe(26_600_000);
+    expect(form.blockedReason).toBe(
+      'The investors’ amounts come to KSh 266,000, which is KSh 6,000 more than the price (KSh 260,000).',
+    );
+    expect(form.input).toBeNull();
+  });
+
+  it('marks a row with no name or an amount it cannot read', () => {
+    const form = readInvestorsForm(machine({ investors: [] }), [row('a', '  ', '156000'), row('b', 'Brian Otieno', 'lots')]);
+    expect(form.problems).toEqual({
+      a: { name: 'Enter a name.' },
+      b: { amount: 'Enter a number, such as 1500 or 1500.50.' },
+    });
+    expect(form.shares).toEqual({ a: '60%' });
+    expect(form.blockedReason).toBe('Correct the rows marked above.');
+    expect(form.input).toBeNull();
+  });
+
+  it('has nothing to save while the rows are the stored investors', () => {
+    const form = readInvestorsForm(machine(), investorRowsFor(stored));
+    expect(form.blockedReason).toBe('No changes to save.');
+    expect(form.input).toBeNull();
+    expect(form.warning).toBeNull();
+  });
+
+  it('can make the machine the company’s alone by removing every row', () => {
+    const form = readInvestorsForm(machine(), []);
+    expect(form.blockedReason).toBeNull();
+    expect(form.input).toEqual({ investors: [] });
+  });
+
+  describe('on a machine that has already earned (R28)', () => {
+    const earned = machine({ earnedCents: 5_000_000 });
+    const warning =
+      'This machine has already earned KSh 50,000. The new shares apply to all of it, not only to what it earns from now on.';
+
+    it('warns when an amount is changed', () => {
+      expect(readInvestorsForm(earned, [row('i1', 'Amina Yusuf', '130000')]).warning).toBe(warning);
+    });
+
+    it('warns when an investor is added or removed', () => {
+      expect(readInvestorsForm(earned, [...investorRowsFor(stored), row('b', 'Brian Otieno', '52000')]).warning).toBe(warning);
+      expect(readInvestorsForm(earned, []).warning).toBe(warning);
+    });
+
+    it('does not warn while nothing is changed', () => {
+      expect(readInvestorsForm(earned, investorRowsFor(stored)).warning).toBeNull();
+    });
+
+    it('does not warn while the form cannot be saved', () => {
+      expect(readInvestorsForm(earned, [row('i1', 'Amina Yusuf', '300000')]).warning).toBeNull();
+    });
+  });
+
+  it('does not warn on a machine that has earned nothing', () => {
+    expect(readInvestorsForm(machine(), [row('i1', 'Amina Yusuf', '130000')]).warning).toBeNull();
+  });
+
+  it('takes no investors for a machine with no price', () => {
+    const form = readInvestorsForm({ priceCents: 0, earnedCents: 0, investors: [] }, [row('a', 'Amina Yusuf', '1000')]);
+    expect(form.shares).toEqual({});
+    expect(form.blockedReason).toBe('A machine with no price has no investors. Give it a price first.');
+    expect(form.input).toBeNull();
+  });
+});

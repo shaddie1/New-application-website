@@ -70,6 +70,18 @@ import type {
   MachinesAccessDto,
   MachineRegisterDto,
   MachineDetailDto,
+  MachineJobPickerDto,
+  AddMachineInput,
+  GiveMachineRateInput,
+  EditMachineInput,
+  ReplaceMachineInvestorsInput,
+  AddMachineRepairInput,
+  LogMachineDaysInput,
+  EditMachineDaysInput,
+  LogMachineHireInput,
+  EditMachineHireInput,
+  PayMachineInvestorInput,
+  AssetCategory,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
@@ -132,6 +144,16 @@ const sessionRenewal = createSessionRenewal({
 
 /** Tells `listener` when a renewal was refused and the stored session cleared. */
 export const onSessionRenewalFailed = sessionRenewal.onFailed;
+
+/** An asset that is not on the machine register yet, as `GET /admin/machines/assets` lists it. */
+export type MachineAssetOption = {
+  id: string;
+  name: string;
+  category: AssetCategory;
+  /** 0 when the asset has no cost on record. */
+  costCents: number;
+  purchaseDate: string; // YYYY-MM-DD
+};
 
 export const api = {
   /** Staff sign-in: staff enter their email and the code is sent there. */
@@ -568,6 +590,100 @@ export const api = {
   machine: (machineId: string) =>
     request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}`, {
       method: 'GET', auth: true,
+    }),
+
+  // The rest of this block is the owner's alone. Every change to a machine
+  // answers with that machine's fresh detail.
+
+  /** Assets not on the register yet: the ones that can be given a daily rate. */
+  machineAssets: () =>
+    request<{ assets: MachineAssetOption[] }>('/admin/machines/assets', { method: 'GET', auth: true }),
+
+  addMachine: (input: AddMachineInput) =>
+    request<{ machine: MachineDetailDto }>('/admin/machines', {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Puts an asset already in the asset list on the register. */
+  giveMachineRate: (assetId: string, input: GiveMachineRateInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/from-asset/${encodeURIComponent(assetId)}`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Name, price, rate and start day; a `condition` of RETIRED retires the machine and any other brings it back. */
+  editMachine: (machineId: string, input: EditMachineInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}`, {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Refused when the machine has days, a hire or a payment: it is retired instead. */
+  deleteMachine: (machineId: string) =>
+    request<{ ok: true }>(`/admin/machines/${encodeURIComponent(machineId)}`, { method: 'DELETE', auth: true }),
+
+  /** The whole list at once: it replaces the investors stored. */
+  replaceMachineInvestors: (machineId: string, input: ReplaceMachineInvestorsInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/investors`, {
+      method: 'PUT', auth: true, body: JSON.stringify(input),
+    }),
+
+  addMachineRepair: (machineId: string, input: AddMachineRepairInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/repairs`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  deleteMachineRepair: (machineId: string, repairId: string) =>
+    request<{ machine: MachineDetailDto }>(
+      `/admin/machines/${encodeURIComponent(machineId)}/repairs/${encodeURIComponent(repairId)}`,
+      { method: 'DELETE', auth: true },
+    ),
+
+  /** The jobs that can take this machine's days, newest first, and the periods whose payout is declared. */
+  machineJobs: (machineId: string, search: string) =>
+    request<{ picker: MachineJobPickerDto }>(
+      `/admin/machines/${encodeURIComponent(machineId)}/jobs?search=${encodeURIComponent(search)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  logMachineDays: (machineId: string, input: LogMachineDaysInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/lines`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  editMachineDays: (lineId: string, input: EditMachineDaysInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/lines/${encodeURIComponent(lineId)}`, {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Days on a job only. A hire's line goes with its hire, through `deleteMachineHire`. */
+  deleteMachineDays: (lineId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/lines/${encodeURIComponent(lineId)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
+  logMachineHire: (machineId: string, input: LogMachineHireInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/hires`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  editMachineHire: (lineId: string, input: EditMachineHireInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/hires/${encodeURIComponent(lineId)}`, {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Removes the hire's one-off job with it, and any costs logged on that job. */
+  deleteMachineHire: (lineId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/hires/${encodeURIComponent(lineId)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
+  payMachineInvestor: (machineId: string, input: PayMachineInvestorInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/payouts`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  deleteMachinePayout: (payoutId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/payouts/${encodeURIComponent(payoutId)}`, {
+      method: 'DELETE', auth: true,
     }),
 
   // ── Company documents (shareholders only) ────────────────────────────────
