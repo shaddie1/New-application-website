@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExpenseCategory } from '@prisma/client';
 
-import { contractBreakdown, contractLines, type MoneyJob } from './figures.js';
+import { allTimeTotalsOf, contractBreakdown, contractLines, type MoneyJob } from './figures.js';
 
 /** A date as the database gives a job's or a cost's date: midnight UTC. */
 const day = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`);
@@ -10,7 +10,7 @@ let seq = 0;
 /** An owner-entered job under project A with nothing charged and no costs. */
 const job = (over: Partial<MoneyJob> = {}): MoneyJob => ({
   id: `job${++seq}`, title: 'Office clean', date: day('2026-03-10'), incomeCents: 0, discountCents: 0,
-  status: 'OWNER_ENTRY', placement: 'PROJECT', projectId: 'A', expenses: [], ...over,
+  status: 'OWNER_ENTRY', placement: 'PROJECT', projectId: 'A', expenses: [], machineLines: [], ...over,
 });
 const cost = (amountCents: number, category: ExpenseCategory = 'MATERIALS', date = day('2026-03-10')) =>
   ({ category, amountCents, date });
@@ -194,5 +194,99 @@ describe('contractBreakdown', () => {
     const jobs = [job({ date: day('2026-03-02'), incomeCents: 3_000_000 }), job({ date: day('2026-05-04'), incomeCents: 3_000_000 })];
 
     expect(contractBreakdown(jobs, 'A', { byMonth: false }).months).toEqual([]);
+  });
+});
+
+describe('machine days', () => {
+  /** A machine's days on a job, by their amount. */
+  const days = (amountCents: number) => ({ amountCents });
+  /** AE1: KSh 100,000 charged, KSh 60,000 of costs and 2.5 days at KSh 2,000, on 14 October. */
+  const ae1 = () => job({
+    date: day('2026-10-14'), incomeCents: 10_000_000,
+    expenses: [cost(4_000_000), cost(2_000_000, 'EMPLOYEE_PAY')], machineLines: [days(500_000)],
+  });
+  const ae1Figures = { typedCents: 10_000_000, discountCents: 0, chargedCents: 10_000_000, spentCents: 6_500_000, machineCents: 500_000, profitCents: 3_500_000 };
+
+  it('AE1: are part of spent, so the profit of the job, its project, its month and the totals are each KSh 5,000 lower', () => {
+    const jobs = [ae1()];
+
+    const lines = contractLines(jobs, ['A']);
+    const out = contractBreakdown(jobs, 'A', { byMonth: true });
+
+    expect(lines.projects).toStrictEqual([{ projectId: 'A', jobCount: 1, ...ae1Figures }]);
+    expect(lines.totals).toStrictEqual({ jobCount: 1, ...ae1Figures });
+    expect(out.totals).toStrictEqual({ jobCount: 1, ...ae1Figures });
+    expect(out.jobs).toStrictEqual([{ jobId: jobs[0]!.id, date: '2026-10-14', title: 'Office clean', ...ae1Figures }]);
+    expect(out.months).toStrictEqual([{ month: '2026-10', jobCount: 1, ...ae1Figures }]);
+  });
+
+  it('are their own group, and the groups add up to spent', () => {
+    const out = contractBreakdown([ae1(), job({ expenses: [cost(30_000, 'LUNCH')], machineLines: [days(200_000), days(100_000)] })], 'A', { byMonth: false });
+
+    expect(out.spentByGroupCents).toStrictEqual({
+      MATERIALS: 4_000_000, TRANSPORT: 0, EMPLOYEE_PAY: 2_000_000, LUNCH: 30_000, MISCELLANEOUS: 0, MACHINES: 800_000,
+    });
+    expect(4_000_000 + 2_000_000 + 30_000 + 800_000).toBe(out.totals.spentCents);
+  });
+
+  it('add no machine figure and no Machines group where no days are logged', () => {
+    const withDays = ae1();
+    const without = job({ projectId: 'B', incomeCents: 1_000_000, expenses: [cost(400_000)] });
+    const plain = { jobCount: 1, typedCents: 1_000_000, discountCents: 0, chargedCents: 1_000_000, spentCents: 400_000, profitCents: 600_000 };
+
+    const lines = contractLines([withDays, without], ['A', 'B']);
+    const out = contractBreakdown([withDays, without], 'B', { byMonth: true });
+
+    expect(lines.projects[1]).toStrictEqual({ projectId: 'B', ...plain });
+    expect(lines.standalone).toStrictEqual(zero);
+    expect(out.totals).toStrictEqual(plain);
+    expect(out.spentByGroupCents).toStrictEqual({ MATERIALS: 400_000, TRANSPORT: 0, EMPLOYEE_PAY: 0, LUNCH: 0, MISCELLANEOUS: 0 });
+    expect(out.months).toStrictEqual([{ month: '2026-03', ...plain }]);
+  });
+
+  it('count in the month of the job, beside a month with none', () => {
+    const jobs = [ae1(), job({ date: day('2026-11-03'), incomeCents: 1_000_000, expenses: [cost(400_000)] })];
+
+    const { months } = contractBreakdown(jobs, 'A', { byMonth: true });
+
+    expect(months).toStrictEqual([
+      { month: '2026-10', jobCount: 1, ...ae1Figures },
+      { month: '2026-11', jobCount: 1, typedCents: 1_000_000, discountCents: 0, chargedCents: 1_000_000, spentCents: 400_000, profitCents: 600_000 },
+    ]);
+  });
+
+  it('on a job waiting for approval add to no line and to no total', () => {
+    const jobs = [job({ status: 'PENDING', incomeCents: 9_000_000, machineLines: [days(500_000)] })];
+
+    expect(contractLines(jobs, ['A']).totals).toStrictEqual(zero);
+    expect(allTimeTotalsOf(jobs)).toStrictEqual({
+      totalProjects: 0, totalIncomeCents: 0, totalExpensesCents: 0, totalNetCents: 0, firstJobDate: null, lastJobDate: null,
+    });
+  });
+});
+
+describe('allTimeTotalsOf', () => {
+  it('holds machine days inside total expenses, states them beside it, and lowers the net by them', () => {
+    const jobs = [
+      job({ date: day('2026-10-14'), incomeCents: 10_000_000, expenses: [cost(6_000_000)], machineLines: [{ amountCents: 500_000 }] }),
+      job({ date: day('2026-11-05'), status: 'APPROVED', incomeCents: 3_000_000, discountCents: 200_000, expenses: [cost(500_000)] }),
+    ];
+
+    expect(allTimeTotalsOf(jobs)).toStrictEqual({
+      totalProjects: 2, totalIncomeCents: 12_800_000, totalExpensesCents: 7_000_000, totalMachineCents: 500_000,
+      totalNetCents: 5_800_000, firstJobDate: '2026-10-14', lastJobDate: '2026-11-05',
+    });
+  });
+
+  it('gives the figures it gave before, with no machine field, when no days are logged', () => {
+    const jobs = [
+      job({ date: day('2026-10-14'), incomeCents: 10_000_000, expenses: [cost(6_000_000)] }),
+      job({ date: day('2026-11-05'), status: 'APPROVED', incomeCents: 3_000_000, discountCents: 200_000, expenses: [cost(500_000)] }),
+    ];
+
+    expect(allTimeTotalsOf(jobs)).toStrictEqual({
+      totalProjects: 2, totalIncomeCents: 12_800_000, totalExpensesCents: 6_500_000, totalNetCents: 6_300_000,
+      firstJobDate: '2026-10-14', lastJobDate: '2026-11-05',
+    });
   });
 });

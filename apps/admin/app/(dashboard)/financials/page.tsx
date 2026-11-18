@@ -13,9 +13,11 @@ import type {
   ProjectDto,
 } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
+import { daysText } from '../../../src/components/machines/wording';
 import { JobPlaceMover, PlacementPicker, refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { SortJobs } from '../../../src/components/project-money/SortJobs';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { deleteJobMessage } from '../../../src/lib/jobMachines';
 import { money as fmt } from '../../../src/lib/money';
 
 // How many months of history the Monthly trends tab can show at once.
@@ -219,7 +221,7 @@ export default function FinancialsPage() {
 
   // ── Delete job ─────────────────────────────────────────────────────────────
   const handleDeleteJob = async (job: JobDto) => {
-    if (!confirm(`Delete "${job.title}" and all its expenses?`)) return;
+    if (!confirm(deleteJobMessage(job))) return;
     setDeletingJobId(job.id);
     try {
       await api.deleteJob(job.id);
@@ -921,6 +923,8 @@ function JobList({
       {jobs.map((job) => {
         const isExpanded = expandedJobId === job.id;
         const isDeleting = deletingJobId === job.id;
+        // Sent only for a job that has machine days. They are inside the job's expenses total.
+        const machineLines = job.machineLines ?? [];
         return (
           <div key={job.id} className="rounded-xl border border-border bg-surface overflow-hidden">
             <div className="px-5 py-4 flex items-start gap-4">
@@ -1058,7 +1062,44 @@ function JobList({
                     </tbody>
                   </table>
                 ) : (
-                  <p className="px-5 py-3 text-text-muted text-sm">No expenses yet.</p>
+                  <p className="px-5 py-3 text-text-muted text-sm">
+                    {machineLines.length > 0 ? 'No other expenses yet.' : 'No expenses yet.'}
+                  </p>
+                )}
+
+                {/* The job's machine days: read-only here, with no edit or delete, because the
+                    Machines page is where they are logged and each machine's pot is kept. */}
+                {machineLines.length > 0 && (
+                  <div className="border-t border-border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border">
+                          <th className="px-5 py-2 text-left font-normal">Machine</th>
+                          <th className="px-5 py-2 text-left font-normal">Days</th>
+                          <th className="px-5 py-2 text-right font-normal">Rate a day</th>
+                          <th className="px-5 py-2 text-right font-normal">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {machineLines.map((line) => (
+                          <tr key={line.id}>
+                            <td className="px-5 py-2">
+                              {line.machineName}
+                              {line.isHire && (
+                                <span className="ml-2 rounded-full bg-bg-muted px-2 py-0.5 text-xs text-text-muted">Hire</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-2 text-text-muted">{daysText(line.halfDays)}</td>
+                            <td className="px-5 py-2 text-right text-text-muted">{fmt(line.rateCents)}</td>
+                            <td className="px-5 py-2 text-right font-medium">{fmt(line.amountCents)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="px-5 py-2 text-xs text-text-muted border-t border-border">
+                      Machine days are part of this job&apos;s expenses. To change them, go to the Machines page.
+                    </p>
+                  </div>
                 )}
 
                 <form

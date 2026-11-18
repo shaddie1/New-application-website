@@ -3,8 +3,14 @@
  * charged, spent and profit are. The contracts table, a contract's breakdown
  * and the Financials all-time totals all add up here, so they agree.
  *
- * Pure functions over job rows that carry their costs. No database calls.
- * Every exported function drops jobs that do not count before adding.
+ * Pure functions over job rows that carry their costs and their machine days.
+ * No database calls. Every exported function drops jobs that do not count
+ * before adding.
+ *
+ * A machine's days on a job are a cost of that job: they are part of spent
+ * everywhere here. A machine figure, and the `MACHINES` group, is given only
+ * when its amount is above zero: jobs with no machine days give no machine
+ * field at all.
  */
 import type { ExpenseCategory, JobPlacement, JobStatus } from '@prisma/client';
 import type { AllTimeTotals } from '@onyxhawk/types';
@@ -12,7 +18,7 @@ import type { AllTimeTotals } from '@onyxhawk/types';
 /** Jobs the owner entered or approved. A report waiting for approval counts nowhere. */
 export const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
 
-/** A job row with its costs, as loaded from the database. */
+/** A job row with its costs and its machine days, as loaded from the database. */
 export type MoneyJob = {
   id: string;
   title: string;
@@ -23,6 +29,8 @@ export type MoneyJob = {
   placement: JobPlacement;
   projectId: string | null;
   expenses: { category: ExpenseCategory; amountCents: number }[];
+  /** Required, so a query that does not load them fails typecheck. */
+  machineLines: { amountCents: number }[];
 };
 
 // The columns the calculation reads.
@@ -36,7 +44,11 @@ export const moneyJobFields = {
   placement: true,
   projectId: true,
 } as const;
-export const moneyJobSelect = { ...moneyJobFields, expenses: { select: { category: true, amountCents: true } } } as const;
+export const moneyJobSelect = {
+  ...moneyJobFields,
+  expenses: { select: { category: true, amountCents: true } },
+  machineLines: { select: { amountCents: true } },
+} as const;
 
 export type MoneyFigures = {
   jobCount: number;
@@ -45,8 +57,10 @@ export type MoneyFigures = {
   discountCents: number;
   /** Typed less discount: what Financials calls income. */
   chargedCents: number;
-  /** Every cost of the jobs, whatever each cost's own date. */
+  /** Every cost of the jobs, whatever each cost's own date, and every machine day on them. */
   spentCents: number;
+  /** The machine days inside spent. Present only when above zero. */
+  machineCents?: number;
   /** Charged less spent. The discount is already inside charged. */
   profitCents: number;
 };
@@ -74,13 +88,16 @@ export type MonthFigures = MoneyFigures & {
 
 export type ContractBreakdown = {
   totals: MoneyFigures;
-  spentByGroupCents: Record<ExpenseCategory, number>;
+  /** The five cost groups, and `MACHINES` when the contract's jobs have machine days. The groups add up to spent. */
+  spentByGroupCents: Record<ExpenseCategory, number> & { MACHINES?: number };
   jobs: JobFigures[];
   months: MonthFigures[];
 };
 
 const counted = (jobs: MoneyJob[]) => jobs.filter((j) => COUNTED_STATUSES.includes(j.status));
-const spent = (job: MoneyJob) => job.expenses.reduce((acc, e) => acc + e.amountCents, 0);
+// A row built by hand may carry no machine lines; a row from the database always does, by its type.
+const machines = (job: MoneyJob) => (job.machineLines ?? []).reduce((acc, l) => acc + l.amountCents, 0);
+const spent = (job: MoneyJob) => job.expenses.reduce((acc, e) => acc + e.amountCents, 0) + machines(job);
 /** A job's date is a calendar date held at midnight UTC, so its text is read in UTC, never local time. */
 const isoDate = (job: MoneyJob) => job.date.toISOString().slice(0, 10);
 
@@ -88,8 +105,17 @@ function add(jobs: MoneyJob[]): MoneyFigures {
   const typedCents = jobs.reduce((acc, j) => acc + j.incomeCents, 0);
   const discountCents = jobs.reduce((acc, j) => acc + j.discountCents, 0);
   const spentCents = jobs.reduce((acc, j) => acc + spent(j), 0);
+  const machineCents = jobs.reduce((acc, j) => acc + machines(j), 0);
   const chargedCents = typedCents - discountCents;
-  return { jobCount: jobs.length, typedCents, discountCents, chargedCents, spentCents, profitCents: chargedCents - spentCents };
+  return {
+    jobCount: jobs.length,
+    typedCents,
+    discountCents,
+    chargedCents,
+    spentCents,
+    ...(machineCents > 0 && { machineCents }),
+    profitCents: chargedCents - spentCents,
+  };
 }
 
 export function contractLines(jobs: MoneyJob[], projectIds: string[]): ContractLines {
@@ -115,15 +141,17 @@ export function contractBreakdown(jobs: MoneyJob[], projectId: string, opts: { b
 
   const groupTotal = (group: ExpenseCategory) =>
     own.reduce((acc, j) => acc + j.expenses.filter((e) => e.category === group).reduce((a, e) => a + e.amountCents, 0), 0);
+  const totals = add(own);
 
   return {
-    totals: add(own),
+    totals,
     spentByGroupCents: {
       MATERIALS: groupTotal('MATERIALS'),
       TRANSPORT: groupTotal('TRANSPORT'),
       EMPLOYEE_PAY: groupTotal('EMPLOYEE_PAY'),
       LUNCH: groupTotal('LUNCH'),
       MISCELLANEOUS: groupTotal('MISCELLANEOUS'),
+      ...(totals.machineCents !== undefined && { MACHINES: totals.machineCents }),
     },
     jobs: own.map((j) => {
       const { jobCount: _one, ...figures } = add([j]);
@@ -168,6 +196,7 @@ export function allTimeTotalsOf(jobs: MoneyJob[]): AllTimeTotals {
     totalProjects: figures.jobCount,
     totalIncomeCents: figures.chargedCents,
     totalExpensesCents: figures.spentCents,
+    ...(figures.machineCents !== undefined && { totalMachineCents: figures.machineCents }),
     totalNetCents: figures.profitCents,
     firstJobDate: dates[0] ?? null,
     lastJobDate: dates.at(-1) ?? null,

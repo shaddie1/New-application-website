@@ -351,3 +351,103 @@ describe('GET /admin/finance/overview', () => {
     });
   });
 });
+
+describe('GET /admin/finance/overview and machine days', () => {
+  /** Days of the floor scrubber, at KSh 2,000 a day, on a job. Logged on 10 November, whatever the job's date. */
+  const scrubberDays = (id: string, jobId: string, halfDays: number) => ({
+    id, assetId: 'scrubber', jobId, halfDays, rateCents: 200_000, amountCents: halfDays * 100_000, isHire: false,
+    createdById: 'owner', createdAt: new Date('2026-11-10T08:00:00.000Z'),
+  });
+
+  beforeEach(() => {
+    clockAt('2026-11-12T09:00:00.000Z'); // midday on 12 November in Nairobi
+    t.assets = [
+      { id: 'scrubber', name: 'Floor scrubber', category: 'MACHINE', costCents: 26_000_000, dailyRateCents: 200_000, countsFrom: day('2026-09-01') },
+    ];
+    t.assetMaintenance = [{ id: 'm1', assetId: 'scrubber', date: day('2026-10-16'), description: 'New brushes', costCents: 300_000 }];
+    t.jobs = [
+      // KSh 100,000 charged and KSh 60,000 of costs, on 5 October.
+      job('oct5', '2026-10-05', 10_000_000),
+      job('oct20', '2026-10-20', 2_000_000, { status: 'APPROVED' }),
+      job('nov5', '2026-11-05', 3_000_000),
+      // Waiting for approval: counted nowhere.
+      job('octWaiting', '2026-10-06', 900_000, { status: 'PENDING' }),
+    ];
+    t.expenses = [
+      cost('e1', 'oct5', 6_000_000, '2026-10-05'),
+      cost('e2', 'nov5', 500_000, '2026-11-05'),
+    ];
+  });
+
+  it('AE5: with a machine on the register and no days logged, October reads as it did before', async () => {
+    const res = await as('owner', 'GET', '/admin/finance/overview?year=2026&month=10');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      overview: {
+        year: 2026,
+        month: 10,
+        monthLabel: 'October 2026',
+        revenue: { actual: 12_000_000, target: 0, percent: 0 },
+        netProfit: { actual: 6_000_000, target: 0, percent: 0 },
+        jobs: { actual: 2, target: 0, percent: 0 },
+        previousRevenueCents: 0,
+        previousNetCents: 0,
+        previousJobCount: 0,
+        comparison: {
+          mode: 'full-month',
+          cutoffDay: null,
+          current: { revenueCents: 12_000_000, netCents: 6_000_000, jobCount: 2 },
+          previous: { revenueCents: 0, netCents: 0, jobCount: 0 },
+        },
+        series: [
+          { year: 2026, month: 5, label: 'May', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 6, label: 'Jun', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 7, label: 'Jul', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 8, label: 'Aug', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 9, label: 'Sep', revenueCents: 0, netCents: 0, jobCount: 0 },
+          { year: 2026, month: 10, label: 'Oct', revenueCents: 12_000_000, netCents: 6_000_000, jobCount: 2 },
+        ],
+        hasTargets: false,
+      },
+    });
+    expect(res.body).not.toMatch(/machine/i);
+  });
+
+  it("AE1: 2.5 days on the 5 October job take KSh 5,000 off October's net profit and leave its revenue alone", async () => {
+    t.machineLines = [scrubberDays('ml1', 'oct5', 5)];
+
+    const overview = await overviewFor(2026, 10);
+
+    expect(overview.netProfit.actual).toBe(5_500_000);
+    expect(overview.comparison.current).toEqual({ revenueCents: 12_000_000, netCents: 5_500_000, jobCount: 2 });
+    expect(overview.series[5]).toEqual({ year: 2026, month: 10, label: 'Oct', revenueCents: 12_000_000, netCents: 5_500_000, jobCount: 2 });
+    expect(overview.revenue.actual).toBe(12_000_000);
+  });
+
+  it("counts the days in the job's month and on the job's day: logged in November, they lower October's side only up to the cut-off", async () => {
+    t.machineLines = [
+      scrubberDays('ml1', 'oct5', 5),
+      // 20 October is after the cut-off day, so these days are in October's whole month and not in its first twelve days.
+      scrubberDays('ml2', 'oct20', 2),
+    ];
+
+    const overview = await overviewFor(2026, 11);
+
+    expect(overview.comparison.mode).toBe('same-period');
+    expect(overview.comparison.previous).toEqual({ revenueCents: 10_000_000, netCents: 3_500_000, jobCount: 1 });
+    // November has no machine days: KSh 30,000 less KSh 5,000 of costs.
+    expect(overview.comparison.current).toEqual({ revenueCents: 3_000_000, netCents: 2_500_000, jobCount: 1 });
+    expect(overview.netProfit.actual).toBe(2_500_000);
+    // October whole: 12,000,000 less 6,000,000 of costs, 500,000 and 200,000 of machine days.
+    expect(overview.series[4]).toEqual({ year: 2026, month: 10, label: 'Oct', revenueCents: 12_000_000, netCents: 5_300_000, jobCount: 2 });
+  });
+
+  it('leaves out the machine days of a job still waiting for approval', async () => {
+    t.machineLines = [scrubberDays('ml1', 'octWaiting', 5)];
+
+    const overview = await overviewFor(2026, 10);
+
+    expect(overview.netProfit.actual).toBe(6_000_000);
+  });
+});

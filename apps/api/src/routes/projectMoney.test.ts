@@ -24,7 +24,7 @@ const users: Record<string, { role: string; isOwner: boolean; fullName: string; 
   demoted: { role: 'SUPPORT', isOwner: false, fullName: 'Dan Demoted', tokenRole: 'ADMIN' },
 };
 
-const t = { projects: [] as Row[], jobs: [] as Row[], expenses: [] as Row[] };
+const t = { projects: [] as Row[], jobs: [] as Row[], expenses: [] as Row[], machineLines: [] as Row[] };
 
 /** The subset of Prisma's `where` these routes use: equality and `in`. */
 const matches = (row: Row, where: Row = {}) =>
@@ -43,12 +43,17 @@ function sorted(rows: Row[], orderBy: Row | Row[] = []) {
   });
 }
 
-/** A job with its costs, each cost with who entered it. The whole row comes back, whatever was selected. */
+/** A job with its costs and machine lines, each with who entered it. The whole row comes back, whatever was selected. */
 const withCosts = (job: Row, costOrder?: Row) => ({
   ...job,
   expenses: sorted(t.expenses.filter((e) => e.jobId === job.id), costOrder).map((e) => ({
     ...e,
     createdBy: { fullName: users[e.createdById]!.fullName },
+  })),
+  machineLines: t.machineLines.filter((l) => l.jobId === job.id).map((l) => ({
+    ...l,
+    asset: { name: l.assetName ?? 'Machine' },
+    createdBy: { fullName: users[l.createdById]!.fullName },
   })),
 });
 
@@ -162,6 +167,7 @@ beforeEach(() => {
   t.projects = [];
   t.jobs = [];
   t.expenses = [];
+  t.machineLines = [];
 });
 
 describe.each([TABLE, contract('p1')])('who may open %s', (url) => {
@@ -425,6 +431,103 @@ describe('GET /admin/project-money/projects/:id', () => {
 
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: 'project not found' });
+  });
+});
+
+describe('machine days on a contract', () => {
+  /** A monthly contract with one job: KSh 100,000 charged on 14 October and KSh 60,000 of costs. */
+  beforeEach(() => {
+    project('p1', { paymentFrequency: 'MONTHLY' });
+    job('j1', { ...under('p1'), title: 'Mall deep clean', date: day('2026-10-14'), incomeCents: 10_000_000 });
+    cost('c1', 'j1', 4_000_000, { date: day('2026-10-14') });
+    cost('c2', 'j1', 2_000_000, { category: 'EMPLOYEE_PAY', date: day('2026-10-15'), createdById: 'supervisor' });
+  });
+
+  /** 2.5 days of the floor scrubber at KSh 2,000 a day, logged by the owner. */
+  const scrubberDays = (jobId: string) =>
+    t.machineLines.push({
+      id: 'ml1', jobId, assetId: 'scrubber', assetName: 'Floor scrubber', halfDays: 5, rateCents: 200_000,
+      amountCents: 500_000, isHire: false, createdById: 'owner',
+    });
+
+  const before = { jobCount: 1, typedCents: 10_000_000, discountCents: 0, chargedCents: 10_000_000, spentCents: 6_000_000, profitCents: 4_000_000 };
+  const after = { jobCount: 1, typedCents: 10_000_000, discountCents: 0, chargedCents: 10_000_000, spentCents: 6_500_000, machineCents: 500_000, profitCents: 3_500_000 };
+  // Newest first.
+  const costLines = [
+    { id: 'c2', date: '2026-10-15', category: 'EMPLOYEE_PAY', description: null, amountCents: 2_000_000, enteredByName: 'Sam Supervisor', receiptRef: null, receiptUrl: null },
+    { id: 'c1', date: '2026-10-14', category: 'MATERIALS', description: null, amountCents: 4_000_000, enteredByName: 'Olive Owner', receiptRef: null, receiptUrl: null },
+  ];
+
+  it('AE5: with no days logged, the table and the contract read as they did before', async () => {
+    const tableRes = await get(TABLE, 'finance');
+    const detailRes = await get(contract('p1'), 'finance');
+
+    expect(tableRes.json()).toEqual({
+      table: { projects: [{ projectId: 'p1', ...before }], oneOff: ZERO, unsorted: null, totals: before },
+    });
+    expect(detailRes.json()).toEqual({
+      detail: {
+        projectId: 'p1',
+        totals: before,
+        spentByGroupCents: { MATERIALS: 4_000_000, TRANSPORT: 0, EMPLOYEE_PAY: 2_000_000, LUNCH: 0, MISCELLANEOUS: 0 },
+        months: [{ month: '2026-10', ...before }],
+        jobs: [{
+          jobId: 'j1', date: '2026-10-14', title: 'Mall deep clean', typedCents: 10_000_000, discountCents: 0,
+          chargedCents: 10_000_000, spentCents: 6_000_000, profitCents: 4_000_000, costs: costLines,
+        }],
+      },
+    });
+    expect(tableRes.body + detailRes.body).not.toMatch(/machine/i);
+  });
+
+  it("AE1: 2.5 days at KSh 2,000 take KSh 5,000 off the project's profit in the table and in the totals", async () => {
+    scrubberDays('j1');
+
+    expect(await table()).toEqual({ projects: [{ projectId: 'p1', ...after }], oneOff: ZERO, unsorted: null, totals: after });
+  });
+
+  it('AE1: the contract shows Machines as its own group, and the groups add up to spent', async () => {
+    scrubberDays('j1');
+
+    const answer = await detail('p1');
+
+    expect(answer.totals).toEqual(after);
+    expect(answer.spentByGroupCents).toEqual({
+      MATERIALS: 4_000_000, TRANSPORT: 0, EMPLOYEE_PAY: 2_000_000, LUNCH: 0, MISCELLANEOUS: 0, MACHINES: 500_000,
+    });
+    expect(Object.values(answer.spentByGroupCents).reduce((acc, cents) => acc + cents, 0)).toBe(answer.totals.spentCents);
+    // The days count in the month of the job's date.
+    expect(answer.months).toEqual([{ month: '2026-10', ...after }]);
+  });
+
+  it("lists the machine's days after the job's costs, with the machine and its days, who logged them and no receipt", async () => {
+    scrubberDays('j1');
+
+    const [jobLine] = (await detail('p1')).jobs;
+
+    expect(jobLine).toMatchObject({ jobId: 'j1', spentCents: 6_500_000, machineCents: 500_000, profitCents: 3_500_000 });
+    expect(jobLine!.costs).toEqual([
+      ...costLines,
+      { id: 'ml1', date: '2026-10-14', category: 'MACHINES', description: 'Floor scrubber, 2.5 days', amountCents: 500_000, enteredByName: 'Olive Owner' },
+    ]);
+  });
+
+  it('writes one day as "1 day" and half a day as "0.5 days"', async () => {
+    scrubberDays('j1');
+    Object.assign(t.machineLines[0]!, { halfDays: 2, amountCents: 200_000 });
+    t.machineLines.push({ ...t.machineLines[0]!, id: 'ml2', assetName: 'Carpet extractor', halfDays: 1, amountCents: 100_000 });
+
+    const [jobLine] = (await detail('p1')).jobs;
+
+    expect(jobLine!.costs.slice(2).map((c) => c.description)).toEqual(['Floor scrubber, 1 day', 'Carpet extractor, 0.5 days']);
+  });
+
+  it('leaves out the machine days of a job still waiting for approval', async () => {
+    job('waiting', { ...under('p1'), status: 'PENDING', incomeCents: 900_000 });
+    scrubberDays('waiting');
+
+    expect((await table()).totals).toEqual(before);
+    expect((await detail('p1')).totals).toEqual(before);
   });
 });
 

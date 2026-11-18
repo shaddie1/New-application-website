@@ -25,6 +25,11 @@ function webLink(stored: string | null): string | null {
   return protocol === 'http:' || protocol === 'https:' ? stored : null;
 }
 
+/** Days are stored in halves: 5 reads "2.5 days", 2 reads "1 day". */
+function daysText(halfDays: number): string {
+  return `${halfDays / 2} ${halfDays === 2 ? 'day' : 'days'}`;
+}
+
 export const projectMoneyRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', attachActor);
@@ -73,25 +78,47 @@ export const projectMoneyRoutes: FastifyPluginAsync = async (app) => {
           },
           orderBy: { date: 'desc' },
         },
+        machineLines: {
+          select: {
+            id: true,
+            halfDays: true,
+            amountCents: true,
+            asset: { select: { name: true } },
+            createdBy: { select: { fullName: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
       orderBy: { date: 'desc' },
     });
 
     const breakdown = contractBreakdown(jobs, project.id, { byMonth: project.paymentFrequency !== 'ONE_OFF' });
 
+    // A job's costs, then its machine days. A machine line takes the job's
+    // date and has no receipt, so it carries no receipt fields.
     const costsOf = new Map<string, CostLineDto[]>(
       jobs.map((j) => [
         j.id,
-        j.expenses.map((e) => ({
-          id: e.id,
-          date: e.date.toISOString().slice(0, 10),
-          category: e.category,
-          description: e.description,
-          amountCents: e.amountCents,
-          enteredByName: e.createdBy.fullName,
-          receiptRef: e.receiptRef,
-          receiptUrl: webLink(e.receiptUrl),
-        })),
+        [
+          ...j.expenses.map((e) => ({
+            id: e.id,
+            date: e.date.toISOString().slice(0, 10),
+            category: e.category,
+            description: e.description,
+            amountCents: e.amountCents,
+            enteredByName: e.createdBy.fullName,
+            receiptRef: e.receiptRef,
+            receiptUrl: webLink(e.receiptUrl),
+          })),
+          ...j.machineLines.map((l) => ({
+            id: l.id,
+            date: j.date.toISOString().slice(0, 10),
+            category: 'MACHINES' as const,
+            description: `${l.asset.name}, ${daysText(l.halfDays)}`,
+            amountCents: l.amountCents,
+            enteredByName: l.createdBy.fullName,
+          })),
+        ],
       ]),
     );
 

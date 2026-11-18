@@ -26,12 +26,22 @@ export type ScopeFigures = {
   unallocatedCents: number;
   /** The table footer's "net profit to split". */
   footerNetCents: number;
+  /**
+   * What was set aside for machines: the machine days inside the expenses.
+   * Left out when nothing was, and when the server is older than machine days.
+   */
+  machineCents?: number;
 };
+
+/** A machines amount as a figure of its own, only when there is one to state. */
+function setAside(machineCents: number | undefined): Pick<ScopeFigures, 'machineCents'> {
+  return machineCents !== undefined && machineCents > 0 ? { machineCents } : {};
+}
 
 /**
  * The page's figures for the chosen scope, all taken from that scope, so one
- * choice moves the headline, the supporting figures, the split, the table's
- * share column and its footer together. The overview is the one requested
+ * choice moves the headline, the supporting figures, the amount set aside for
+ * machines, the split, the table's share column and its footer together. The overview is the one requested
  * for the current month, whose period figures are "This month".
  */
 export function scopeFigures(overview: ReceivedEquityOverview, scope: OwnershipScope = DEFAULT_SCOPE): ScopeFigures {
@@ -44,6 +54,7 @@ export function scopeFigures(overview: ReceivedEquityOverview, scope: OwnershipS
       holders: overview.allocations.map((a) => ({ shareholder: a.shareholder, shareCents: a.periodShareCents })),
       unallocatedCents: overview.unallocatedPeriodCents,
       footerNetCents: overview.periodNetCents,
+      ...setAside(overview.periodMachineCents),
     };
   }
   const { allTime } = overview;
@@ -55,6 +66,7 @@ export function scopeFigures(overview: ReceivedEquityOverview, scope: OwnershipS
     holders: overview.allocations.map((a) => ({ shareholder: a.shareholder, shareCents: a.allTimeShareCents })),
     unallocatedCents: overview.unallocatedAllTimeCents,
     footerNetCents: allTime.totalNetCents,
+    ...setAside(allTime.totalMachineCents),
   };
 }
 

@@ -40,6 +40,8 @@ import {
   utcBounds,
   type DayRange,
 } from '../finance/comparison.js';
+import { machineAmountCents } from '../machines/amounts.js';
+import { loadMachineRules, machineDeleteRefusal, priceChangeRefusal } from '../machines/rules.js';
 
 const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
 const BASIS_POINTS_TOTAL = 10_000;
@@ -200,35 +202,52 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     const parsed = CreateAssetSchema.partial().safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    const existing = await prisma.asset.findUnique({ where: { id: req.params.id } });
-    if (!existing) return reply.code(404).send({ error: 'asset not found' });
-
     const { purchaseDate, category, condition, ...rest } = parsed.data;
-    const row = await prisma.asset.update({
-      where: { id: req.params.id },
-      data: {
-        ...rest,
-        ...(category !== undefined && { category: category as AssetCategory }),
-        ...(condition !== undefined && { condition: condition as AssetCondition }),
-        ...(purchaseDate !== undefined && { purchaseDate: new Date(purchaseDate) }),
-        // Retiring an asset stamps the date, un-retiring clears it.
-        ...(condition === 'RETIRED' && !existing.retiredAt ? { retiredAt: new Date() } : {}),
-        ...(condition !== undefined && condition !== 'RETIRED' ? { retiredAt: null } : {}),
-      },
-      include: {
-        createdBy: { select: { fullName: true } },
-        maintenance: {
-          orderBy: { date: 'desc' },
-          include: { createdBy: { select: { fullName: true } } },
+    // The check on a register machine's price and the write share one transaction, as on the Machines page.
+    const result = await prisma.$transaction(async (tx): Promise<{ status: 403 | 404 | 409; error: string } | { row: AssetRow }> => {
+      const existing = await loadMachineRules(tx, req.params.id);
+      if (!existing) return { status: 404, error: 'asset not found' };
+
+      if (existing.dailyRateCents !== null) {
+        if (!(await isOwnerAccount(tx, req))) return { status: 403, error: REGISTER_MACHINE_OWNER_ONLY };
+        const problem = rest.costCents === undefined ? null : priceChangeRefusal(existing, rest.costCents);
+        if (problem) return { status: 409, error: problem };
+      }
+
+      const row = await tx.asset.update({
+        where: { id: req.params.id },
+        data: {
+          ...rest,
+          ...(category !== undefined && { category: category as AssetCategory }),
+          ...(condition !== undefined && { condition: condition as AssetCondition }),
+          ...(purchaseDate !== undefined && { purchaseDate: new Date(purchaseDate) }),
+          // Retiring an asset stamps the date, un-retiring clears it.
+          ...(condition === 'RETIRED' && !existing.retiredAt ? { retiredAt: new Date() } : {}),
+          ...(condition !== undefined && condition !== 'RETIRED' ? { retiredAt: null } : {}),
         },
-      },
+        include: {
+          createdBy: { select: { fullName: true } },
+          maintenance: {
+            orderBy: { date: 'desc' },
+            include: { createdBy: { select: { fullName: true } } },
+          },
+        },
+      });
+      return { row };
     });
-    return reply.send({ asset: toAssetDto(row) });
+    if ('error' in result) return reply.code(result.status).send({ error: result.error });
+    return reply.send({ asset: toAssetDto(result.row) });
   });
 
   app.delete<{ Params: { id: string } }>('/assets/:id', async (req, reply) => {
     const existing = await prisma.asset.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'asset not found' });
+    if (existing.dailyRateCents !== null && !(await isOwnerAccount(prisma, req))) {
+      return reply.code(403).send({ error: REGISTER_MACHINE_OWNER_ONLY });
+    }
+    // A machine with logged days or payments is retired, not deleted.
+    const refusal = await machineDeleteRefusal(req.params.id);
+    if (refusal) return reply.code(409).send({ error: refusal });
     await prisma.asset.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
   });
@@ -236,6 +255,10 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string } }>('/assets/:id/maintenance', async (req, reply) => {
     const asset = await prisma.asset.findUnique({ where: { id: req.params.id } });
     if (!asset) return reply.code(404).send({ error: 'asset not found' });
+    // On a register machine a repair comes out of the pot.
+    if (asset.dailyRateCents !== null && !(await isOwnerAccount(prisma, req))) {
+      return reply.code(403).send({ error: REGISTER_MACHINE_OWNER_ONLY });
+    }
 
     const parsed = CreateMaintenanceSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -639,6 +662,20 @@ async function requireEquityAccess(req: FastifyRequest, reply: FastifyReply): Pr
   }
 }
 
+/**
+ * An asset with a daily rate is a machine on the register. Its price, repairs
+ * and deletion change a pot and what investors are owed, so here, as on the
+ * Machines page, only the owner changes it. An asset with no daily rate stays
+ * open to every finance role.
+ */
+const REGISTER_MACHINE_OWNER_ONLY = 'This machine is on the register, so only the owner can change it.';
+
+/** Whether the signed-in account is the owner, read from the database: the token does not say. */
+async function isOwnerAccount(client: Prisma.TransactionClient, req: FastifyRequest): Promise<boolean> {
+  const user = await client.user.findUnique({ where: { id: req.auth!.sub }, select: { isOwner: true } });
+  return user?.isOwner === true;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function dateRange(from: string, to: string) {
@@ -684,11 +721,16 @@ function monthTotals(year: number, month: number) {
 /** How many months an overview's series covers, the requested month included. */
 const SERIES_MONTHS = 6;
 
-/** Income, net and job count over a range of calendar days. */
+/**
+ * Income, net and job count over a range of calendar days. Net is income less
+ * the costs dated in the range and the machine days on the range's jobs.
+ */
 async function rangeTotals(range: DayRange) {
   const { from, to } = utcBounds(range);
 
-  const [jobs, expenses] = await Promise.all([
+  // The machine days are asked for inside this Promise.all, like the other
+  // two, so the overview's rule holds: no query is left on the side.
+  const [jobs, expenses, machineCents] = await Promise.all([
     prisma.job.aggregate({
       where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
       _sum: { incomeCents: true, discountCents: true },
@@ -698,12 +740,13 @@ async function rangeTotals(range: DayRange) {
       where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
       _sum: { amountCents: true },
     }),
+    machineAmountCents(from, to),
   ]);
 
   const incomeCents = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
   return {
     incomeCents,
-    netCents: incomeCents - (expenses._sum.amountCents ?? 0),
+    netCents: incomeCents - (expenses._sum.amountCents ?? 0) - machineCents,
     jobCount: jobs._count._all,
   };
 }
@@ -712,10 +755,14 @@ function toComparisonFigures(totals: Awaited<ReturnType<typeof rangeTotals>>): C
   return { revenueCents: totals.incomeCents, netCents: totals.netCents, jobCount: totals.jobCount };
 }
 
-/** Net profit (counted job income less discounts and expenses) over a period. */
+/**
+ * Net profit over a period: counted job income less discounts, less the costs
+ * dated in the period, less the machine days on the period's jobs. A payout
+ * stores the figure it was declared on, so days logged later do not change it.
+ */
 async function netProfitForPeriod(from: string, to: string): Promise<number> {
   const range = dateRange(from, to);
-  const [jobs, expenses] = await Promise.all([
+  const [jobs, expenses, machineCents] = await Promise.all([
     prisma.job.aggregate({
       where: { date: { gte: range.from, lte: range.to }, status: { in: COUNTED_STATUSES } },
       _sum: { incomeCents: true, discountCents: true },
@@ -724,9 +771,10 @@ async function netProfitForPeriod(from: string, to: string): Promise<number> {
       where: { date: { gte: range.from, lte: range.to }, job: { status: { in: COUNTED_STATUSES } } },
       _sum: { amountCents: true },
     }),
+    machineAmountCents(range.from, range.to),
   ]);
   const income = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
-  return income - (expenses._sum.amountCents ?? 0);
+  return income - (expenses._sum.amountCents ?? 0) - machineCents;
 }
 
 /**

@@ -1,23 +1,15 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import type { CostLineDto, ExpenseCategory, ProjectMoneyDetail, ProjectMoneyJobDto } from '@onyxhawk/types';
+import type { CostLineDto, ProjectMoneyDetail, ProjectMoneyJobDto } from '@onyxhawk/types';
 
 import { api } from '../../lib/api';
+import { costGroupLabel, costGroupRows } from '../../lib/costGroups';
 import { money as formatMoney } from '../../lib/money';
 import { Figure, Profit } from './MoneyTable';
 
 /** Project money shows whole shillings. */
 const money = (cents: number) => formatMoney(cents, { whole: true });
-
-const GROUP_LABELS: Record<ExpenseCategory, string> = {
-  MATERIALS: 'Materials',
-  TRANSPORT: 'Transport',
-  EMPLOYEE_PAY: 'Crew pay',
-  LUNCH: 'Lunch',
-  MISCELLANEOUS: 'Other',
-};
-const GROUPS = Object.keys(GROUP_LABELS) as ExpenseCategory[];
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -56,11 +48,14 @@ function ColumnHeadings({ first }: { first: string }) {
 }
 
 function CostLine({ cost: c }: { cost: CostLineDto }) {
+  // A machine's days are not bought, so there is no receipt to ask after:
+  // the line says nothing about one, not even that it is missing.
+  const takesReceipt = c.category !== 'MACHINES';
   return (
     <li className="border-b border-line py-2 last:border-b-0">
       <div className="flex items-baseline justify-between gap-4">
         <span className="min-w-0 break-words">
-          <span className="font-medium">{GROUP_LABELS[c.category]}</span>
+          <span className="font-medium">{costGroupLabel(c.category, 'money-tab')}</span>
           {c.description ? ` — ${c.description}` : ''}
         </span>
         <span className="shrink-0 tabular-nums">{money(c.amountCents)}</span>
@@ -68,7 +63,7 @@ function CostLine({ cost: c }: { cost: CostLineDto }) {
       <div className="mt-0.5 flex flex-wrap gap-x-2 break-words text-xs text-charcoal-muted">
         <span>{c.date}</span>
         <span>· Entered by {c.enteredByName ?? 'unknown'}</span>
-        {!c.receiptRef && !c.receiptUrl && <span>· No receipt</span>}
+        {takesReceipt && !c.receiptRef && !c.receiptUrl && <span>· No receipt</span>}
         {c.receiptRef && <span className="min-w-0">· Receipt: {c.receiptRef}</span>}
         {c.receiptUrl && (
           <span>
@@ -123,8 +118,9 @@ function JobRow({ job: j, open, onToggle }: { job: ProjectMoneyJobDto; open: boo
 }
 
 /**
- * One project's money: totals, the five spending groups, a row per month for a project
- * billed by the day, week or month, then its jobs, each opening to its cost lines.
+ * One project's money: totals, the five spending groups and Machines when the project
+ * has machine days, a row per month for a project billed by the day, week or month,
+ * then its jobs, each opening to its cost lines.
  * Mount it only for people who may see project money: it asks the server as soon as it mounts.
  */
 export function ContractMoney({ projectId }: { projectId: string }) {
@@ -180,8 +176,8 @@ export function ContractMoney({ projectId }: { projectId: string }) {
         <div>
           <p className={heading}>Spending by group</p>
           <div className={box}>
-            {GROUPS.map((g) => (
-              <Line key={g} label={GROUP_LABELS[g]}>{money(detail.spentByGroupCents[g] ?? 0)}</Line>
+            {costGroupRows(detail.spentByGroupCents, 'money-tab').map((group) => (
+              <Line key={group.key} label={group.label}>{money(group.cents)}</Line>
             ))}
           </div>
         </div>

@@ -22,6 +22,7 @@ import { financeRoutes } from './routes/finance.js';
 import { documentRoutes } from './routes/documents.js';
 import { projectRoutes } from './routes/projects.js';
 import { projectMoneyRoutes } from './routes/projectMoney.js';
+import { machinesRoutes } from './routes/machines.js';
 import { jobReportsRoutes } from './routes/jobReports.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { websiteJobRoutes, publicWebsiteJobRoutes } from './routes/websiteJobs.js';
@@ -63,6 +64,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(documentRoutes, { prefix: '/admin/documents' });
   await app.register(projectRoutes, { prefix: '/admin/projects' });
   await app.register(projectMoneyRoutes, { prefix: '/admin/project-money' });
+  await app.register(machinesRoutes, { prefix: '/admin/machines' });
   await app.register(jobReportsRoutes, { prefix: '/admin/job-reports' });
   await app.register(websiteJobRoutes, { prefix: '/admin/website-jobs' });
   await app.register(publicWebsiteJobRoutes, { prefix: '/website-jobs' });

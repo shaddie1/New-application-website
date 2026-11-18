@@ -296,6 +296,11 @@ export default function JobReportsPage() {
             const isExpanded = expandedId === report.id;
             const isPending = report.status === 'PENDING';
             const statusMeta = STATUS_LABELS[report.status];
+            // The owner may log machine days on a job. Their amount is inside the report's
+            // total, so it is taken out of "Expenses" and shown beside it as one Machines
+            // amount: the two add up to what the job cost. The machine, its days and its
+            // rate are the owner's to see and are not sent here.
+            const machineCents = report.machineCents ?? 0;
             return (
               <div key={report.id} className="rounded-xl border border-border bg-surface overflow-hidden">
                 <div className="px-5 py-4 flex items-start gap-4">
@@ -332,8 +337,14 @@ export default function JobReportsPage() {
                       </span>
                       <span>
                         <span className="text-text-muted text-xs">Expenses </span>
-                        <span className="font-medium">{fmt(report.totalExpensesCents)}</span>
+                        <span className="font-medium">{fmt(report.totalExpensesCents - machineCents)}</span>
                       </span>
+                      {machineCents > 0 && (
+                        <span>
+                          <span className="text-text-muted text-xs">Machines </span>
+                          <span className="font-medium">{fmt(machineCents)}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

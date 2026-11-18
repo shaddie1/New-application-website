@@ -11,6 +11,9 @@ import type { ScopeFigures } from './scope';
  * While the figures load, each one's place is held by a bar on the figure's
  * own line, so no label moves when the figures arrive.
  *
+ * When machine days fall in the scope, a line under the figures states the
+ * amount set aside for machines, which is inside the expenses.
+ *
  * The layout follows the card's own width, not the screen's, so it holds
  * beside a side menu. Under 34rem of room the supporting figures are rows, a
  * label and its figure; from 34rem they are three equal columns under the
@@ -65,6 +68,17 @@ export function Hero({
             <Supporting column={2} label="Projects" value={figures && (figures.projects === null ? MISSING : String(figures.projects))} />
           </dl>
         </div>
+
+        {/* Under the grid, a line of its own, so the grid's columns and baselines
+            are the same with it and without it. It is there only when the scope
+            shown has machine days. */}
+        {figures?.machineCents !== undefined && (
+          <p className="figure mt-4 text-sm text-charcoal-muted [@container_(min-width:34rem)]:mt-6">
+            Set aside for machines:{' '}
+            <span className="font-medium text-charcoal">{money(figures.machineCents)}</span>. This is part of the
+            expenses.
+          </p>
+        )}
       </div>
     </Card>
   );
