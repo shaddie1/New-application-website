@@ -31,7 +31,7 @@ const asset = (id: string, name: string, priceShillings: number, over: object = 
   id, name, category: 'MACHINE', purchaseDate: day('2026-05-20'), costCents: ksh(priceShillings),
   supplier: null, serialNumber: null, location: null, usefulLifeMonths: null, salvageValueCents: 0,
   condition: 'GOOD', retiredAt: null, notes: null, receiptRef: null, receiptUrl: null,
-  dailyRateCents: null, countsFrom: null, createdById: 'owner',
+  projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null, createdById: 'owner',
   createdAt: day('2026-05-20'), updatedAt: day('2026-05-20'), ...over,
 });
 
@@ -44,7 +44,8 @@ const job = (id: string, title: string, ymd: string) => ({
 
 const line = (id: string, assetId: string, jobId: string, halfDays: number, rateShillings: number) => ({
   id, assetId, jobId, halfDays, rateCents: ksh(rateShillings), amountCents: (halfDays * ksh(rateShillings)) / 2,
-  isHire: false, createdById: 'owner', createdAt: day('2026-11-10'), updatedAt: day('2026-11-10'),
+  isHire: false, standardRateCents: null, hirePaidOn: null, hirePaymentRef: null,
+  createdById: 'owner', createdAt: day('2026-11-10'), updatedAt: day('2026-11-10'),
 });
 
 const payment = (id: string, investorId: string, ymd: string, shillings: number) => ({
@@ -84,7 +85,9 @@ beforeEach(() => {
       category: 'IT', purchaseDate: day('2026-03-10'), createdAt: day('2026-03-10'), updatedAt: day('2026-03-10'),
     }),
     // On the register: KSh 260,000, and one investor put in KSh 156,000.
-    asset('polisher', 'Floor polisher', 260_000, { dailyRateCents: ksh(2_000), countsFrom: day('2026-06-01') }),
+    asset('polisher', 'Floor polisher', 260_000, {
+      projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), countsFrom: day('2026-06-01'),
+    }),
   ];
   t.assetMaintenance = [
     {
@@ -109,7 +112,7 @@ describe('an asset with no daily rate, as before the machine register', () => {
     const { assets } = res.json();
     expect(assets.map((a: { id: string }) => a.id)).toEqual(['polisher', 'laptop']);
     expect(assets[1]).toEqual(LAPTOP);
-    expect(res.body).not.toMatch(/dailyRateCents|countsFrom|startDay/);
+    expect(res.body).not.toMatch(/dailyRateCents|projectRateCents|hireRate|countsFrom|startDay/);
   });
 
   it.each(FINANCE_USERS)('%s adds an asset', async (userId) => {
@@ -123,7 +126,9 @@ describe('an asset with no daily rate, as before the machine register', () => {
       condition: 'GOOD', retiredAt: null, maintenance: [],
     });
     expect(t.assets).toHaveLength(3);
-    expect(t.assets[2]).toMatchObject({ name: 'Meeting table', createdById: userId, dailyRateCents: null, countsFrom: null });
+    expect(t.assets[2]).toMatchObject({
+      name: 'Meeting table', createdById: userId, projectRateCents: null, hireRateCents: null, countsFrom: null,
+    });
   });
 
   it.each(FINANCE_USERS)('%s changes its name and its cost', async (userId) => {
@@ -203,32 +208,37 @@ describe('the asset list never gives an asset a daily rate or a start day', () =
   it.each(FINANCE_USERS)('a rate and a start day %s sends with a new asset are left out', async (userId) => {
     const res = await as(userId, 'POST', ASSETS, {
       name: 'Carpet extractor', category: 'MACHINE', purchaseDate: '2026-11-02', costCents: ksh(140_000),
-      dailyRateCents: ksh(2_500), countsFrom: '2026-11-02', startDay: '2026-11-02',
+      dailyRateCents: ksh(2_500), projectRateCents: ksh(2_500), hireRateCents: ksh(3_500),
+      countsFrom: '2026-11-02', startDay: '2026-11-02',
     });
 
     expect(res.statusCode).toBe(201);
-    expect(t.assets[2]).toMatchObject({ name: 'Carpet extractor', dailyRateCents: null, countsFrom: null });
+    expect(t.assets[2]).toMatchObject({ name: 'Carpet extractor', projectRateCents: null, hireRateCents: null, countsFrom: null });
+    expect(t.assets[2]).not.toHaveProperty('dailyRateCents');
     expect((await as('owner', 'GET', '/admin/machines')).json().register.machines.map((m: { id: string }) => m.id)).toEqual(['polisher']);
   });
 
   it.each(FINANCE_USERS)('a rate and a start day %s sends with an edit leave the asset off the register', async (userId) => {
     const res = await as(userId, 'PATCH', assetUrl('laptop'), {
-      name: 'Front desk laptop', dailyRateCents: ksh(2_500), countsFrom: '2026-11-02', startDay: '2026-11-02',
+      name: 'Front desk laptop', dailyRateCents: ksh(2_500), projectRateCents: ksh(2_500), hireRateCents: ksh(3_500),
+      countsFrom: '2026-11-02', startDay: '2026-11-02',
     });
 
     expect(res.statusCode).toBe(200);
-    expect(stored('laptop')).toMatchObject({ name: 'Front desk laptop', dailyRateCents: null, countsFrom: null });
+    expect(stored('laptop')).toMatchObject({ name: 'Front desk laptop', projectRateCents: null, hireRateCents: null, countsFrom: null });
+    expect(stored('laptop')).not.toHaveProperty('dailyRateCents');
     expect((await as('owner', 'GET', '/admin/machines/laptop')).statusCode).toBe(404);
   });
 
   it('the owner cannot change a machine\'s rate or start day here either', async () => {
     const res = await as('owner', 'PATCH', assetUrl('polisher'), {
-      name: 'Big floor polisher', dailyRateCents: ksh(9_000), countsFrom: '2026-01-01',
+      name: 'Big floor polisher', dailyRateCents: ksh(9_000), projectRateCents: ksh(9_000), hireRateCents: ksh(9_500),
+      countsFrom: '2026-01-01',
     });
 
     expect(res.statusCode).toBe(200);
     expect(stored('polisher')).toMatchObject({
-      name: 'Big floor polisher', dailyRateCents: ksh(2_000), countsFrom: day('2026-06-01'),
+      name: 'Big floor polisher', projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), countsFrom: day('2026-06-01'),
     });
   });
 });

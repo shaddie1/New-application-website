@@ -1,15 +1,16 @@
 /**
- * The machine register: every machine with a daily rate, its pot and who that
+ * The machine register: every machine with a project rate, its pot and who that
  * money belongs to. Read by the owner, the admin, the financial manager, the
  * COO and current shareholders; changed by the owner only. Every figure comes
  * from machines/pot.ts: nothing about a pot is added up here.
  *
- * A machine is an asset with a daily rate, so a machine's id is its asset's id.
+ * A machine is an asset with a project rate, so a machine's id is its asset's id.
  *
  * Job data is opened to more roles here, so each query selects only the
- * fields it serves: no client phone, location or job notes for anyone, and a
- * hire customer's name for the owner alone. The name is kept in the hire job's
- * client name and never in its title, which other pages show to other people.
+ * fields it serves: no client location for anyone, no phone or notes of a job
+ * for anyone, and a hire customer's name, phone and notes for the owner alone.
+ * The name is kept in the hire job's client name and never in its title, which
+ * other pages show to other people.
  *
  * The selects and the mapping to what the page is sent are in machines/read.ts,
  * the rules a change is checked against in machines/rules.ts, and what the
@@ -109,7 +110,7 @@ function startDayOrToday(sent: string | undefined): string | null {
 async function findMachine(id: string) {
   const asset = await prisma.asset.findUnique({
     where: { id },
-    select: { dailyRateCents: true, countsFrom: true, retiredAt: true },
+    select: { projectRateCents: true, countsFrom: true, retiredAt: true },
   });
   return asset && isOnRegister(asset) ? asset : null;
 }
@@ -138,7 +139,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
 
     guarded.get('/', async (_req, reply) => {
       const assets = await prisma.asset.findMany({
-        where: { dailyRateCents: { not: null } },
+        where: { projectRateCents: { not: null } },
         select: machineRowSelect,
         orderBy: { name: 'asc' },
       });
@@ -170,7 +171,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
     // The assets the owner can still give a rate.
     guarded.get('/assets', { preHandler: requireMachinesEdit }, async (_req, reply) => {
       const assets = await prisma.asset.findMany({
-        where: { dailyRateCents: null },
+        where: { projectRateCents: null },
         select: { id: true, name: true, category: true, costCents: true, purchaseDate: true },
         orderBy: { name: 'asc' },
       });
@@ -198,7 +199,9 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
           purchaseDate: new Date(parsed.data.purchaseDate),
           costCents: parsed.data.priceCents,
           condition: 'GOOD',
-          dailyRateCents: parsed.data.dailyRateCents,
+          // Until the form sends two rates, the one rate is the project rate, and
+          // the empty hire rate is read as it, not reviewed (KTD1).
+          projectRateCents: parsed.data.dailyRateCents,
           countsFrom: new Date(startDay),
           createdById: req.machinesActor!.id,
         },
@@ -218,15 +221,16 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
 
         const id = req.params.assetId;
         const refused = await prisma.$transaction(async (tx): Promise<Refusal | null> => {
-          const asset = await tx.asset.findUnique({ where: { id }, select: { dailyRateCents: true } });
+          const asset = await tx.asset.findUnique({ where: { id }, select: { projectRateCents: true } });
           if (!asset) return { status: 404, error: 'asset not found' };
           // Its rate and start day are changed by the edit below, which checks them against its lines and payments.
-          if (asset.dailyRateCents !== null) {
+          if (asset.projectRateCents !== null) {
             return { status: 409, error: 'This asset is already on the register. Open it there to change its rate or start day.' };
           }
+          // As when adding a machine: the one rate is the project rate (KTD1).
           await tx.asset.update({
             where: { id },
-            data: { dailyRateCents: parsed.data.dailyRateCents, countsFrom: new Date(startDay) },
+            data: { projectRateCents: parsed.data.dailyRateCents, countsFrom: new Date(startDay) },
           });
           return null;
         });
@@ -273,7 +277,8 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
           data: {
             ...(name !== undefined && { name }),
             ...(priceCents !== undefined && { costCents: priceCents }),
-            ...(dailyRateCents !== undefined && { dailyRateCents }),
+            // The one rate the edit form sends is the project rate.
+            ...(dailyRateCents !== undefined && { projectRateCents: dailyRateCents }),
             ...(startDay !== undefined && { countsFrom: new Date(startDay) }),
             ...(condition !== undefined && { condition }),
             // Retiring stamps the time and any other condition brings the machine back, as the asset list does.
@@ -456,8 +461,8 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
           assetId: id,
           jobId,
           halfDays,
-          rateCents: machine.dailyRateCents,
-          amountCents: lineAmountCents(halfDays, machine.dailyRateCents),
+          rateCents: machine.projectRateCents,
+          amountCents: lineAmountCents(halfDays, machine.projectRateCents),
           isHire: false,
           createdById: req.machinesActor!.id,
         },
@@ -523,7 +528,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
       const refused = await prisma.$transaction(async (tx): Promise<Refusal | null> => {
         const machine = await tx.asset.findUnique({
           where: { id },
-          select: { name: true, dailyRateCents: true, countsFrom: true, retiredAt: true },
+          select: { name: true, projectRateCents: true, countsFrom: true, retiredAt: true },
         });
         if (!machine || !isOnRegister(machine)) return NO_MACHINE;
         if (machine.retiredAt) return RETIRED;
@@ -560,8 +565,9 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
             assetId: id,
             jobId: job.id,
             halfDays,
-            rateCents: machine.dailyRateCents,
-            amountCents: lineAmountCents(halfDays, machine.dailyRateCents),
+            // Priced as before the hire rate came in, until the hire form sends a rate (U3).
+            rateCents: machine.projectRateCents,
+            amountCents: lineAmountCents(halfDays, machine.projectRateCents),
             isHire: true,
             createdById,
           },

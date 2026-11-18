@@ -127,8 +127,8 @@ beforeEach(() => {
   ];
   // One machine on the register with a repair in October, and one asset that is not on it.
   t.assets = [
-    { id: 'scrubber', name: 'Floor scrubber', category: 'MACHINE', purchaseDate: day('2026-08-20'), costCents: 26_000_000, dailyRateCents: 200_000, countsFrom: day('2026-09-01'), retiredAt: null },
-    { id: 'laptop', name: 'Office laptop', category: 'IT', purchaseDate: day('2026-10-02'), costCents: 8_000_000, dailyRateCents: null, countsFrom: null, retiredAt: null },
+    { id: 'scrubber', name: 'Floor scrubber', category: 'MACHINE', purchaseDate: day('2026-08-20'), costCents: 26_000_000, projectRateCents: 200_000, hireRateCents: 200_000, countsFrom: day('2026-09-01'), retiredAt: null },
+    { id: 'laptop', name: 'Office laptop', category: 'IT', purchaseDate: day('2026-10-02'), costCents: 8_000_000, projectRateCents: null, hireRateCents: null, countsFrom: null, retiredAt: null },
   ];
   t.assetMaintenance = [{ id: 'm1', assetId: 'scrubber', date: day('2026-10-16'), description: 'New brushes', costCents: 300_000 }];
   t.jobs = [

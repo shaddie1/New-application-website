@@ -276,7 +276,7 @@ export const db = {
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.expenses.filter((e) => costMatches(e, args.where)), args)),
   },
   asset: {
-    /** A seeded asset says `dailyRateCents: null` when it has no rate, as the database does. */
+    /** A seeded asset says `projectRateCents: null` when it has no rate, as the database does. */
     findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
       ordered(t.assets.filter((a) => matches(a, where)), orderBy).map(withRegister)),
     findUnique: vi.fn(async ({ where }: Where) => {
@@ -289,7 +289,8 @@ export const db = {
       const asset = {
         id: `asset${++seq}`, supplier: null, serialNumber: null, location: null, usefulLifeMonths: null,
         salvageValueCents: 0, condition: 'GOOD', retiredAt: null, notes: null, receiptRef: null, receiptUrl: null,
-        dailyRateCents: null, countsFrom: null, createdAt: new Date(), updatedAt: new Date(), ...data,
+        projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null,
+        createdAt: new Date(), updatedAt: new Date(), ...data,
       };
       t.assets.push(asset);
       return withRegister(asset);
@@ -343,7 +344,10 @@ export const db = {
     }),
     /** The columns the database fills in, and its checks: one line per machine and job, and the amount. */
     create: vi.fn(async ({ data }: Data) => {
-      const line = { id: `line${++seq}`, isHire: false, createdAt: new Date(), updatedAt: new Date(), ...data };
+      const line = {
+        id: `line${++seq}`, isHire: false, standardRateCents: null, hirePaidOn: null, hirePaymentRef: null,
+        createdAt: new Date(), updatedAt: new Date(), ...data,
+      };
       checkLine(line);
       t.machineLines.push(line);
       return withMachineAndJob(line);

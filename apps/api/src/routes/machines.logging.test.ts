@@ -52,7 +52,7 @@ const asset = (id: string, name: string, priceShillings: number, over: object = 
   id, name, category: 'MACHINE', purchaseDate: day('2026-05-20'), costCents: ksh(priceShillings),
   supplier: null, serialNumber: null, location: null, usefulLifeMonths: null, salvageValueCents: 0,
   condition: 'GOOD', retiredAt: null, notes: null, receiptRef: null, receiptUrl: null,
-  dailyRateCents: null, countsFrom: null, createdById: 'owner',
+  projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null, createdById: 'owner',
   createdAt: day('2026-05-20'), updatedAt: day('2026-05-20'), ...over,
 });
 
@@ -71,7 +71,8 @@ const cost = (id: string, jobId: string, category: string, shillings: number, ym
 /** Days of a machine on a job, logged on 10 November whatever the job's date. */
 const line = (id: string, assetId: string, jobId: string, halfDays: number, rateShillings: number, over: object = {}) => ({
   id, assetId, jobId, halfDays, rateCents: ksh(rateShillings), amountCents: (halfDays * ksh(rateShillings)) / 2,
-  isHire: false, createdById: 'owner', createdAt: new Date('2026-11-10T08:00:00.000Z'),
+  isHire: false, standardRateCents: null, hirePaidOn: null, hirePaymentRef: null,
+  createdById: 'owner', createdAt: new Date('2026-11-10T08:00:00.000Z'),
   updatedAt: new Date('2026-11-10T08:00:00.000Z'), ...over,
 });
 
@@ -155,14 +156,18 @@ beforeEach(() => {
   t.projects = [{ id: 'pA', title: 'Bank branch' }];
   t.assets = [
     // AE1 to AE3: KSh 2,000 a day since 1 June, priced KSh 260,000, of which one investor put in KSh 156,000.
-    asset('scrubber', 'Floor scrubber', 260_000, { dailyRateCents: ksh(2_000), countsFrom: day('2026-06-01') }),
+    asset('scrubber', 'Floor scrubber', 260_000, {
+      projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), countsFrom: day('2026-06-01'),
+    }),
     // Retired on 1 November, with one day already logged.
     asset('polisher', 'Old polisher', 120_000, {
-      category: 'EQUIPMENT', dailyRateCents: ksh(1_500), countsFrom: day('2026-08-01'), condition: 'RETIRED',
-      retiredAt: new Date('2026-11-01T09:30:00.000Z'),
+      category: 'EQUIPMENT', projectRateCents: ksh(1_500), hireRateCents: ksh(1_500), countsFrom: day('2026-08-01'),
+      condition: 'RETIRED', retiredAt: new Date('2026-11-01T09:30:00.000Z'),
     }),
     // AE15: on the register from 1 November.
-    asset('steamer', 'Steam cleaner', 80_000, { dailyRateCents: ksh(1_000), countsFrom: day('2026-11-01') }),
+    asset('steamer', 'Steam cleaner', 80_000, {
+      projectRateCents: ksh(1_000), hireRateCents: ksh(1_000), countsFrom: day('2026-11-01'),
+    }),
     // Not on the register.
     asset('laptop', 'Office laptop', 90_000, { category: 'IT' }),
   ];
@@ -303,6 +308,7 @@ describe('POST /admin/machines/:id/lines: log days on a job', () => {
     expect(logged.lines).toEqual([{
       id: expect.any(String), jobId: 'mallJob', date: '2026-10-14', jobTitle: 'Mall deep clean', halfDays: 5,
       rateCents: 200_000, amountCents: 500_000, isHire: false, chargedCents: null,
+      standardRateCents: null, paidOn: null, endDate: null,
     }]);
     expect(await machine('scrubber')).toEqual(logged);
   });
@@ -480,6 +486,7 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
       id: expect.any(String), jobId: hireJob!.id, date: '2026-11-03', jobTitle: 'Hire: Floor scrubber',
       halfDays: 6, rateCents: 200_000, amountCents: 600_000, isHire: true, chargedCents: ksh(10_500),
       customerName: 'Jane Wanjiru',
+      standardRateCents: null, paidOn: null, endDate: '2026-11-05', customerPhone: null, notes: null, paymentRef: null,
     }]);
   });
 
@@ -594,6 +601,7 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
     expect(res.json().machine.lines).toEqual([{
       id: expect.any(String), jobId: hireJob!.id, date: '2026-11-03', jobTitle: 'Hire', halfDays: 2,
       rateCents: 100_000, amountCents: 100_000, isHire: false, chargedCents: null,
+      standardRateCents: null, paidOn: null, endDate: null,
     }]);
 
     // The owner reads the job by its title, which names the machine only, and the customer on the hire itself.
@@ -626,6 +634,7 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
       id: lineId, jobId: hireJobs()[0]!.id, date: '2026-10-28', jobTitle: 'Hire: Floor scrubber',
       halfDays: 4, rateCents: 200_000, amountCents: 400_000, isHire: true, chargedCents: ksh(9_000),
       customerName: 'Jane W. Kamau',
+      standardRateCents: null, paidOn: null, endDate: '2026-10-29', customerPhone: null, notes: null, paymentRef: null,
     }]);
   });
 

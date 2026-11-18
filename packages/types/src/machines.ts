@@ -62,7 +62,19 @@ export interface MachineRowDto extends MachinePotDto {
   category: AssetCategory;
   /** What the machine cost: the asset's cost. 0 when it has none. */
   priceCents: number;
+  /** The rate for days on the company's own jobs. */
+  projectRateCents: number;
+  /** The rate for a hire to an outside customer. The project rate when none is stored. */
+  hireRateCents: number;
+  /** False until the owner saves the machine's rates: every machine that had one rate before the hire rate came in. */
+  hireRateReviewed: boolean;
+  /**
+   * The project rate under its old name. Kept for one release for older
+   * back-office pages still open; read `projectRateCents` instead.
+   */
   dailyRateCents: number;
+  /** What the machine earned, split into days on jobs and hires. The two amounts add up to `earnedCents`. */
+  earnedSplit: MachineEarnedSplitDto;
   /** The day the pot starts counting. Jobs and repairs dated before it are left out. */
   startDay: string;
   condition: AssetCondition;
@@ -70,6 +82,16 @@ export interface MachineRowDto extends MachinePotDto {
   retiredAt: string | null;
   /** Empty when the machine is the company's alone. */
   investors: MachineInvestorDto[];
+}
+
+/** A machine's earnings by kind of record. Days are counted in halves: 5 is two and a half days. */
+export interface MachineEarnedSplitDto {
+  /** Days on the company's own jobs. */
+  projectHalfDays: number;
+  projectCents: number;
+  /** Days hired out to outside customers. */
+  hireHalfDays: number;
+  hireCents: number;
 }
 
 /** The Machines page: every machine on the register, retired ones included. */
@@ -100,13 +122,29 @@ export interface MachineLineDto {
   halfDays: number;
   /** The daily rate when the line was logged. A later change of rate does not touch it. */
   rateCents: number;
+  /**
+   * The machine's own rate when the line was made: the line was given a
+   * different rate when this differs from `rateCents`. Null on lines made
+   * before a line could have its own rate.
+   */
+  standardRateCents: number | null;
   /** Half days x rate / 2: a cost of the job, and what the machine earned. */
   amountCents: number;
   isHire: boolean;
   /** For a hire, what the customer was charged: the hire job's income. Null for days on a job. */
   chargedCents: number | null;
+  /** For a hire, the day it was paid, YYYY-MM-DD. Null while it awaits payment, and for days on a job. */
+  paidOn: string | null;
+  /** For a hire, its last day, YYYY-MM-DD: a half day takes its whole date. Null for days on a job. */
+  endDate: string | null;
   /** For a hire, and sent to the owner only. */
   customerName?: string;
+  /** For a hire, and sent to the owner only: the customer's phone number. */
+  customerPhone?: string | null;
+  /** For a hire, and sent to the owner only. */
+  notes?: string | null;
+  /** For a hire, and sent to the owner only: the reference of its payment. */
+  paymentRef?: string | null;
   /**
    * For a hire, and sent to the owner only: the other machines with days on
    * the hire's job. Left out when there are none.
