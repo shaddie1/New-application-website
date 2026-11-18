@@ -731,20 +731,16 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  // request() always sends a JSON content type, and the API refuses an empty
-  // body under that header, so these send an empty object.
   publishWebsiteJob: (id: string) =>
     request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/publish`, {
       method: 'POST',
       auth: true,
-      body: '{}',
     }),
 
   unpublishWebsiteJob: (id: string) =>
     request<WebsiteJobMutationResult>(`/admin/website-jobs/${encodeURIComponent(id)}/unpublish`, {
       method: 'POST',
       auth: true,
-      body: '{}',
     }),
 
   // ── Pending report submissions (owner only) ──────────────────────────────

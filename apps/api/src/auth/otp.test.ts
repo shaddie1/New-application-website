@@ -15,10 +15,10 @@ const sendSms = vi.fn();
 vi.mock('./sms.js', () => ({ sendSms }));
 
 const sendEmail = vi.fn();
-vi.mock('./email.js', () => ({
-  sendEmail,
-  maskEmail: () => 'j***@onyxhawk.co.ke',
-  signInCodeEmail: (code: string) => ({ subject: 'Your code', text: code }),
+vi.mock('../email/service.js', () => ({ sendEmail }));
+vi.mock('../email/format.js', () => ({ maskEmail: () => 'j***@onyxhawk.co.ke' }));
+vi.mock('../email/templates.js', () => ({
+  adminSignInCodeEmail: ({ code }: { code: string }) => ({ subject: 'Your code', text: code }),
 }));
 
 const { env } = await import('../env.js');

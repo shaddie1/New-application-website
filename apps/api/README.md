@@ -34,8 +34,21 @@ src/
   env.ts            Zod-validated env (fails fast on misconfig)
   db.ts             Prisma client singleton
   routes/           HTTP handlers
+  email/            Branded transactional emails (layout, templates, Resend service)
   loyalty/tiers.ts  Hawk Points tier thresholds
 prisma/
   schema.prisma     Domain schema (see ../../docs/schema.md)
   seed.ts           Catalog + points-rule seed (idempotent)
+```
+
+## Emails
+
+Every email goes through `src/email/service.ts`. Only production sends, through
+Resend; anywhere else each email is written to `email-previews/sent/` and the
+log line gives its path.
+
+To check the templates in a browser before deploying:
+
+```powershell
+pnpm preview-emails    # writes email-previews/index.html
 ```
