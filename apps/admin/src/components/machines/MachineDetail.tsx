@@ -19,12 +19,12 @@ import { HirePaidForm } from './HirePaidForm';
 import { InvestorsForm } from './InvestorsForm';
 import { EditDaysForm, LogDaysForm } from './LogDaysForm';
 import { EditMachineForm } from './MachineForm';
-import { Figure, HEADINGS, LoadFailed, NAME_CELL, Pot, ROW, RetiredMark } from './MachineTable';
+import { Figure, HEADINGS, LoadFailed, NAME_CELL, Pot, ROW, RetiredMark, ReviewMark } from './MachineTable';
 import { PayoutForm } from './PayoutForm';
 import { RepairForm } from './RepairForm';
 import {
-  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, ownedBy, paidUndoMessage, priceText,
-  removeHireMessage, stillOwedText,
+  companyPartLine, daysText, earnBackLine, earnedSplitLines, entitledText, hireChargeText, hireDatesText, hireLabel,
+  hirePaidText, lineRateText, ownedBy, paidUndoMessage, priceText, removeHireMessage, stillOwedText,
 } from './wording';
 
 /** The owner's form that is open over the machine's view. */
@@ -66,9 +66,22 @@ function Line({ label, children, strong }: { label: string; children: ReactNode;
   );
 }
 
+/** A part of the line above it, set in under it: the project days and hire days under Earned. */
+function SubLine({ children }: { children: ReactNode }) {
+  return (
+    <div className="break-words border-b border-line py-1.5 pl-6 pr-3 text-xs tabular-nums text-charcoal-muted last:border-b-0 sm:pl-8 sm:pr-4">
+      {children}
+    </div>
+  );
+}
+
 // Each row below takes `actions`: the controls for that one entry, drawn under it.
 
-/** Days on a job, or a hire. A viewer's copy of a hire carries no customer name, so none is shown. */
+/**
+ * Days on a job, or a hire. The client's name, phone, notes and payment
+ * reference come to the owner only (R16): a viewer's copy carries none, so
+ * none is shown, and the viewer still sees whether the hire is paid.
+ */
 function LineRow({ line: l, actions }: { line: MachineLineDto; actions?: ReactNode }) {
   const hire = l.isHire ? hireLabel(l) : null;
   const charge = hireChargeText(l);
@@ -77,14 +90,17 @@ function LineRow({ line: l, actions }: { line: MachineLineDto; actions?: ReactNo
       <div className={NAME_CELL}>
         <div className="break-words font-medium">{l.jobTitle}</div>
         <div className={rowNote}>
-          <span>{formatDay(l.date)}</span>
+          <span>{l.isHire ? hireDatesText(l) : formatDay(l.date)}</span>
           {/* For a viewer the title of a hire is already "Hire". */}
-          {hire && hire !== l.jobTitle && <span>· {hire}</span>}
+          {hire && hire !== l.jobTitle && <span className="min-w-0">· {hire}</span>}
+          {l.customerPhone && <span className="min-w-0">· {l.customerPhone}</span>}
+          {l.isHire && <span className="min-w-0">· {hirePaidText(l)}</span>}
           {charge && <span>· {charge}</span>}
         </div>
+        {l.notes && <div className={`${rowNote} whitespace-pre-line`}>{l.notes}</div>}
       </div>
       <Figure label="Days">{daysText(l.halfDays)}</Figure>
-      <Figure label="Daily rate">{money(l.rateCents)}</Figure>
+      <Figure label="Daily rate">{lineRateText(l)}</Figure>
       <Figure label="Amount">{money(l.amountCents)}</Figure>
       {actions && <div className={`col-span-full ${rowActions}`}>{actions}</div>}
     </li>
@@ -253,6 +269,7 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
   const m = machine;
   const investorNames = new Map(m.investors.map((i) => [i.id, i.name]));
   const companyLine = companyPartLine(m);
+  const split = earnedSplitLines(m.earnedSplit);
 
   // ── The owner's changes that need no form: each asks first ────────────────
 
@@ -361,6 +378,13 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
               {m.retiredAt && <RetiredMark />}
             </h2>
             <p className="mt-1 break-words text-sm text-charcoal-muted">Owned by: {ownedBy(m)}</p>
+            {!m.hireRateReviewed && (
+              <p className="mt-1 flex flex-wrap items-center gap-2 break-words text-sm text-charcoal-muted">
+                <ReviewMark />
+                {/* R3: saving the rates from Edit clears the mark, even with both left as they are. */}
+                {canEdit && <span className="min-w-0">Its hire rate was copied from its one daily rate. Check it and save the rates with Edit.</span>}
+              </p>
+            )}
           </div>
           {canEdit && (
             <div className={rowActions}>
@@ -391,6 +415,8 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
         <Section title="The pot">
           <div className={box}>
             <Line label="Earned">{money(m.earnedCents)}</Line>
+            <SubLine>{split.project}</SubLine>
+            <SubLine>{split.hire}</SubLine>
             <Line label="Repairs">{money(m.repairsCents)}</Line>
             <Line label="Paid to investors">{money(m.paidOutCents)}</Line>
             <Line label="In the pot now" strong><Pot cents={m.potCents} /></Line>
@@ -400,7 +426,8 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
         <Section title="The machine">
           <div className={box}>
             <Line label="Price">{priceText(m.priceCents)}</Line>
-            <Line label="Daily rate">{money(m.dailyRateCents)}</Line>
+            <Line label="Project rate">{money(m.projectRateCents)} a day</Line>
+            <Line label="Hire rate">{money(m.hireRateCents)} a day</Line>
             <Line label="Counts from">{formatDay(m.startDay)}</Line>
             <Line label="Against its price and repairs">{earnBackLine(m)}</Line>
           </div>

@@ -1,4 +1,6 @@
-import type { MachineInvestorDto, MachineLineDto, MachinePotDto, MachineRowDto } from '@onyxhawk/types';
+import type {
+  MachineEarnedSplitDto, MachineInvestorDto, MachineLineDto, MachinePotDto, MachineRowDto,
+} from '@onyxhawk/types';
 
 import { money } from '../../lib/money';
 import { formatPercentShort } from '../ownership/stakes';
@@ -80,6 +82,53 @@ export function priceText(priceCents: number): string {
 /** Half days as days: 5 is "2.5 days". */
 export function daysText(halfDays: number): string {
   return halfDays === 2 ? '1 day' : `${halfDays / 2} days`;
+}
+
+/**
+ * R17: what the machine earned on the company's own jobs and on hires, under
+ * Earned. Both lines show, at zero too, so a machine never hired out says so;
+ * the two amounts add up to Earned.
+ */
+export function earnedSplitLines(split: MachineEarnedSplitDto): { project: string; hire: string } {
+  return {
+    project: `Project days: ${daysText(split.projectHalfDays)}, ${money(split.projectCents)}`,
+    hire: `Hire days: ${daysText(split.hireHalfDays)}, ${money(split.hireCents)}`,
+  };
+}
+
+/**
+ * R7: a record's rate, with the machine's usual rate beside it when the record
+ * was given its own. A record made before records stored the usual rate has
+ * none, and is never shown as changed.
+ */
+export function lineRateText({ rateCents, standardRateCents }: Pick<MachineLineDto, 'rateCents' | 'standardRateCents'>): string {
+  const rate = money(rateCents);
+  return standardRateCents === null || standardRateCents === rateCents ? rate : `${rate} (usual ${money(standardRateCents)})`;
+}
+
+/**
+ * R14 and R16: whether a hire is paid. The reference is sent to the owner only,
+ * so a viewer reads the date alone.
+ */
+export function hirePaidText({ paidOn, paymentRef }: Pick<MachineLineDto, 'paidOn' | 'paymentRef'>): string {
+  if (!paidOn) return 'Awaiting payment';
+  const paid = `Paid ${formatDay(paidOn)}`;
+  return paymentRef ? `${paid} · ref ${paymentRef}` : paid;
+}
+
+/**
+ * R11: a hire's first and last days, as the server works the last one out. A
+ * hire within one date reads that date; a month or year shared by both days is
+ * written once.
+ */
+export function hireDatesText({ date, endDate }: Pick<MachineLineDto, 'date' | 'endDate'>): string {
+  if (!endDate || endDate === date) return formatDay(date);
+  const start = formatDay(date);
+  const end = formatDay(endDate);
+  if (date.slice(0, 7) === endDate.slice(0, 7)) return `${Number(date.slice(8, 10))} to ${end}`;
+  // formatDay ends with " YYYY": drop it from the first day when the year is the same.
+  if (date.slice(0, 4) === endDate.slice(0, 4)) return `${start.slice(0, -5)} to ${end}`;
+  return `${start} to ${end}`;
 }
 
 /**

@@ -1,9 +1,77 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, oldHireNotice, ownedBy,
-  paidUndoMessage, potText, priceText, removeHireMessage, stillOwedText,
+  companyPartLine, daysText, earnBackLine, earnedSplitLines, entitledText, hireChargeText, hireDatesText, hireLabel,
+  hirePaidText, lineRateText, oldHireNotice, ownedBy, paidUndoMessage, potText, priceText, removeHireMessage,
+  stillOwedText,
 } from './wording';
+
+describe('earnedSplitLines (R17)', () => {
+  it('AE1: splits KSh 13,000 earned into 3 project days and a 2-day hire', () => {
+    expect(earnedSplitLines({ projectHalfDays: 6, projectCents: 600_000, hireHalfDays: 4, hireCents: 700_000 })).toEqual({
+      project: 'Project days: 3 days, KSh 6,000',
+      hire: 'Hire days: 2 days, KSh 7,000',
+    });
+  });
+
+  it('still gives the hire line for a machine never hired out', () => {
+    expect(earnedSplitLines({ projectHalfDays: 5, projectCents: 500_000, hireHalfDays: 0, hireCents: 0 })).toEqual({
+      project: 'Project days: 2.5 days, KSh 5,000',
+      hire: 'Hire days: 0 days, KSh 0',
+    });
+  });
+});
+
+describe('lineRateText (R7)', () => {
+  it('AE5: a record given its own rate shows the usual rate beside it', () => {
+    expect(lineRateText({ rateCents: 150_000, standardRateCents: 200_000 })).toBe('KSh 1,500 (usual KSh 2,000)');
+  });
+
+  it('shows one rate for a record at the machine’s rate', () => {
+    expect(lineRateText({ rateCents: 200_000, standardRateCents: 200_000 })).toBe('KSh 2,000');
+  });
+
+  it('shows one rate for a record made before records stored the usual rate', () => {
+    expect(lineRateText({ rateCents: 200_000, standardRateCents: null })).toBe('KSh 2,000');
+  });
+});
+
+describe('hirePaidText (R14)', () => {
+  it('awaits payment while the hire has no paid date', () => {
+    expect(hirePaidText({ paidOn: null })).toBe('Awaiting payment');
+    expect(hirePaidText({ paidOn: null, paymentRef: null })).toBe('Awaiting payment');
+  });
+
+  it('AE9: says paid with the date and, for the owner, the reference', () => {
+    expect(hirePaidText({ paidOn: '2026-11-14', paymentRef: 'QK7XYZ12' })).toBe('Paid 14 Nov 2026 · ref QK7XYZ12');
+  });
+
+  it('AE10: says paid with the date alone for a viewer, who is not sent the reference', () => {
+    expect(hirePaidText({ paidOn: '2026-11-14' })).toBe('Paid 14 Nov 2026');
+  });
+
+  it('says paid with the date alone when the owner gave no reference', () => {
+    expect(hirePaidText({ paidOn: '2026-11-14', paymentRef: null })).toBe('Paid 14 Nov 2026');
+  });
+});
+
+describe('hireDatesText (R11)', () => {
+  it('AE8: a 3-day hire from 10 November reads 10 to 12 November', () => {
+    expect(hireDatesText({ date: '2026-11-10', endDate: '2026-11-12' })).toBe('10 to 12 Nov 2026');
+  });
+
+  it('a hire of half a day, or one day, reads its one date', () => {
+    expect(hireDatesText({ date: '2026-11-10', endDate: '2026-11-10' })).toBe('10 Nov 2026');
+  });
+
+  it('names both months when the hire runs into the next one', () => {
+    expect(hireDatesText({ date: '2026-11-30', endDate: '2026-12-02' })).toBe('30 Nov to 2 Dec 2026');
+  });
+
+  it('names both years when the hire runs into the next one', () => {
+    expect(hireDatesText({ date: '2026-12-31', endDate: '2027-01-01' })).toBe('31 Dec 2026 to 1 Jan 2027');
+  });
+});
 
 describe('earnBackLine', () => {
   it('says how much is still to earn back while the gap is above zero', () => {
