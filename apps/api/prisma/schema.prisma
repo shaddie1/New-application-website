@@ -911,10 +911,18 @@ model Asset {
   notes        String?
   receiptRef   String?
   receiptUrl   String?
-  // Machine register. An asset is on the register when it has a daily rate.
+  // Machine register. An asset is on the register when it has a project rate.
   // `countsFrom` is its start day: what it earns and its repairs both count
   // from that day. The two are set together and only through /admin/machines.
-  dailyRateCents Int?
+  // The project rate keeps the column of the single daily rate it replaced, so
+  // an API still running during a deploy reads the same column.
+  projectRateCents Int?      @map("dailyRateCents")
+  // The rate for a hire to an outside customer. Empty is read as the project
+  // rate: an older API can still add a machine without one.
+  hireRateCents    Int?
+  // When the owner last saved this machine's rates. Empty is "hire rate not
+  // reviewed": every machine that had a single rate before the hire rate came in.
+  hireRateReviewedAt DateTime?
   countsFrom     DateTime?    @db.Date
   maintenance  AssetMaintenance[]
   machineLines     MachineLine[]
@@ -965,6 +973,14 @@ model MachineLine {
   rateCents   Int
   amountCents Int
   isHire      Boolean  @default(false)
+  // The machine's own rate when the line was made, beside the rate it used:
+  // the line was given a different rate when the two differ. Empty on lines
+  // made before rates could be changed for one line.
+  standardRateCents Int?
+  // A hire's paid mark: the day it was paid and an optional reference. Both
+  // empty while it awaits payment, and on days on a job. Changes no figure.
+  hirePaidOn     DateTime? @db.Date
+  hirePaymentRef String?
   createdBy   User     @relation("MachineLineCreatedBy", fields: [createdById], references: [id])
   createdById String
   createdAt   DateTime @default(now())

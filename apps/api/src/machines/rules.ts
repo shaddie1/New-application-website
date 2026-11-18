@@ -24,7 +24,7 @@ export const kshText = (cents: number) => `KSh ${(cents / 100).toLocaleString('e
 // What the rules on a machine's price, investors and start day read.
 const machineRulesSelect = {
   costCents: true,
-  dailyRateCents: true,
+  projectRateCents: true,
   countsFrom: true,
   retiredAt: true,
   machineLines: { select: { job: { select: { date: true } } } },

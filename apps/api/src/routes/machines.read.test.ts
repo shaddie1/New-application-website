@@ -48,8 +48,8 @@ const asset = (id: string, name: string, priceShillings: number, over: object = 
   id, name, category: 'MACHINE', purchaseDate: day('2026-05-20'), costCents: ksh(priceShillings),
   supplier: PRIVATE.assetSupplier, serialNumber: PRIVATE.assetSerial, location: null, usefulLifeMonths: null,
   salvageValueCents: 0, condition: 'GOOD', retiredAt: null, notes: PRIVATE.assetNotes, receiptRef: null,
-  receiptUrl: null, dailyRateCents: null, countsFrom: null, createdById: 'owner',
-  createdAt: day('2026-05-20'), updatedAt: day('2026-05-20'), ...over,
+  receiptUrl: null, projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null,
+  createdById: 'owner', createdAt: day('2026-05-20'), updatedAt: day('2026-05-20'), ...over,
 });
 
 const job = (id: string, title: string, ymd: string, incomeShillings: number, over: object = {}) => ({
@@ -62,7 +62,8 @@ const job = (id: string, title: string, ymd: string, incomeShillings: number, ov
 /** Days of a machine on a job, logged on 10 November whatever the job's date. */
 const line = (id: string, assetId: string, jobId: string, halfDays: number, rateShillings: number, over: object = {}) => ({
   id, assetId, jobId, halfDays, rateCents: ksh(rateShillings), amountCents: (halfDays * ksh(rateShillings)) / 2,
-  isHire: false, createdById: 'owner', createdAt: new Date('2026-11-10T08:00:00.000Z'),
+  isHire: false, standardRateCents: null, hirePaidOn: null, hirePaymentRef: null,
+  createdById: 'owner', createdAt: new Date('2026-11-10T08:00:00.000Z'),
   updatedAt: new Date('2026-11-10T08:00:00.000Z'), ...over,
 });
 
@@ -90,10 +91,14 @@ async function machine(id: string, userId = 'owner'): Promise<MachineDetailDto> 
 // AE3's machine as the register sends it: priced KSh 260,000, one investor put
 // in KSh 156,000, it has earned KSh 50,000 and had KSh 10,000 of repairs since
 // its start day. Every figure is written out here, not worked out.
+// Both rates are its old single rate and the hire rate is not reviewed, as the migration leaves it.
 const POLISHER_ROW = {
   id: 'polisher', name: 'Floor polisher', category: 'MACHINE', priceCents: ksh(260_000), dailyRateCents: ksh(2_000),
+  projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), hireRateReviewed: false,
   startDay: '2026-06-01', condition: 'GOOD', retiredAt: null,
   earnedCents: ksh(50_000), repairsCents: ksh(10_000), paidOutCents: 0, potCents: ksh(40_000),
+  // 15 days on the mall job and the 10-day hire.
+  earnedSplit: { projectHalfDays: 30, projectCents: ksh(30_000), hireHalfDays: 20, hireCents: ksh(20_000) },
   earnBackGapCents: ksh(220_000), paidForItself: false, companyShareBps: 4000, companyPartCents: ksh(16_000),
   investors: [{
     id: 'inv1', name: 'Amina Yusuf', contributionCents: ksh(156_000), shareBps: 6000,
@@ -104,20 +109,27 @@ const POLISHER_ROW = {
 // The company's own scrubber, retired: priced KSh 120,000, earned KSh 3,000, one KSh 1,000 repair.
 const SCRUBBER_ROW = {
   id: 'scrubber', name: 'Auto scrubber', category: 'EQUIPMENT', priceCents: ksh(120_000), dailyRateCents: ksh(1_500),
+  projectRateCents: ksh(1_500), hireRateCents: ksh(1_500), hireRateReviewed: false,
   startDay: '2026-08-01', condition: 'RETIRED', retiredAt: '2026-11-01T09:30:00.000Z',
   earnedCents: ksh(3_000), repairsCents: ksh(1_000), paidOutCents: 0, potCents: ksh(2_000),
+  earnedSplit: { projectHalfDays: 4, projectCents: ksh(3_000), hireHalfDays: 0, hireCents: 0 },
   earnBackGapCents: ksh(118_000), paidForItself: false, companyShareBps: 10_000, companyPartCents: ksh(2_000),
   investors: [],
 };
 
 const MALL_LINE = {
   id: 'ml1', jobId: 'mallJob', date: '2026-10-14', jobTitle: 'Mall deep clean', halfDays: 30, rateCents: ksh(2_000),
-  amountCents: ksh(30_000), isHire: false, chargedCents: null,
+  amountCents: ksh(30_000), isHire: false, chargedCents: null, standardRateCents: null, paidOn: null, endDate: null,
 };
-// A 10-day hire: KSh 25,000 typed with KSh 1,000 off, so KSh 24,000 charged.
+// A 10-day hire from 3 November, so to 12 November: KSh 25,000 typed with KSh 1,000 off, so KSh 24,000 charged.
 const HIRE_LINE = {
   id: 'ml2', jobId: 'hireJob', date: '2026-11-03', halfDays: 20, rateCents: ksh(2_000), amountCents: ksh(20_000),
-  isHire: true, chargedCents: ksh(24_000),
+  isHire: true, chargedCents: ksh(24_000), standardRateCents: null, paidOn: null, endDate: '2026-11-12',
+};
+// R16: what the owner alone is sent on that hire.
+const HIRE_FOR_OWNER = {
+  ...HIRE_LINE, jobTitle: HIRE_TITLE, customerName: HIRE_CUSTOMER, customerPhone: PRIVATE.hirePhone,
+  notes: PRIVATE.hireNotes, paymentRef: null,
 };
 
 beforeEach(() => {
@@ -152,10 +164,13 @@ beforeEach(() => {
   ];
   // Seeded out of name order.
   t.assets = [
-    asset('polisher', 'Floor polisher', 260_000, { dailyRateCents: ksh(2_000), countsFrom: day('2026-06-01') }),
+    asset('polisher', 'Floor polisher', 260_000, {
+      projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), countsFrom: day('2026-06-01'),
+    }),
     asset('laptop', 'Office laptop', 90_000, { category: 'IT' }),
     asset('scrubber', 'Auto scrubber', 120_000, {
-      category: 'EQUIPMENT', dailyRateCents: ksh(1_500), countsFrom: day('2026-08-01'), condition: 'RETIRED',
+      category: 'EQUIPMENT', projectRateCents: ksh(1_500), hireRateCents: ksh(1_500), countsFrom: day('2026-08-01'),
+      condition: 'RETIRED',
       retiredAt: new Date('2026-11-01T09:30:00.000Z'),
     }),
   ];
@@ -302,7 +317,7 @@ describe('GET /admin/machines/:id', () => {
       paidOutCents: ksh(20_000),
       potCents: ksh(20_000),
       investors: [{ ...POLISHER_ROW.investors[0], paidCents: ksh(20_000), owedCents: ksh(4_000) }],
-      lines: [{ ...HIRE_LINE, jobTitle: HIRE_TITLE, customerName: HIRE_CUSTOMER }, MALL_LINE],
+      lines: [HIRE_FOR_OWNER, MALL_LINE],
       repairs: [
         { id: 'r2', date: '2026-09-20', description: 'Repair r2', costCents: ksh(6_000), performedBy: null, receiptRef: null },
         { id: 'r1', date: '2026-07-15', description: 'Repair r1', costCents: ksh(4_000), performedBy: 'Kamau Motors', receiptRef: 'RCPT-0042' },
@@ -319,7 +334,7 @@ describe('GET /admin/machines/:id', () => {
       ...SCRUBBER_ROW,
       lines: [{
         id: 'ml3', jobId: 'officeJob', date: '2026-09-02', jobTitle: 'Office clean', halfDays: 4, rateCents: ksh(1_500),
-        amountCents: ksh(3_000), isHire: false, chargedCents: null,
+        amountCents: ksh(3_000), isHire: false, chargedCents: null, standardRateCents: null, paidOn: null, endDate: null,
       }],
       // Dated on the start day itself: it counts.
       repairs: [{ id: 'r3', date: '2026-08-01', description: 'Repair r3', costCents: ksh(1_000), performedBy: null, receiptRef: null }],
@@ -349,7 +364,7 @@ describe('GET /admin/machines/:id', () => {
     // One day of the scrubber on the polisher's hire job, whose older title still names the customer.
     const ON_HIRE_JOB = {
       id: 'ml4', jobId: 'hireJob', date: '2026-11-03', halfDays: 2, rateCents: ksh(1_500), amountCents: ksh(1_500),
-      isHire: false, chargedCents: null,
+      isHire: false, chargedCents: null, standardRateCents: null, paidOn: null, endDate: null,
     };
 
     beforeEach(() => {
@@ -375,7 +390,7 @@ describe('GET /admin/machines/:id', () => {
 
     it('R11: only the owner\'s hire lists the second machine, whose days go when the hire is removed', async () => {
       expect((await machine('polisher')).lines[0]).toEqual({
-        ...HIRE_LINE, jobTitle: HIRE_TITLE, customerName: HIRE_CUSTOMER,
+        ...HIRE_FOR_OWNER,
         otherMachines: [{ machineName: 'Auto scrubber', halfDays: 2, amountCents: ksh(1_500) }],
       });
 
@@ -399,13 +414,25 @@ describe('GET /admin/machines/:id', () => {
 });
 
 describe('what the answers leave out', () => {
-  it.each(['owner', 'coo'])('no answer to %s holds a phone number, a location, notes or a job client', async (userId) => {
+  it('no answer to the COO holds a phone number, a location, notes or a job client', async () => {
     for (const url of [REGISTER, machineUrl('polisher'), machineUrl('scrubber')]) {
-      const res = await as(userId, 'GET', url);
+      const res = await as('coo', 'GET', url);
 
       expect(res.statusCode).toBe(200);
       expect(res.body).not.toMatch(/clientName|clientPhone|clientLocation|notes|supplier|serialNumber/i);
       for (const value of Object.values(PRIVATE)) expect(res.body).not.toContain(value);
+    }
+  });
+
+  // R16: the owner is sent a hire's phone and notes, and nothing else on this list.
+  it('no answer to the owner holds a location, a job\'s phone or notes, or a job client', async () => {
+    const { hirePhone: _phone, hireNotes: _notes, ...stillPrivate } = PRIVATE;
+    for (const url of [REGISTER, machineUrl('polisher'), machineUrl('scrubber')]) {
+      const res = await as('owner', 'GET', url);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).not.toMatch(/clientName|clientPhone|clientLocation|supplier|serialNumber/i);
+      for (const value of Object.values(stillPrivate)) expect(res.body).not.toContain(value);
     }
   });
 
@@ -414,5 +441,103 @@ describe('what the answers leave out', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).not.toContain(HIRE_CUSTOMER);
+  });
+});
+
+describe('two rates and the hire rate review', () => {
+  const polisher = () => t.assets.find((a) => a.id === 'polisher')!;
+
+  it('sends a machine whose hire rate has a reviewed date as reviewed, with both rates and the old field at the project rate', async () => {
+    Object.assign(polisher(), { hireRateCents: ksh(3_500), hireRateReviewedAt: new Date('2026-11-19T07:00:00.000Z') });
+
+    expect(await machine('polisher')).toMatchObject({
+      projectRateCents: ksh(2_000), hireRateCents: ksh(3_500), hireRateReviewed: true, dailyRateCents: ksh(2_000),
+    });
+  });
+
+  it('R3: sends a machine with a hire rate and no reviewed date as not reviewed', async () => {
+    Object.assign(polisher(), { hireRateCents: ksh(3_500) });
+
+    expect((await register()).machines[1]).toMatchObject({
+      id: 'polisher', projectRateCents: ksh(2_000), hireRateCents: ksh(3_500), hireRateReviewed: false,
+    });
+  });
+
+  it('KTD1: a machine with a project rate and no hire rate is on the register, at its project rate for both, not reviewed', async () => {
+    // As the older API can still add one after the migration has run.
+    t.assets.push(asset('steamer', 'Steam cleaner', 80_000, { projectRateCents: ksh(1_000), countsFrom: day('2026-11-01') }));
+
+    expect((await register()).machines.map((m) => m.id)).toEqual(['scrubber', 'polisher', 'steamer']);
+    expect(await machine('steamer')).toMatchObject({
+      projectRateCents: ksh(1_000), hireRateCents: ksh(1_000), hireRateReviewed: false, dailyRateCents: ksh(1_000),
+    });
+  });
+
+  it('AE1: sends what a machine earned split into project days and hire days', async () => {
+    t.assets.push(asset('extractor', 'Carpet extractor', 140_000, {
+      projectRateCents: ksh(2_000), hireRateCents: ksh(3_500), countsFrom: day('2026-09-01'),
+    }));
+    t.jobs.push(job('hire2', 'Hire: Carpet extractor', '2026-11-10', 7_000, { clientName: 'Peter Kariuki' }));
+    t.machineLines.push(
+      line('ml5', 'extractor', 'officeJob', 6, 2_000),
+      line('ml6', 'extractor', 'hire2', 4, 3_500, { isHire: true }),
+    );
+
+    expect(await machine('extractor')).toMatchObject({
+      earnedCents: ksh(13_000),
+      earnedSplit: { projectHalfDays: 6, projectCents: ksh(6_000), hireHalfDays: 4, hireCents: ksh(7_000) },
+    });
+  });
+});
+
+describe('what each record carries', () => {
+  it('KTD3: a record stored with no usual rate is sent without one, and one stored with its usual rate is sent with it', async () => {
+    Object.assign(t.machineLines.find((l) => l.id === 'ml1')!, { standardRateCents: ksh(2_000) });
+
+    const { lines } = await machine('polisher');
+
+    expect(lines.find((l) => l.id === 'ml1')).toMatchObject({ rateCents: ksh(2_000), standardRateCents: ksh(2_000) });
+    expect(lines.find((l) => l.id === 'ml2')).toMatchObject({ rateCents: ksh(2_000), standardRateCents: null });
+  });
+
+  it.each([
+    [5, '2026-11-12'],
+    [2, '2026-11-10'],
+    [1, '2026-11-10'],
+  ])('R11: a hire starting 10 November for %i half days ends on %s', async (halfDays, endDate) => {
+    Object.assign(t.jobs.find((j) => j.id === 'hireJob')!, { date: day('2026-11-10') });
+    Object.assign(t.machineLines.find((l) => l.id === 'ml2')!, { halfDays, amountCents: (halfDays * ksh(2_000)) / 2 });
+
+    expect((await machine('polisher')).lines.find((l) => l.id === 'ml2')).toMatchObject({ date: '2026-11-10', endDate });
+  });
+
+  describe('AE10: a paid hire with a client name, phone number, notes and payment reference', () => {
+    const PAYMENT_REF = 'QKL4M7XZ2P';
+
+    beforeEach(() => {
+      Object.assign(t.machineLines.find((l) => l.id === 'ml2')!, {
+        hirePaidOn: day('2026-11-14'), hirePaymentRef: PAYMENT_REF,
+      });
+    });
+
+    it.each(['admin', 'finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
+      'R16: %s is sent the hire as paid with its date, and none of the four',
+      async (userId) => {
+        const res = await as(userId, 'GET', machineUrl('polisher'));
+
+        expect(res.statusCode).toBe(200);
+        for (const value of [HIRE_CUSTOMER, PRIVATE.hirePhone, PRIVATE.hireNotes, PAYMENT_REF]) {
+          expect(res.body).not.toContain(value);
+        }
+        expect(res.body).not.toMatch(/customerName|customerPhone|notes|paymentRef/);
+        expect(res.json().machine.lines[0]).toEqual({ ...HIRE_LINE, jobTitle: 'Hire', paidOn: '2026-11-14' });
+      },
+    );
+
+    it('R16: the owner is sent all four, and the paid date', async () => {
+      expect((await machine('polisher')).lines[0]).toEqual({
+        ...HIRE_FOR_OWNER, paidOn: '2026-11-14', paymentRef: PAYMENT_REF,
+      });
+    });
   });
 });

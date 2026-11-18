@@ -1,7 +1,11 @@
-import type { MachineInvestorDto, MachineLineDto, MachinePotDto, MachineRowDto } from '@onyxhawk/types';
+import type {
+  MachineEarnedSplitDto, MachineInvestorDto, MachineLineDto, MachinePotDto, MachineRowDto,
+} from '@onyxhawk/types';
 
 import { money } from '../../lib/money';
 import { formatPercentShort } from '../ownership/stakes';
+import { formatDay } from '../ownership/wording';
+import type { HireFigures } from './forms';
 
 /**
  * The words on the Machines page that depend on the figures. Amounts show
@@ -81,13 +85,79 @@ export function daysText(halfDays: number): string {
 }
 
 /**
- * What a hire's customer was charged, and how far under the machine's rate
- * when it was: the machine still got its full rate. Null for days on a job.
+ * R17: what the machine earned on the company's own jobs and on hires, under
+ * Earned. Both lines show, at zero too, so a machine never hired out says so;
+ * the two amounts add up to Earned.
+ */
+export function earnedSplitLines(split: MachineEarnedSplitDto): { project: string; hire: string } {
+  return {
+    project: `Project days: ${daysText(split.projectHalfDays)}, ${money(split.projectCents)}`,
+    hire: `Hire days: ${daysText(split.hireHalfDays)}, ${money(split.hireCents)}`,
+  };
+}
+
+/**
+ * R7: a record's rate, with the machine's usual rate beside it when the record
+ * was given its own. A record made before records stored the usual rate has
+ * none, and is never shown as changed.
+ */
+export function lineRateText({ rateCents, standardRateCents }: Pick<MachineLineDto, 'rateCents' | 'standardRateCents'>): string {
+  const rate = money(rateCents);
+  return standardRateCents === null || standardRateCents === rateCents ? rate : `${rate} (usual ${money(standardRateCents)})`;
+}
+
+/**
+ * R14 and R16: whether a hire is paid. The reference is sent to the owner only,
+ * so a viewer reads the date alone.
+ */
+export function hirePaidText({ paidOn, paymentRef }: Pick<MachineLineDto, 'paidOn' | 'paymentRef'>): string {
+  if (!paidOn) return 'Awaiting payment';
+  const paid = `Paid ${formatDay(paidOn)}`;
+  return paymentRef ? `${paid} · ref ${paymentRef}` : paid;
+}
+
+/**
+ * R11: a hire's first and last days, as the server works the last one out. A
+ * hire within one date reads that date; a month or year shared by both days is
+ * written once.
+ */
+export function hireDatesText({ date, endDate }: Pick<MachineLineDto, 'date' | 'endDate'>): string {
+  if (!endDate || endDate === date) return formatDay(date);
+  const start = formatDay(date);
+  const end = formatDay(endDate);
+  if (date.slice(0, 7) === endDate.slice(0, 7)) return `${Number(date.slice(8, 10))} to ${end}`;
+  // formatDay ends with " YYYY": drop it from the first day when the year is the same.
+  if (date.slice(0, 4) === endDate.slice(0, 4)) return `${start.slice(0, -5)} to ${end}`;
+  return `${start} to ${end}`;
+}
+
+/**
+ * What a hire's client was charged, when that differs from the machine's
+ * amount: a hire recorded before hires were charged at days x rate (R10). A
+ * hire charged its amount needs no second figure, so it is null, as it is for
+ * days on a job.
  */
 export function hireChargeText({ chargedCents, amountCents }: Pick<MachineLineDto, 'chargedCents' | 'amountCents'>): string | null {
-  if (chargedCents === null) return null;
+  if (chargedCents === null || chargedCents === amountCents) return null;
   const charged = `Charged ${money(chargedCents)}`;
-  return chargedCents < amountCents ? `${charged}, ${money(amountCents - chargedCents)} under the rate` : charged;
+  return chargedCents < amountCents ? `${charged}, ${money(amountCents - chargedCents)} less than the machine’s amount` : charged;
+}
+
+/** R10: the lines of the notice an older hire's change of days or rate shows, each figure before and after. */
+export function oldHireNotice({ before, after }: { before: HireFigures; after: HireFigures }): string[] {
+  const line = (label: string, from: number, to: number) => `${label}: ${money(from)} → ${money(to)}`;
+  return [
+    line('Amount charged', before.chargedCents, after.chargedCents),
+    line('Machine’s amount', before.machineCents, after.machineCents),
+    line('Job’s profit on the hire', before.profitCents, after.profitCents),
+  ];
+}
+
+/** R14: what the page says before a hire's paid mark is undone. The mark changes no figure, and nor does undoing it (R15). */
+export function paidUndoMessage({ paidOn, paymentRef }: Pick<MachineLineDto, 'paidOn' | 'paymentRef'>): string {
+  const date = `The paid date, ${formatDay(paidOn ?? '')},`;
+  const cleared = paymentRef ? `${date} and the reference ${paymentRef} are cleared` : `${date} is cleared`;
+  return `${cleared}, and the hire shows “Awaiting payment” again. No figure changes.`;
 }
 
 /** A hire, with its customer when the server sent the name. It sends it to the owner only. */
@@ -99,14 +169,19 @@ export function hireLabel({ customerName }: Pick<MachineLineDto, 'customerName'>
  * What the page says before a hire is removed. Removing a hire deletes its
  * one-off job, and every other machine's days on that job go with it, so the
  * message names each of those machines, its days and the amount that leaves
- * its pot. The lines are separated by line breaks.
+ * its pot. The lines are separated by line breaks. A hire charged its amount
+ * takes the same sum out of the income and the pot; an older hire's two
+ * figures are named apart.
  */
 export function removeHireMessage({
   chargedCents, amountCents, otherMachines = [],
 }: Pick<MachineLineDto, 'chargedCents' | 'amountCents' | 'otherMachines'>): string {
   const hire =
-    `The hire’s one-off job in Jobs & costs is deleted with it: its income of ${money(chargedCents ?? 0)} ` +
-    `and any costs logged on that job. ${money(amountCents)} leaves the pot.`;
+    chargedCents === amountCents
+      ? 'The hire’s one-off job in Jobs & costs is deleted with it, and any costs logged on that job. ' +
+        `Its ${money(amountCents)} leaves the income and the pot alike.`
+      : `The hire’s one-off job in Jobs & costs is deleted with it: its income of ${money(chargedCents ?? 0)} ` +
+        `and any costs logged on that job. ${money(amountCents)} leaves the pot.`;
   const last = 'This cannot be undone.';
   if (otherMachines.length === 0) return `${hire} ${last}`;
   return [

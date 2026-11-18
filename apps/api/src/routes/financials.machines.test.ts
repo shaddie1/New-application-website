@@ -127,8 +127,8 @@ beforeEach(() => {
   ];
   // One machine on the register with a repair in October, and one asset that is not on it.
   t.assets = [
-    { id: 'scrubber', name: 'Floor scrubber', category: 'MACHINE', purchaseDate: day('2026-08-20'), costCents: 26_000_000, dailyRateCents: 200_000, countsFrom: day('2026-09-01'), retiredAt: null },
-    { id: 'laptop', name: 'Office laptop', category: 'IT', purchaseDate: day('2026-10-02'), costCents: 8_000_000, dailyRateCents: null, countsFrom: null, retiredAt: null },
+    { id: 'scrubber', name: 'Floor scrubber', category: 'MACHINE', purchaseDate: day('2026-08-20'), costCents: 26_000_000, projectRateCents: 200_000, hireRateCents: 200_000, countsFrom: day('2026-09-01'), retiredAt: null },
+    { id: 'laptop', name: 'Office laptop', category: 'IT', purchaseDate: day('2026-10-02'), costCents: 8_000_000, projectRateCents: null, hireRateCents: null, countsFrom: null, retiredAt: null },
   ];
   t.assetMaintenance = [{ id: 'm1', assetId: 'scrubber', date: day('2026-10-16'), description: 'New brushes', costCents: 300_000 }];
   t.jobs = [
@@ -508,6 +508,62 @@ describe('R29: a job report, for the person who reported it', () => {
       reports: [{ ...NOV_JOB_DTO, totalExpensesCents: 700_000, netCents: 2_100_000, machineCents: 200_000 }, WAITING_DTO],
     });
     expect(res.body).not.toMatch(/scrubber|halfDays|rateCents|machineLines|machineName/i);
+  });
+});
+
+describe('R20 and KTD11: the income of a hire on Jobs & costs', () => {
+  const MACHINES_PAGE = 'This job is a machine hire: its income is the hire\'s days times its daily rate. Change the hire\'s days or rate on the Machines page.';
+
+  /** A hire's job, KSh 7,000, with the scrubber's hire line on it. `standardRateCents` null is a hire recorded before the two rates. */
+  function seedHire(jobId: string, standardRateCents: number | null, incomeCents: number) {
+    t.jobs.push(job(jobId, 'Hire: Floor scrubber', '2026-11-03', incomeCents, { clientName: 'Jane Wanjiru' }));
+    t.machineLines.push({
+      ...scrubberDays(`${jobId}Line`, jobId, 4), rateCents: 350_000, amountCents: 700_000, isHire: true,
+      standardRateCents, hirePaidOn: null, hirePaymentRef: null,
+    });
+  }
+  const patchJob = (jobId: string, body: object) => as('owner', 'PATCH', `/admin/financials/jobs/${jobId}`, body);
+  const jobRow = (jobId: string) => t.jobs.find((j) => j.id === jobId);
+
+  beforeEach(() => {
+    seedHire('newHire', 350_000, 700_000);
+    // AE7's older hire: charged KSh 10,500 for a machine amount of KSh 7,000 here.
+    seedHire('oldHire', null, 1_050_000);
+  });
+
+  it.each([
+    ['income', { incomeCents: 800_000 }],
+    ['discount', { discountCents: 50_000 }],
+  ])('AE11: a new %s for a hire recorded under the new rule is refused, pointing to the Machines page', async (_what, change) => {
+    const res = await patchJob('newHire', { title: 'Hire: Floor scrubber', ...change });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: MACHINES_PAGE });
+    expect(jobRow('newHire')).toMatchObject({ incomeCents: 700_000, discountCents: 0 });
+  });
+
+  it('the same hire\'s title and notes are still saved, and its unchanged income and discount may be sent with them', async () => {
+    const res = await patchJob('newHire', { title: 'Hire: scrubber, Kilimani', notes: 'Delivered by van', incomeCents: 700_000, discountCents: 0 });
+
+    expect(res.statusCode).toBe(200);
+    expect(jobRow('newHire')).toMatchObject({ title: 'Hire: scrubber, Kilimani', notes: 'Delivered by van', incomeCents: 700_000, discountCents: 0 });
+  });
+
+  it('AE11: the same change of income on a hire recorded before the new rule is saved', async () => {
+    const res = await patchJob('oldHire', { incomeCents: 1_100_000, discountCents: 50_000 });
+
+    expect(res.statusCode).toBe(200);
+    expect(jobRow('oldHire')).toMatchObject({ incomeCents: 1_100_000, discountCents: 50_000 });
+    expect(res.json().job).toMatchObject({ actualIncomeCents: 1_050_000, machineCents: 700_000, netCents: 350_000 });
+  });
+
+  it('a job with machine days that are not a hire keeps its income editable', async () => {
+    t.machineLines.push({ ...AE1_LINE(), standardRateCents: 200_000 });
+
+    const res = await patchJob('octJob', { incomeCents: 11_000_000 });
+
+    expect(res.statusCode).toBe(200);
+    expect(jobRow('octJob')).toMatchObject({ incomeCents: 11_000_000 });
   });
 });
 

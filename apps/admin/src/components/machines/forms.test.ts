@@ -3,22 +3,28 @@ import type { DeclaredPeriodDto } from '@onyxhawk/types';
 
 import {
   amountPreview,
-  belowRateWarning,
   blankInvestorRow,
   daysAmountCents,
   declaredPeriodWarning,
   fieldDays,
   fieldShillings,
+  hireAmountPreview,
+  hireRateWarning,
   investorRowsFor,
   machineChanges,
   nairobiDay,
+  oldHireChange,
+  oldHireOpeningRate,
+  overlapWarning,
   parseAmount,
   parseDays,
   parsePayment,
   parsePrice,
   parseRate,
   readInvestorsForm,
+  registerHasTwoRates,
   startDayProblem,
+  usualRateHint,
   type InvestorRow,
 } from './forms';
 
@@ -36,6 +42,58 @@ describe('parseRate', () => {
     ['', 'Enter a daily rate.'],
   ])('refuses "%s" and says why', (typed, reason) => {
     expect(parseRate(typed)).toEqual({ ok: false, reason });
+  });
+
+  describe.each([
+    ['project rate', 'A project rate'],
+    ['hire rate', 'A hire rate'],
+  ] as const)('as the %s field (R1)', (rate, named) => {
+    it('accepts "3500"', () => {
+      expect(parseRate('3500', rate)).toEqual({ ok: true, cents: 350_000 });
+    });
+
+    it.each([
+      ['3500.50', `${named} is in whole shillings, with no cents.`],
+      ['0', `${named} must be more than KSh 0.`],
+      ['-5', `${named} cannot be negative.`],
+      ['', `Enter a ${rate}.`],
+    ])('refuses "%s" with its own message', (typed, reason) => {
+      expect(parseRate(typed, rate)).toEqual({ ok: false, reason });
+    });
+  });
+});
+
+describe('hireRateWarning (R4)', () => {
+  // AE4: a project rate of KSh 2,000.
+  it('warns when the hire rate is below the project rate', () => {
+    expect(hireRateWarning(200_000, 150_000)).toBe('Hire rate is usually higher than the project rate — continue?');
+  });
+
+  it('says nothing when the hire rate is the project rate or above it', () => {
+    expect(hireRateWarning(200_000, 200_000)).toBeNull();
+    expect(hireRateWarning(200_000, 350_000)).toBeNull();
+  });
+});
+
+describe('registerHasTwoRates (KTD6)', () => {
+  const row = { id: 'm1', name: 'Scrubber', projectRateCents: 200_000, hireRateCents: 350_000, dailyRateCents: 200_000 };
+  // A machine as the API sent it before the two rates.
+  const oldRow = { id: 'm2', name: 'Polisher', dailyRateCents: 150_000 };
+
+  it('passes a register whose machines each carry a project rate', () => {
+    expect(registerHasTwoRates({ machines: [row, { ...row, id: 'm2' }] })).toBe(true);
+  });
+
+  it('fails a register from the older API, whose machines carry only the one daily rate', () => {
+    expect(registerHasTwoRates({ machines: [oldRow] })).toBe(false);
+  });
+
+  it('fails when any machine has no project rate', () => {
+    expect(registerHasTwoRates({ machines: [row, oldRow] })).toBe(false);
+  });
+
+  it('passes an empty register: there is nothing to tell the two APIs apart by', () => {
+    expect(registerHasTwoRates({ machines: [] })).toBe(true);
   });
 });
 
@@ -145,18 +203,115 @@ describe('the amount shown before saving', () => {
   });
 });
 
-describe('belowRateWarning', () => {
-  // AE14: a 3-day hire at KSh 2,000 a day.
-  it('warns when the charge is below days x rate', () => {
-    expect(belowRateWarning(6, 200_000, 500_000)).toBe(
-      'This charge is KSh 1,000 below 3 days at the daily rate (KSh 6,000). ' +
-        'The machine still gets its full KSh 6,000, and the hire will show a loss of KSh 1,000.',
+describe('hireAmountPreview (R8)', () => {
+  it('reads 2 days at KSh 3,500 as KSh 7,000, charged to the client and all of it into the pot', () => {
+    expect(hireAmountPreview('2', 350_000)).toBe(
+      '2 days at KSh 3,500 a day: KSh 7,000. The client is charged this, and all of it goes into the pot.',
     );
   });
 
-  it('says nothing at the rate or above it', () => {
-    expect(belowRateWarning(6, 200_000, 600_000)).toBeNull();
-    expect(belowRateWarning(6, 200_000, 1_050_000)).toBeNull();
+  it('is not shown while the days cannot be read', () => {
+    expect(hireAmountPreview('', 350_000)).toBeNull();
+  });
+});
+
+describe('usualRateHint (R7)', () => {
+  it('names the usual rate', () => {
+    expect(usualRateHint(parseRate('2000'), 200_000)).toBe('Usual rate KSh 2,000');
+  });
+
+  it('says so when the typed rate differs from it', () => {
+    expect(usualRateHint(parseRate('1500'), 200_000)).toBe(
+      'Usual rate KSh 2,000. This rate is different, so the record will show both.',
+    );
+  });
+
+  it('names only the usual rate while the typed rate cannot be read', () => {
+    expect(usualRateHint(parseRate(''), 200_000)).toBe('Usual rate KSh 2,000');
+  });
+});
+
+describe('overlapWarning (R13, KTD7)', () => {
+  // AE8: a hire to Jane Wanjiru from 10 November for 3 days, ending 12 November.
+  const janeHire = {
+    id: 'h1', isHire: true, date: '2026-11-10', halfDays: 6, jobTitle: 'Hire: Floor scrubber', customerName: 'Jane Wanjiru',
+  };
+  const janeOverlap =
+    'These dates overlap the hire to Jane Wanjiru, 10 Nov 2026 to 12 Nov 2026. You can still save.';
+
+  it('AE8: a second hire starting on its last day overlaps it and names it', () => {
+    expect(overlapWarning({ date: '2026-11-12', halfDays: 4 }, [janeHire])).toBe(janeOverlap);
+  });
+
+  it('a hire starting the day after it ends does not overlap it', () => {
+    expect(overlapWarning({ date: '2026-11-13', halfDays: 4 }, [janeHire])).toBeNull();
+  });
+
+  it('days on a job dated 11 November overlap it, and the job is named the other way round', () => {
+    expect(overlapWarning({ date: '2026-11-11', halfDays: 2 }, [janeHire])).toBe(janeOverlap);
+    const mallDays = { id: 'd1', isHire: false, date: '2026-11-11', halfDays: 2, jobTitle: 'Mall deep clean' };
+    expect(overlapWarning({ date: '2026-11-10', halfDays: 6 }, [mallDays])).toBe(
+      'These dates overlap 1 day on “Mall deep clean”, dated 11 Nov 2026. You can still save.',
+    );
+  });
+
+  it('a hire being edited does not overlap itself', () => {
+    expect(overlapWarning({ id: 'h1', date: '2026-11-11', halfDays: 6 }, [janeHire])).toBeNull();
+  });
+
+  it('two half-day records on one date do not overlap; a half day against a full day on that date does', () => {
+    const morning = { id: 'd2', isHire: false, date: '2026-11-20', halfDays: 1, jobTitle: 'Clinic floor strip' };
+    expect(overlapWarning({ date: '2026-11-20', halfDays: 1 }, [morning])).toBeNull();
+    expect(overlapWarning({ date: '2026-11-20', halfDays: 2 }, [morning])).toBe(
+      'These dates overlap 0.5 days on “Clinic floor strip”, dated 20 Nov 2026. You can still save.',
+    );
+  });
+
+  it('the half day that ends a record shares its date with another half day', () => {
+    // 2.5 days from 10 November: the 12th is a half day.
+    const shorter = { ...janeHire, halfDays: 5 };
+    expect(overlapWarning({ date: '2026-11-12', halfDays: 1 }, [shorter])).toBeNull();
+    expect(overlapWarning({ date: '2026-11-12', halfDays: 2 }, [shorter])).not.toBeNull();
+  });
+
+  it('names every record it overlaps, and a hire whose client the viewer was not sent', () => {
+    const mallDays = { id: 'd1', isHire: false, date: '2026-11-11', halfDays: 2, jobTitle: 'Mall deep clean' };
+    const unnamed = { id: 'h1', isHire: true, date: '2026-11-10', halfDays: 6, jobTitle: 'Hire' };
+    expect(overlapWarning({ date: '2026-11-10', halfDays: 4 }, [unnamed, mallDays])).toBe(
+      'These dates overlap a hire, 10 Nov 2026 to 12 Nov 2026 and 1 day on “Mall deep clean”, dated 11 Nov 2026. You can still save.',
+    );
+  });
+
+  it('says nothing while the date is not chosen', () => {
+    expect(overlapWarning({ date: '', halfDays: 2 }, [janeHire])).toBeNull();
+  });
+});
+
+describe('an older hire\'s change of days or rate (R10)', () => {
+  // AE7: 3 days charged KSh 10,500, with a machine amount of KSh 6,000.
+  const oldHire = { chargedCents: 1_050_000, amountCents: 600_000, halfDays: 6 };
+
+  it('AE7: opens at the charge over the days, KSh 3,500 a day', () => {
+    expect(oldHireOpeningRate(oldHire)).toBe('3500');
+  });
+
+  it('opens blank when the charge over the days is not whole shillings', () => {
+    expect(oldHireOpeningRate({ ...oldHire, chargedCents: 1_000_000 })).toBe('');
+  });
+
+  it('opens blank for a hire charged nothing', () => {
+    expect(oldHireOpeningRate({ ...oldHire, chargedCents: 0 })).toBe('');
+  });
+
+  it('AE7: the machine\'s amount goes from KSh 6,000 to KSh 10,500, and the job\'s profit from KSh 4,500 to nothing', () => {
+    expect(oldHireChange(oldHire, 6, 350_000)).toEqual({
+      before: { chargedCents: 1_050_000, machineCents: 600_000, profitCents: 450_000 },
+      after: { chargedCents: 1_050_000, machineCents: 1_050_000, profitCents: 0 },
+    });
+  });
+
+  it('charges the new days at the new rate', () => {
+    expect(oldHireChange(oldHire, 4, 300_000).after).toEqual({ chargedCents: 600_000, machineCents: 600_000, profitCents: 0 });
   });
 });
 
@@ -213,18 +368,47 @@ describe('startDayProblem', () => {
 });
 
 describe('machineChanges', () => {
-  const machine = { name: 'Scrubber', priceCents: 26_000_000, dailyRateCents: 200_000, startDay: '2026-11-01' };
+  const fields = {
+    name: 'Scrubber', priceCents: 26_000_000, projectRateCents: 200_000, hireRateCents: 350_000, startDay: '2026-11-01',
+  };
 
-  it('sends only what was changed', () => {
-    expect(machineChanges(machine, { ...machine, dailyRateCents: 250_000 })).toEqual({ dailyRateCents: 250_000 });
-    expect(machineChanges(machine, { ...machine, name: 'Floor scrubber', startDay: '2026-10-01' })).toEqual({
-      name: 'Floor scrubber',
-      startDay: '2026-10-01',
+  describe('for a machine whose hire rate is reviewed', () => {
+    const machine = { ...fields, hireRateReviewed: true };
+
+    it('sends only what was changed', () => {
+      expect(machineChanges(machine, { ...fields, projectRateCents: 250_000 })).toEqual({ projectRateCents: 250_000 });
+      expect(machineChanges(machine, { ...fields, hireRateCents: 400_000 })).toEqual({ hireRateCents: 400_000 });
+      expect(machineChanges(machine, { ...fields, name: 'Floor scrubber', startDay: '2026-10-01' })).toEqual({
+        name: 'Floor scrubber',
+        startDay: '2026-10-01',
+      });
+    });
+
+    it('is null when nothing was changed', () => {
+      expect(machineChanges(machine, { ...fields })).toBeNull();
     });
   });
 
-  it('is null when nothing was changed', () => {
-    expect(machineChanges(machine, { ...machine })).toBeNull();
+  describe('for a machine whose hire rate is not reviewed (R3, AE3)', () => {
+    // Both rates are its one rate from before the hire rate came in.
+    const flagged = { ...fields, hireRateCents: 200_000, hireRateReviewed: false };
+    const typed = { ...fields, hireRateCents: 200_000 };
+
+    it('can be saved with nothing changed, and confirms both rates as they stand', () => {
+      expect(machineChanges(flagged, typed)).toEqual({ projectRateCents: 200_000, hireRateCents: 200_000, ratesReviewed: true });
+    });
+
+    it('sends the new hire rate with the marker', () => {
+      expect(machineChanges(flagged, { ...typed, hireRateCents: 350_000 })).toEqual({
+        projectRateCents: 200_000, hireRateCents: 350_000, ratesReviewed: true,
+      });
+    });
+
+    it('sends the marker with every save, a change of name included', () => {
+      expect(machineChanges(flagged, { ...typed, name: 'Floor scrubber' })).toEqual({
+        name: 'Floor scrubber', projectRateCents: 200_000, hireRateCents: 200_000, ratesReviewed: true,
+      });
+    });
   });
 });
 

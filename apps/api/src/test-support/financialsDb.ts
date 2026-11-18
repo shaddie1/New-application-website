@@ -60,10 +60,11 @@ const containsText = (value: unknown, { contains, mode }: Row) =>
   typeof value === 'string' &&
   (mode === 'insensitive' ? value.toLowerCase().includes(contains.toLowerCase()) : value.includes(contains));
 
-/** The subset of Prisma's `where` the routes use: equality (dates by their instant), null, `not`, `in`, `contains` and ranges. */
-const matches = (row: Row, where: Row = {}) =>
+/** The subset of Prisma's `where` the routes use: equality (dates by their instant), null, `not`, `in`, `contains`, ranges and `OR`. */
+const matches = (row: Row, where: Row = {}): boolean =>
   Object.entries(where).every(([k, v]) =>
-    v === null ? row[k] == null
+    k === 'OR' ? (v as Row[]).some((w) => matches(row, w))
+    : v === null ? row[k] == null
     : v instanceof Date ? row[k] instanceof Date && row[k].getTime() === v.getTime()
     : typeof v === 'object' && 'not' in v ? row[k] !== v.not
     : typeof v === 'object' && 'in' in v ? (v.in as unknown[]).includes(row[k])
@@ -276,7 +277,7 @@ export const db = {
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.expenses.filter((e) => costMatches(e, args.where)), args)),
   },
   asset: {
-    /** A seeded asset says `dailyRateCents: null` when it has no rate, as the database does. */
+    /** A seeded asset says `projectRateCents: null` when it has no rate, as the database does. */
     findMany: vi.fn(async ({ where, orderBy }: Partial<Where> & Sorted = {}) =>
       ordered(t.assets.filter((a) => matches(a, where)), orderBy).map(withRegister)),
     findUnique: vi.fn(async ({ where }: Where) => {
@@ -289,7 +290,8 @@ export const db = {
       const asset = {
         id: `asset${++seq}`, supplier: null, serialNumber: null, location: null, usefulLifeMonths: null,
         salvageValueCents: 0, condition: 'GOOD', retiredAt: null, notes: null, receiptRef: null, receiptUrl: null,
-        dailyRateCents: null, countsFrom: null, createdAt: new Date(), updatedAt: new Date(), ...data,
+        projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null,
+        createdAt: new Date(), updatedAt: new Date(), ...data,
       };
       t.assets.push(asset);
       return withRegister(asset);
@@ -343,7 +345,10 @@ export const db = {
     }),
     /** The columns the database fills in, and its checks: one line per machine and job, and the amount. */
     create: vi.fn(async ({ data }: Data) => {
-      const line = { id: `line${++seq}`, isHire: false, createdAt: new Date(), updatedAt: new Date(), ...data };
+      const line = {
+        id: `line${++seq}`, isHire: false, standardRateCents: null, hirePaidOn: null, hirePaymentRef: null,
+        createdAt: new Date(), updatedAt: new Date(), ...data,
+      };
       checkLine(line);
       t.machineLines.push(line);
       return withMachineAndJob(line);

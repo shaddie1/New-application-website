@@ -1,9 +1,10 @@
 import type {
-  DeclaredPeriodDto, EditMachineInput, MachineInvestorDto, MachineRowDto, ReplaceMachineInvestorsInput,
+  DeclaredPeriodDto, EditMachineInput, MachineInvestorDto, MachineLineDto, MachineRowDto, ReplaceMachineInvestorsInput,
 } from '@onyxhawk/types';
 
 import { money } from '../../lib/money';
 import { formatPercentShort } from '../ownership/stakes';
+import { formatDay } from '../ownership/wording';
 import { daysText } from './wording';
 
 /**
@@ -24,19 +25,23 @@ const refuse = (reason: string): { ok: false; reason: string } => ({ ok: false, 
 const NEGATIVE = /^-\d+(\.\d*)?$/;
 const PLAIN_NUMBER = /^(\d+)(?:\.(\d*))?$/;
 
+/** Which rate a field holds, as its messages name it. */
+export type RateName = 'daily rate' | 'project rate' | 'hire rate';
+
 /**
  * A daily rate: whole shillings, above zero. "2000" is 200,000 cents. Whole
- * shillings keep half a day's amount a whole number of cents.
+ * shillings keep half a day's amount a whole number of cents. `rate` names the
+ * field in what is wrong, so a machine's two rates each say which one it is.
  */
-export function parseRate(text: string): CentsReading {
+export function parseRate(text: string, rate: RateName = 'daily rate'): CentsReading {
   const typed = text.trim();
-  if (typed === '') return refuse('Enter a daily rate.');
-  if (NEGATIVE.test(typed)) return refuse('A daily rate cannot be negative.');
+  if (typed === '') return refuse(`Enter a ${rate}.`);
+  if (NEGATIVE.test(typed)) return refuse(`A ${rate} cannot be negative.`);
   const match = PLAIN_NUMBER.exec(typed);
   if (!match) return refuse('Enter a number, such as 2000.');
-  if (match[2] !== undefined) return refuse('A daily rate is in whole shillings, with no cents.');
+  if (match[2] !== undefined) return refuse(`A ${rate} is in whole shillings, with no cents.`);
   const cents = Number(match[1]) * 100;
-  if (cents === 0) return refuse('A daily rate must be more than KSh 0.');
+  if (cents === 0) return refuse(`A ${rate} must be more than KSh 0.`);
   return { ok: true, cents };
 }
 
@@ -126,20 +131,124 @@ export function amountPreview(days: string, rateCents: number): string | null {
   return `${daysText(reading.halfDays)} at ${money(rateCents)} a day: ${money(daysAmountCents(reading.halfDays, rateCents))}`;
 }
 
-// ── Warnings: the owner can still save ──────────────────────────────────────
+/**
+ * R8: under a hire's days, what it comes to at `rateCents`. The client is
+ * charged exactly that, and all of it goes to the machine's pot. Null while
+ * the days cannot be read.
+ */
+export function hireAmountPreview(days: string, rateCents: number): string | null {
+  const preview = amountPreview(days, rateCents);
+  return preview && `${preview}. The client is charged this, and all of it goes into the pot.`;
+}
 
 /**
- * A hire charged at less than days x rate. The machine keeps its full rate, so
- * the difference is a loss on the hire's job. Null at the rate or above it.
+ * R7: under a record's rate, the usual rate it is stored beside. A record whose
+ * rate differs from it shows both, so the hint says so as soon as the typed
+ * rate differs.
  */
-export function belowRateWarning(halfDays: number, rateCents: number, chargedCents: number): string | null {
-  const atRateCents = daysAmountCents(halfDays, rateCents);
-  if (chargedCents >= atRateCents) return null;
-  const short = money(atRateCents - chargedCents);
-  return (
-    `This charge is ${short} below ${daysText(halfDays)} at the daily rate (${money(atRateCents)}). ` +
-    `The machine still gets its full ${money(atRateCents)}, and the hire will show a loss of ${short}.`
-  );
+export function usualRateHint(typed: CentsReading, usualRateCents: number): string {
+  const usual = `Usual rate ${money(usualRateCents)}`;
+  return typed.ok && typed.cents !== usualRateCents ? `${usual}. This rate is different, so the record will show both.` : usual;
+}
+
+// ── An older hire's change of days or rate (R10) ────────────────────────────
+
+type OldHire = Pick<MachineLineDto, 'chargedCents' | 'amountCents' | 'halfDays'>;
+
+/**
+ * What the rate starts as when the owner opens "Change days or rate" on a hire
+ * recorded before hires were charged at days x rate: the charge over the days,
+ * so the client's charge stays as it was. Blank when that is not whole
+ * shillings above zero, since a rate must be.
+ */
+export function oldHireOpeningRate({ chargedCents, halfDays }: OldHire): string {
+  const twiceCharged = (chargedCents ?? 0) * 2;
+  if (twiceCharged % halfDays !== 0) return '';
+  const rateCents = twiceCharged / halfDays;
+  return rateCents > 0 && rateCents % 100 === 0 ? fieldShillings(rateCents) : '';
+}
+
+export type HireFigures = { chargedCents: number; machineCents: number; profitCents: number };
+
+/**
+ * R10: what the change of an older hire's days or rate does to it. Before, it
+ * keeps its recorded charge and machine amount; after, it is charged days x the
+ * rate and all of it is the machine's, so the job makes nothing on the hire.
+ * The job's profit here is the charge less this machine's amount, before any
+ * other cost on the job.
+ */
+export function oldHireChange(hire: OldHire, halfDays: number, rateCents: number): { before: HireFigures; after: HireFigures } {
+  const charged = hire.chargedCents ?? 0;
+  const amount = daysAmountCents(halfDays, rateCents);
+  return {
+    before: { chargedCents: charged, machineCents: hire.amountCents, profitCents: charged - hire.amountCents },
+    after: { chargedCents: amount, machineCents: amount, profitCents: 0 },
+  };
+}
+
+// ── Warnings: the owner can still save ──────────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * KTD7: the half days a record takes on each date it covers. It starts on its
+ * date and takes the following dates its days need; every date is whole but
+ * the last of an odd number of half days, which takes one half.
+ */
+function halvesByDate(date: string, halfDays: number): Map<string, number> {
+  const [y, m, d] = date.split('-').map(Number);
+  const start = Date.UTC(y!, m! - 1, d!);
+  const count = Math.ceil(halfDays / 2);
+  const halves = new Map<string, number>();
+  for (let i = 0; i < count; i++) {
+    const day = new Date(start + i * DAY_MS).toISOString().slice(0, 10);
+    halves.set(day, i === count - 1 && halfDays % 2 === 1 ? 1 : 2);
+  }
+  return halves;
+}
+
+/** A record of the machine's use as the overlap check reads it: a line already on the page. */
+export type UsageRecord = Pick<MachineLineDto, 'id' | 'isHire' | 'date' | 'halfDays' | 'jobTitle' | 'customerName'>;
+
+/** A record as the overlap warning names it. */
+function usageName(r: UsageRecord): string {
+  if (!r.isHire) return `${daysText(r.halfDays)} on “${r.jobTitle}”, dated ${formatDay(r.date)}`;
+  const dates = [...halvesByDate(r.date, r.halfDays).keys()];
+  const last = dates[dates.length - 1]!;
+  const when = last === r.date ? `on ${formatDay(r.date)}` : `${formatDay(r.date)} to ${formatDay(last)}`;
+  return r.customerName ? `the hire to ${r.customerName}, ${when}` : `a hire, ${when}`;
+}
+
+/**
+ * R13 and KTD7: the machine's other days and hires that the record being typed
+ * shares a date with, worked out from the lines already on the page. Two half
+ * days on one date fit; anything more on a shared date overlaps. The record
+ * being edited, `record.id`, is not checked against itself. Null when nothing
+ * overlaps or no date is chosen. Saving still works.
+ */
+export function overlapWarning(
+  record: { id?: string; date: string; halfDays: number },
+  lines: readonly UsageRecord[],
+): string | null {
+  if (record.date === '') return null;
+  const mine = halvesByDate(record.date, record.halfDays);
+  const overlapping = lines.filter((other) => {
+    if (other.id === record.id) return false;
+    return [...halvesByDate(other.date, other.halfDays)].some(([day, halves]) => mine.has(day) && halves + mine.get(day)! > 2);
+  });
+  if (overlapping.length === 0) return null;
+  const names = overlapping.map(usageName);
+  const named = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `These dates overlap ${named}. You can still save.`;
+}
+
+/**
+ * R4: a hire rate below the project rate. A machine usually earns more hired
+ * out on its own than on the company's jobs, so this is more often a slip than
+ * a choice. Null at the project rate or above it.
+ */
+export function hireRateWarning(projectRateCents: number, hireRateCents: number): string | null {
+  return hireRateCents < projectRateCents ? 'Hire rate is usually higher than the project rate — continue?' : null;
 }
 
 /**
@@ -186,20 +295,45 @@ export function startDayProblem(day: string, today: string): string | null {
   return null;
 }
 
-type MachineFields = Pick<MachineRowDto, 'name' | 'priceCents' | 'dailyRateCents' | 'startDay'>;
+type MachineFields = Pick<MachineRowDto, 'name' | 'priceCents' | 'projectRateCents' | 'hireRateCents' | 'startDay'>;
 
 /**
  * What an edit changes, and only that: the server refuses a price or a start
  * day sent for a machine whose investor has been paid, so a field left alone
  * is not sent. Null when nothing was changed.
+ *
+ * R3: a machine whose hire rate is not reviewed can be saved with nothing
+ * changed, because the form shows both rates and saving it is how the owner
+ * says the hire rate is right as it stands. Every save then sends the marker
+ * and both rates as the form shows them, so what is stored is what was seen,
+ * even on a machine that has no hire rate stored and shows its project rate.
  */
-export function machineChanges(machine: MachineFields, typed: MachineFields): EditMachineInput | null {
+export function machineChanges(
+  machine: MachineFields & Pick<MachineRowDto, 'hireRateReviewed'>,
+  typed: MachineFields,
+): EditMachineInput | null {
   const changes: EditMachineInput = {};
   if (typed.name !== machine.name) changes.name = typed.name;
   if (typed.priceCents !== machine.priceCents) changes.priceCents = typed.priceCents;
-  if (typed.dailyRateCents !== machine.dailyRateCents) changes.dailyRateCents = typed.dailyRateCents;
   if (typed.startDay !== machine.startDay) changes.startDay = typed.startDay;
+  if (!machine.hireRateReviewed) {
+    return { ...changes, projectRateCents: typed.projectRateCents, hireRateCents: typed.hireRateCents, ratesReviewed: true };
+  }
+  if (typed.projectRateCents !== machine.projectRateCents) changes.projectRateCents = typed.projectRateCents;
+  if (typed.hireRateCents !== machine.hireRateCents) changes.hireRateCents = typed.hireRateCents;
   return Object.keys(changes).length > 0 ? changes : null;
+}
+
+/**
+ * KTD6: whether the register came from an API that knows a machine's two
+ * rates. The back-office and the API go live separately; an older API sends
+ * only the one daily rate and would drop a rate typed in the new forms, so the
+ * page offers no form until this holds. An empty register has nothing to tell
+ * the two apart by, and passes.
+ */
+export function registerHasTwoRates(register: { machines: readonly object[] }): boolean {
+  // Typed loosely on purpose: what is checked is a register that may predate `MachineRowDto`.
+  return register.machines.every((m) => typeof (m as { projectRateCents?: unknown }).projectRateCents === 'number');
 }
 
 // ── Investors ───────────────────────────────────────────────────────────────

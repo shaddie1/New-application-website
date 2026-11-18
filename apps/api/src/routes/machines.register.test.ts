@@ -6,7 +6,7 @@ import { as, resetDb, t } from '../test-support/financialsDb.js';
 vi.mock('../db.js', async () => ({ prisma: (await import('../test-support/financialsDb.js')).db }));
 
 // The owner's changes to the machine register: putting a machine on it,
-// changing its name, price, rate, condition and start day, replacing its
+// changing its name, price, two rates, condition and start day, replacing its
 // investors, adding and deleting repairs, and deleting it. Nobody else changes
 // anything. Logging days, hires and payments is tested with those routes.
 
@@ -29,12 +29,20 @@ const repairUrl = (id: string, repairId: string) => `${MACHINES}/${id}/repairs/$
 
 const NOT_THE_OWNER = { error: 'only the owner can change the machine register' };
 const NO_MACHINE = { error: 'machine not found' };
+// KTD6: what a page still sending the one daily rate is told.
+const OUT_OF_DATE = { error: 'This page is out of date. Reload it and try again.' };
+
+/** Each rate field's own message when what was sent is not whole shillings above zero. */
+const RATE_FIELDS = [
+  ['projectRateCents', 'The project rate must be whole shillings, above zero.'],
+  ['hireRateCents', 'The hire rate must be whole shillings, above zero.'],
+] as const;
 
 const asset = (id: string, name: string, priceShillings: number, over: object = {}) => ({
   id, name, category: 'MACHINE', purchaseDate: day('2026-05-20'), costCents: ksh(priceShillings),
   supplier: null, serialNumber: null, location: null, usefulLifeMonths: null, salvageValueCents: 0,
   condition: 'GOOD', retiredAt: null, notes: null, receiptRef: null, receiptUrl: null,
-  dailyRateCents: null, countsFrom: null, createdById: 'owner',
+  projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null, createdById: 'owner',
   createdAt: day('2026-05-20'), updatedAt: day('2026-05-20'), ...over,
 });
 
@@ -47,7 +55,8 @@ const job = (id: string, title: string, ymd: string) => ({
 
 const line = (id: string, assetId: string, jobId: string, halfDays: number, rateShillings: number) => ({
   id, assetId, jobId, halfDays, rateCents: ksh(rateShillings), amountCents: (halfDays * ksh(rateShillings)) / 2,
-  isHire: false, createdById: 'owner', createdAt: day('2026-11-10'), updatedAt: day('2026-11-10'),
+  isHire: false, standardRateCents: null, hirePaidOn: null, hirePaymentRef: null,
+  createdById: 'owner', createdAt: day('2026-11-10'), updatedAt: day('2026-11-10'),
 });
 
 const repair = (id: string, assetId: string, ymd: string, shillings: number) => ({
@@ -92,14 +101,18 @@ beforeEach(() => {
   ];
   t.assets = [
     // On the register since 1 June: KSh 260,000, of which one investor put in KSh 156,000.
-    asset('polisher', 'Floor polisher', 260_000, { dailyRateCents: ksh(2_000), countsFrom: day('2026-06-01') }),
+    asset('polisher', 'Floor polisher', 260_000, {
+      projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), countsFrom: day('2026-06-01'),
+    }),
     // On the register, the company's own, and retired.
     asset('scrubber', 'Auto scrubber', 120_000, {
-      category: 'EQUIPMENT', dailyRateCents: ksh(1_500), countsFrom: day('2026-08-01'), condition: 'RETIRED',
-      retiredAt: new Date('2026-11-01T09:30:00.000Z'),
+      category: 'EQUIPMENT', projectRateCents: ksh(1_500), hireRateCents: ksh(1_500), countsFrom: day('2026-08-01'),
+      condition: 'RETIRED', retiredAt: new Date('2026-11-01T09:30:00.000Z'),
     }),
     // On the register with no price.
-    asset('sprayer', 'Hand sprayer', 0, { category: 'TOOL', dailyRateCents: ksh(500), countsFrom: day('2026-09-01') }),
+    asset('sprayer', 'Hand sprayer', 0, {
+      category: 'TOOL', projectRateCents: ksh(500), hireRateCents: ksh(500), countsFrom: day('2026-09-01'),
+    }),
     // Not on the register.
     asset('vacuum', 'Wet vacuum', 45_000, { category: 'EQUIPMENT', purchaseDate: day('2025-02-10') }),
     asset('laptop', 'Office laptop', 90_000, { category: 'IT', purchaseDate: day('2026-03-10') }),
@@ -125,19 +138,51 @@ afterEach(() => {
 });
 
 describe('POST /admin/machines: add a machine', () => {
-  const EXTRACTOR = { name: 'Carpet extractor', purchaseDate: '2026-11-02', priceCents: ksh(140_000), dailyRateCents: ksh(2_500) };
+  const EXTRACTOR = {
+    name: 'Carpet extractor', purchaseDate: '2026-11-02', priceCents: ksh(140_000),
+    projectRateCents: ksh(2_000), hireRateCents: ksh(3_500),
+  };
 
   it('puts a new machine on the register, the company\'s own, with an empty pot and today in Nairobi as its start day', async () => {
     const added = answered(await as('owner', 'POST', MACHINES, EXTRACTOR), 201);
 
     expect(added).toEqual({
       id: expect.any(String), name: 'Carpet extractor', category: 'MACHINE', priceCents: ksh(140_000),
-      dailyRateCents: ksh(2_500), startDay: TODAY, condition: 'GOOD', retiredAt: null,
+      dailyRateCents: ksh(2_000), startDay: TODAY, condition: 'GOOD', retiredAt: null,
       earnedCents: 0, repairsCents: 0, paidOutCents: 0, potCents: 0, earnBackGapCents: ksh(140_000),
       paidForItself: false, companyShareBps: 10_000, companyPartCents: 0,
       investors: [], lines: [], repairs: [], payments: [],
+      projectRateCents: ksh(2_000), hireRateCents: ksh(3_500), hireRateReviewed: true,
+      earnedSplit: { projectHalfDays: 0, projectCents: 0, hireHalfDays: 0, hireCents: 0 },
     });
     expect(await machine(added.id)).toEqual(added);
+  });
+
+  it('R1 and KTD2: stores both rates, and the machine is reviewed from the moment it is added', async () => {
+    const added = answered(await as('owner', 'POST', MACHINES, EXTRACTOR), 201);
+
+    expect(stored(added.id)).toMatchObject({
+      projectRateCents: ksh(2_000), hireRateCents: ksh(3_500), hireRateReviewedAt: new Date(NOW),
+    });
+  });
+
+  it('R4: takes a hire rate below the project rate', async () => {
+    const added = answered(await as('owner', 'POST', MACHINES, { ...EXTRACTOR, hireRateCents: ksh(1_500) }), 201);
+
+    expect(added).toMatchObject({ projectRateCents: ksh(2_000), hireRateCents: ksh(1_500), hireRateReviewed: true });
+  });
+
+  it.each([
+    ['with both rates', { ...EXTRACTOR, dailyRateCents: ksh(2_000) }],
+    ['in place of both rates, as an older page sends it', {
+      name: 'Carpet extractor', purchaseDate: '2026-11-02', priceCents: ksh(140_000), dailyRateCents: ksh(2_000),
+    }],
+  ])('KTD6: refuses the old single daily rate sent %s, and adds nothing', async (_what, body) => {
+    const res = await as('owner', 'POST', MACHINES, body);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(OUT_OF_DATE);
+    expect(t.assets).toHaveLength(5);
   });
 
   it('the new machine appears in the asset list with category Machine', async () => {
@@ -172,17 +217,19 @@ describe('POST /admin/machines: add a machine', () => {
     expect(t.assets).toHaveLength(5);
   });
 
-  it.each([
-    ['0', 0],
-    ['below zero', ksh(-2_000)],
-    ['not whole shillings', ksh(2_500) + 50],
-    ['missing', undefined],
-  ])('refuses a daily rate that is %s', async (_what, dailyRateCents) => {
-    const res = await as('owner', 'POST', MACHINES, { ...EXTRACTOR, dailyRateCents });
+  describe.each(RATE_FIELDS)('R1: %s', (rateField, rule) => {
+    it.each([
+      ['0', 0],
+      ['below zero', ksh(-2_000)],
+      ['not whole shillings', ksh(2_500) + 50],
+      ['missing', undefined],
+    ])('is refused when it is %s, with its own message', async (_what, cents) => {
+      const res = await as('owner', 'POST', MACHINES, { ...EXTRACTOR, [rateField]: cents });
 
-    expect(res.statusCode).toBe(400);
-    expect(typeof res.json().error).toBe('string');
-    expect(t.assets).toHaveLength(5);
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: rule });
+      expect(t.assets).toHaveLength(5);
+    });
   });
 });
 
@@ -199,8 +246,10 @@ describe('GET /admin/machines/assets and POST /admin/machines/from-asset/:assetI
     });
   });
 
+  const VACUUM_RATES = { projectRateCents: ksh(1_000), hireRateCents: ksh(1_500) };
+
   it('AE13: puts the asset on the register from today, with a pot at zero and last year\'s repair in no figure', async () => {
-    const given = answered(await as('owner', 'POST', fromAssetUrl('vacuum'), { dailyRateCents: ksh(1_000) }), 201);
+    const given = answered(await as('owner', 'POST', fromAssetUrl('vacuum'), VACUUM_RATES), 201);
 
     expect(given).toEqual({
       id: 'vacuum', name: 'Wet vacuum', category: 'EQUIPMENT', priceCents: ksh(45_000),
@@ -208,46 +257,68 @@ describe('GET /admin/machines/assets and POST /admin/machines/from-asset/:assetI
       earnedCents: 0, repairsCents: 0, paidOutCents: 0, potCents: 0, earnBackGapCents: ksh(45_000),
       paidForItself: false, companyShareBps: 10_000, companyPartCents: 0,
       investors: [], lines: [], repairs: [], payments: [],
+      projectRateCents: ksh(1_000), hireRateCents: ksh(1_500), hireRateReviewed: true,
+      earnedSplit: { projectHalfDays: 0, projectCents: 0, hireHalfDays: 0, hireCents: 0 },
     });
-    expect(stored('vacuum')).toMatchObject({ category: 'EQUIPMENT', dailyRateCents: ksh(1_000), countsFrom: day(TODAY) });
+    expect(stored('vacuum')).toMatchObject({
+      category: 'EQUIPMENT', projectRateCents: ksh(1_000), hireRateCents: ksh(1_500), hireRateReviewedAt: new Date(NOW),
+      countsFrom: day(TODAY),
+    });
     expect((await as('owner', 'GET', `${MACHINES}/assets`)).json().assets.map((a: { id: string }) => a.id)).toEqual(['laptop']);
   });
 
   it('stores an earlier start day when the owner sends one, and a repair from that day on then counts', async () => {
-    const given = answered(await as('owner', 'POST', fromAssetUrl('vacuum'), { dailyRateCents: ksh(1_000), startDay: '2025-12-01' }), 201);
+    const given = answered(await as('owner', 'POST', fromAssetUrl('vacuum'), { ...VACUUM_RATES, startDay: '2025-12-01' }), 201);
 
     expect(given).toMatchObject({ startDay: '2025-12-01', repairsCents: ksh(15_000), potCents: ksh(-15_000) });
     expect(given.repairs.map((r) => r.id)).toEqual(['r5']);
   });
 
   it('refuses a start day in the future', async () => {
-    const res = await as('owner', 'POST', fromAssetUrl('vacuum'), { dailyRateCents: ksh(1_000), startDay: TOMORROW });
+    const res = await as('owner', 'POST', fromAssetUrl('vacuum'), { ...VACUUM_RATES, startDay: TOMORROW });
 
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'The start day cannot be in the future.' });
-    expect(stored('vacuum')).toMatchObject({ dailyRateCents: null, countsFrom: null });
+    expect(stored('vacuum')).toMatchObject({ projectRateCents: null, countsFrom: null });
+  });
+
+  describe.each(RATE_FIELDS)('R1: %s', (rateField, rule) => {
+    it.each([
+      ['0', 0],
+      ['below zero', ksh(-1_000)],
+      ['not whole shillings', ksh(1_000) + 1],
+      ['missing', undefined],
+    ])('is refused when it is %s, with its own message', async (_what, cents) => {
+      const res = await as('owner', 'POST', fromAssetUrl('vacuum'), { ...VACUUM_RATES, [rateField]: cents });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: rule });
+      expect(stored('vacuum')).toMatchObject({ projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null });
+    });
   });
 
   it.each([
-    ['0', 0],
-    ['below zero', ksh(-1_000)],
-    ['not whole shillings', ksh(1_000) + 1],
-  ])('refuses a daily rate that is %s', async (_what, dailyRateCents) => {
-    const res = await as('owner', 'POST', fromAssetUrl('vacuum'), { dailyRateCents });
+    ['with both rates', { ...VACUUM_RATES, dailyRateCents: ksh(1_000) }],
+    ['in place of both rates, as an older page sends it', { dailyRateCents: ksh(1_000) }],
+  ])('KTD6: refuses the old single daily rate sent %s, and stores nothing', async (_what, body) => {
+    const res = await as('owner', 'POST', fromAssetUrl('vacuum'), body);
 
     expect(res.statusCode).toBe(400);
-    expect(stored('vacuum')).toMatchObject({ dailyRateCents: null, countsFrom: null });
+    expect(res.json()).toEqual(OUT_OF_DATE);
+    expect(stored('vacuum')).toMatchObject({ projectRateCents: null, hireRateCents: null, hireRateReviewedAt: null, countsFrom: null });
   });
 
-  it('refuses an asset that is already on the register, and leaves its rate and start day alone', async () => {
-    const res = await as('owner', 'POST', fromAssetUrl('polisher'), { dailyRateCents: ksh(9_000) });
+  it('refuses an asset that is already on the register, and leaves its rates and start day alone', async () => {
+    const res = await as('owner', 'POST', fromAssetUrl('polisher'), { projectRateCents: ksh(9_000), hireRateCents: ksh(9_500) });
 
     expect(res.statusCode).toBe(409);
-    expect(stored('polisher')).toMatchObject({ dailyRateCents: ksh(2_000), countsFrom: day('2026-06-01') });
+    expect(stored('polisher')).toMatchObject({
+      projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), hireRateReviewedAt: null, countsFrom: day('2026-06-01'),
+    });
   });
 
   it('answers 404 for an asset that does not exist', async () => {
-    const res = await as('owner', 'POST', fromAssetUrl('nope'), { dailyRateCents: ksh(1_000) });
+    const res = await as('owner', 'POST', fromAssetUrl('nope'), VACUUM_RATES);
 
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: 'asset not found' });
@@ -269,31 +340,91 @@ describe('PATCH /admin/machines/:id: change a machine', () => {
     expect(stored('polisher')).toMatchObject({ name: 'Big floor polisher', costCents: ksh(312_000) });
   });
 
-  it('AE4: a new rate leaves the days already logged at the rate and the amount they were logged at', async () => {
+  it('AE2: a new project rate leaves the days already logged at the rate and the amount they were logged at', async () => {
     t.machineLines = [line('ml1', 'polisher', 'mallJob', 4, 2_000)];
 
-    const changed = answered(await as('owner', 'PATCH', machineUrl('polisher'), { dailyRateCents: ksh(2_500) }));
+    const changed = answered(await as('owner', 'PATCH', machineUrl('polisher'), { projectRateCents: ksh(2_500) }));
 
-    expect(changed.dailyRateCents).toBe(ksh(2_500));
+    expect(changed.projectRateCents).toBe(ksh(2_500));
     expect(changed.earnedCents).toBe(ksh(4_000));
     expect(changed.lines).toEqual([{
       id: 'ml1', jobId: 'mallJob', date: '2026-10-14', jobTitle: 'Mall deep clean', halfDays: 4,
       rateCents: ksh(2_000), amountCents: ksh(4_000), isHire: false, chargedCents: null,
+      standardRateCents: null, paidOn: null, endDate: null,
     }]);
     expect(t.machineLines[0]).toMatchObject({ halfDays: 4, rateCents: ksh(2_000), amountCents: ksh(4_000) });
   });
 
+  it('R5: changing both rates leaves every line already made, on a job or a hire, as it was', async () => {
+    t.machineLines = [
+      line('ml1', 'polisher', 'mallJob', 4, 2_000),
+      { ...line('ml2', 'polisher', 'officeJob', 2, 3_000), isHire: true, standardRateCents: ksh(3_000) },
+    ];
+    const before = structuredClone(t.machineLines);
+
+    const changed = answered(await as('owner', 'PATCH', machineUrl('polisher'), {
+      projectRateCents: ksh(2_500), hireRateCents: ksh(4_000), ratesReviewed: true,
+    }));
+
+    expect(changed).toMatchObject({ projectRateCents: ksh(2_500), hireRateCents: ksh(4_000), earnedCents: ksh(7_000) });
+    expect(t.machineLines).toEqual(before);
+  });
+
+  describe('AE3: the polisher, whose hire rate has not been reviewed', () => {
+    it('saving a hire rate of KSh 3,500 with the marker clears the flag and keeps the project rate', async () => {
+      const changed = answered(await as('owner', 'PATCH', machineUrl('polisher'), { hireRateCents: ksh(3_500), ratesReviewed: true }));
+
+      expect(changed).toMatchObject({ projectRateCents: ksh(2_000), hireRateCents: ksh(3_500), hireRateReviewed: true });
+      expect(stored('polisher')).toMatchObject({
+        projectRateCents: ksh(2_000), hireRateCents: ksh(3_500), hireRateReviewedAt: new Date(NOW),
+      });
+    });
+
+    it('the marker alone clears the flag and changes neither rate', async () => {
+      const changed = answered(await as('owner', 'PATCH', machineUrl('polisher'), { ratesReviewed: true }));
+
+      expect(changed).toMatchObject({ projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), hireRateReviewed: true });
+      expect(stored('polisher')).toMatchObject({
+        projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), hireRateReviewedAt: new Date(NOW),
+      });
+    });
+
+    it('a change of name without the marker leaves the flag', async () => {
+      const changed = answered(await as('owner', 'PATCH', machineUrl('polisher'), { name: 'Big floor polisher' }));
+
+      expect(changed).toMatchObject({ name: 'Big floor polisher', hireRateReviewed: false });
+      expect(stored('polisher')).toMatchObject({ hireRateReviewedAt: null });
+    });
+  });
+
+  describe.each(RATE_FIELDS)('R1: %s', (rateField, rule) => {
+    it.each([
+      ['0', 0],
+      ['below zero', ksh(-2_000)],
+      ['not whole shillings', ksh(2_000) + 50],
+      ['cleared', null],
+    ])('is refused when it is %s, with its own message', async (_what, cents) => {
+      const res = await as('owner', 'PATCH', machineUrl('polisher'), { [rateField]: cents, ratesReviewed: true });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: rule });
+      expect(stored('polisher')).toMatchObject({
+        projectRateCents: ksh(2_000), hireRateCents: ksh(2_000), hireRateReviewedAt: null, countsFrom: day('2026-06-01'),
+      });
+    });
+  });
+
   it.each([
-    ['0', 0],
-    ['below zero', ksh(-2_000)],
-    ['not whole shillings', ksh(2_000) + 50],
-    ['cleared', null],
-  ])('refuses a daily rate that is %s', async (_what, dailyRateCents) => {
-    const res = await as('owner', 'PATCH', machineUrl('polisher'), { dailyRateCents });
+    ['alone', { dailyRateCents: ksh(2_500) }],
+    ['with a new name', { name: 'Big floor polisher', dailyRateCents: ksh(2_500) }],
+  ])('KTD6: refuses the old single daily rate sent %s, and changes nothing', async (_what, body) => {
+    const before = structuredClone(stored('polisher'));
+
+    const res = await as('owner', 'PATCH', machineUrl('polisher'), body);
 
     expect(res.statusCode).toBe(400);
-    expect(typeof res.json().error).toBe('string');
-    expect(stored('polisher')).toMatchObject({ dailyRateCents: ksh(2_000), countsFrom: day('2026-06-01') });
+    expect(res.json()).toEqual(OUT_OF_DATE);
+    expect(stored('polisher')).toEqual(before);
   });
 
   it('retires a machine and stamps when', async () => {
@@ -341,7 +472,9 @@ describe('PATCH /admin/machines/:id: change a machine', () => {
 
 describe('PATCH /admin/machines/:id: the start day', () => {
   it('AE15: moving it earlier is accepted, and an older repair then comes out of the pot', async () => {
-    t.assets.push(asset('steamer', 'Steam cleaner', 80_000, { dailyRateCents: ksh(1_000), countsFrom: day('2026-11-01') }));
+    t.assets.push(asset('steamer', 'Steam cleaner', 80_000, {
+      projectRateCents: ksh(1_000), hireRateCents: ksh(1_000), countsFrom: day('2026-11-01'),
+    }));
     t.assetMaintenance.push(repair('r9', 'steamer', '2026-10-10', 3_000));
 
     expect(await machine('steamer')).toMatchObject({ startDay: '2026-11-01', repairsCents: 0, potCents: 0, repairs: [] });
@@ -509,7 +642,7 @@ describe('R7: once an investor has been paid', () => {
 
   it('the name, the rate and the condition can still be changed, and the price and start day sent as they are', async () => {
     const changed = answered(await as('owner', 'PATCH', machineUrl('polisher'), {
-      name: 'Big floor polisher', dailyRateCents: ksh(2_500), condition: 'FAIR', priceCents: ksh(260_000), startDay: '2026-06-01',
+      name: 'Big floor polisher', projectRateCents: ksh(2_500), condition: 'FAIR', priceCents: ksh(260_000), startDay: '2026-06-01',
     }));
 
     expect(changed).toMatchObject({
@@ -629,9 +762,13 @@ describe('DELETE /admin/machines/:id', () => {
 describe.each(['coo', 'admin'])('R22: %s, who sees the register and is not the owner', (userId) => {
   it.each<[string, 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string, object?]>([
     ['list the assets to put on the register', 'GET', `${MACHINES}/assets`],
-    ['add a machine', 'POST', MACHINES, { name: 'Carpet extractor', purchaseDate: '2026-11-02', priceCents: ksh(140_000), dailyRateCents: ksh(2_500) }],
-    ['give an asset a rate', 'POST', fromAssetUrl('vacuum'), { dailyRateCents: ksh(1_000) }],
-    ['change a machine', 'PATCH', machineUrl('polisher'), { name: 'Mine now', dailyRateCents: ksh(9_000) }],
+    ['add a machine', 'POST', MACHINES, {
+      name: 'Carpet extractor', purchaseDate: '2026-11-02', priceCents: ksh(140_000),
+      projectRateCents: ksh(2_000), hireRateCents: ksh(3_500),
+    }],
+    ['give an asset its rates', 'POST', fromAssetUrl('vacuum'), { projectRateCents: ksh(1_000), hireRateCents: ksh(1_500) }],
+    ['change a machine', 'PATCH', machineUrl('polisher'), { name: 'Mine now', projectRateCents: ksh(9_000) }],
+    ['change a machine\'s hire rate and clear its flag', 'PATCH', machineUrl('polisher'), { hireRateCents: ksh(9_000), ratesReviewed: true }],
     ['replace the investors', 'PUT', investorsUrl('polisher'), { investors: [] }],
     ['add a repair', 'POST', repairsUrl('polisher'), { date: '2026-11-03', description: 'New brushes', costCents: ksh(3_000) }],
     ['delete a repair', 'DELETE', repairUrl('polisher', 'r1')],

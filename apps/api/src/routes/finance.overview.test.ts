@@ -362,7 +362,7 @@ describe('GET /admin/finance/overview and machine days', () => {
   beforeEach(() => {
     clockAt('2026-11-12T09:00:00.000Z'); // midday on 12 November in Nairobi
     t.assets = [
-      { id: 'scrubber', name: 'Floor scrubber', category: 'MACHINE', costCents: 26_000_000, dailyRateCents: 200_000, countsFrom: day('2026-09-01') },
+      { id: 'scrubber', name: 'Floor scrubber', category: 'MACHINE', costCents: 26_000_000, projectRateCents: 200_000, hireRateCents: 200_000, countsFrom: day('2026-09-01') },
     ];
     t.assetMaintenance = [{ id: 'm1', assetId: 'scrubber', date: day('2026-10-16'), description: 'New brushes', costCents: 300_000 }];
     t.jobs = [

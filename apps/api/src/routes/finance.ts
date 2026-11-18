@@ -208,7 +208,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
       const existing = await loadMachineRules(tx, req.params.id);
       if (!existing) return { status: 404, error: 'asset not found' };
 
-      if (existing.dailyRateCents !== null) {
+      if (existing.projectRateCents !== null) {
         if (!(await isOwnerAccount(tx, req))) return { status: 403, error: REGISTER_MACHINE_OWNER_ONLY };
         const problem = rest.costCents === undefined ? null : priceChangeRefusal(existing, rest.costCents);
         if (problem) return { status: 409, error: problem };
@@ -242,7 +242,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>('/assets/:id', async (req, reply) => {
     const existing = await prisma.asset.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'asset not found' });
-    if (existing.dailyRateCents !== null && !(await isOwnerAccount(prisma, req))) {
+    if (existing.projectRateCents !== null && !(await isOwnerAccount(prisma, req))) {
       return reply.code(403).send({ error: REGISTER_MACHINE_OWNER_ONLY });
     }
     // A machine with logged days or payments is retired, not deleted.
@@ -256,7 +256,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     const asset = await prisma.asset.findUnique({ where: { id: req.params.id } });
     if (!asset) return reply.code(404).send({ error: 'asset not found' });
     // On a register machine a repair comes out of the pot.
-    if (asset.dailyRateCents !== null && !(await isOwnerAccount(prisma, req))) {
+    if (asset.projectRateCents !== null && !(await isOwnerAccount(prisma, req))) {
       return reply.code(403).send({ error: REGISTER_MACHINE_OWNER_ONLY });
     }
 
@@ -663,9 +663,9 @@ async function requireEquityAccess(req: FastifyRequest, reply: FastifyReply): Pr
 }
 
 /**
- * An asset with a daily rate is a machine on the register. Its price, repairs
+ * An asset with a project rate is a machine on the register. Its price, repairs
  * and deletion change a pot and what investors are owed, so here, as on the
- * Machines page, only the owner changes it. An asset with no daily rate stays
+ * Machines page, only the owner changes it. An asset with no project rate stays
  * open to every finance role.
  */
 const REGISTER_MACHINE_OWNER_ONLY = 'This machine is on the register, so only the owner can change it.';

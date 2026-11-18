@@ -47,6 +47,29 @@ export function RetiredMark() {
   );
 }
 
+/**
+ * R3: a machine that had one rate before the hire rate came in, and so took it
+ * as both, until the owner saves its rates.
+ */
+export function ReviewMark() {
+  return (
+    <span className="inline-block rounded-full border border-line px-2 py-0.5 align-middle text-xs font-normal text-charcoal-muted">
+      Hire rate not reviewed
+    </span>
+  );
+}
+
+/** A machine's two rates, one to a line, each with its name. */
+export function Rates({ machine: m }: { machine: Pick<MachineRowDto, 'projectRateCents' | 'hireRateCents'> }) {
+  const label = 'text-xs text-charcoal-muted';
+  return (
+    <>
+      <div><span className={label}>Project</span> {money(m.projectRateCents)}</div>
+      <div><span className={label}>Hire</span> {money(m.hireRateCents)}</div>
+    </>
+  );
+}
+
 /** Shown in place of figures that could not be loaded. Never a zero. */
 export function LoadFailed({ what, onRetry }: { what: string; onRetry: () => void }) {
   return (
@@ -67,10 +90,13 @@ function MachineRow({ machine: m, onOpen }: { machine: MachineRowDto; onOpen: ()
           {m.name}
         </button>
         {m.retiredAt && <RetiredMark />}
-        <div className="break-words text-xs text-charcoal-muted">Owned by: {ownedBy(m)}</div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs text-charcoal-muted">
+          <span className="min-w-0">Owned by: {ownedBy(m)}</span>
+          {!m.hireRateReviewed && <ReviewMark />}
+        </div>
       </div>
       <Figure label="Price">{priceText(m.priceCents)}</Figure>
-      <Figure label="Daily rate">{money(m.dailyRateCents)}</Figure>
+      <Figure label="Daily rates"><Rates machine={m} /></Figure>
       <Figure label="Earned">{money(m.earnedCents)}</Figure>
       <Figure label="Repairs">{money(m.repairsCents)}</Figure>
       <Figure label="Paid to investors">{money(m.paidOutCents)}</Figure>
@@ -131,7 +157,7 @@ export function MachineTable({
       <div className={`${HEADINGS} ${COLS}`}>
         <span>Machine</span>
         <span className="text-right">Price</span>
-        <span className="text-right">Daily rate</span>
+        <span className="text-right">Daily rates</span>
         <span className="text-right">Earned</span>
         <span className="text-right">Repairs</span>
         <span className="text-right">Paid to investors</span>
