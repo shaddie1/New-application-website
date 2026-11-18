@@ -216,34 +216,46 @@ export interface MachineJobPickerDto {
   declaredPeriods: DeclaredPeriodDto[];
 }
 
-/** Add a machine. It appears in the asset list with category Machine. */
+/**
+ * Add a machine. It appears in the asset list with category Machine. A machine
+ * added with its two rates has its hire rate reviewed from the start. A request
+ * that still carries the old `dailyRateCents` is refused: the page is out of date.
+ */
 export interface AddMachineInput {
   name: string;
   purchaseDate: string;
   priceCents: number;
-  /** Whole shillings: a multiple of 100 cents, above zero. */
-  dailyRateCents: number;
+  /** For days on the company's own jobs. Whole shillings: a multiple of 100 cents, above zero. */
+  projectRateCents: number;
+  /** For a hire to an outside customer. Whole shillings: a multiple of 100 cents, above zero. */
+  hireRateCents: number;
   /** Today when left out. The owner may send an earlier day. */
   startDay?: string;
 }
 
-/** Put an asset already in the asset list on the register. */
+/** Put an asset already in the asset list on the register, with both rates. Refused, as adding is, when it carries `dailyRateCents`. */
 export interface GiveMachineRateInput {
   /** Whole shillings: a multiple of 100 cents, above zero. */
-  dailyRateCents: number;
+  projectRateCents: number;
+  /** Whole shillings: a multiple of 100 cents, above zero. */
+  hireRateCents: number;
   /** Today when left out. The owner may send an earlier day. */
   startDay?: string;
 }
 
 /**
- * Change a machine. Only the fields sent are changed. The rate can be changed
- * but not removed, and lines already logged keep the rate they were logged at.
- * Price and start day are refused once an investor has been paid.
+ * Change a machine. Only the fields sent are changed. Either rate can be
+ * changed but not removed, and lines already logged keep the rate they were
+ * logged at. Price and start day are refused once an investor has been paid.
+ * Refused, as adding is, when it carries `dailyRateCents`.
  */
 export interface EditMachineInput {
   name?: string;
   priceCents?: number;
-  dailyRateCents?: number;
+  projectRateCents?: number;
+  hireRateCents?: number;
+  /** The owner has seen both rates and saved them: clears "hire rate not reviewed". Left out, the mark stays as it is. */
+  ratesReviewed?: true;
   /** `RETIRED` retires the machine; any other condition brings it back. */
   condition?: AssetCondition;
   startDay?: string;

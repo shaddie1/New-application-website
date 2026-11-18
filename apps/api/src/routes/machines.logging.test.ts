@@ -405,7 +405,7 @@ describe('PATCH and DELETE /admin/machines/lines/:lineId: correct or remove logg
   it('AE4: days logged at KSh 2,000, edited from 2 to 3 after the rate rose to KSh 2,500, count KSh 6,000', async () => {
     const logged = answered(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 4 }), 201);
     expect(logged.earnedCents).toBe(ksh(4_000));
-    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { dailyRateCents: ksh(2_500) }));
+    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { projectRateCents: ksh(2_500) }));
 
     const edited = answered(await as('owner', 'PATCH', lineUrl(logged.lines[0]!.id), { halfDays: 6 }));
 
@@ -618,7 +618,7 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
 
   it('writes the job and the line together, and the line keeps the rate it was logged at', async () => {
     const lineId = hireLineId(await logHire());
-    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { dailyRateCents: ksh(2_500) }));
+    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { projectRateCents: ksh(2_500) }));
 
     const edited = answered(await as('owner', 'PATCH', hireUrl(lineId), CORRECTED));
 

@@ -24,19 +24,23 @@ const refuse = (reason: string): { ok: false; reason: string } => ({ ok: false, 
 const NEGATIVE = /^-\d+(\.\d*)?$/;
 const PLAIN_NUMBER = /^(\d+)(?:\.(\d*))?$/;
 
+/** Which rate a field holds, as its messages name it. */
+export type RateName = 'daily rate' | 'project rate' | 'hire rate';
+
 /**
  * A daily rate: whole shillings, above zero. "2000" is 200,000 cents. Whole
- * shillings keep half a day's amount a whole number of cents.
+ * shillings keep half a day's amount a whole number of cents. `rate` names the
+ * field in what is wrong, so a machine's two rates each say which one it is.
  */
-export function parseRate(text: string): CentsReading {
+export function parseRate(text: string, rate: RateName = 'daily rate'): CentsReading {
   const typed = text.trim();
-  if (typed === '') return refuse('Enter a daily rate.');
-  if (NEGATIVE.test(typed)) return refuse('A daily rate cannot be negative.');
+  if (typed === '') return refuse(`Enter a ${rate}.`);
+  if (NEGATIVE.test(typed)) return refuse(`A ${rate} cannot be negative.`);
   const match = PLAIN_NUMBER.exec(typed);
   if (!match) return refuse('Enter a number, such as 2000.');
-  if (match[2] !== undefined) return refuse('A daily rate is in whole shillings, with no cents.');
+  if (match[2] !== undefined) return refuse(`A ${rate} is in whole shillings, with no cents.`);
   const cents = Number(match[1]) * 100;
-  if (cents === 0) return refuse('A daily rate must be more than KSh 0.');
+  if (cents === 0) return refuse(`A ${rate} must be more than KSh 0.`);
   return { ok: true, cents };
 }
 
@@ -143,6 +147,15 @@ export function belowRateWarning(halfDays: number, rateCents: number, chargedCen
 }
 
 /**
+ * R4: a hire rate below the project rate. A machine usually earns more hired
+ * out on its own than on the company's jobs, so this is more often a slip than
+ * a choice. Null at the project rate or above it.
+ */
+export function hireRateWarning(projectRateCents: number, hireRateCents: number): string | null {
+  return hireRateCents < projectRateCents ? 'Hire rate is usually higher than the project rate — continue?' : null;
+}
+
+/**
  * Days or a hire dated inside a period whose payout is already declared: that
  * payout was worked out before this amount came off the profit. Names every
  * payout the date is inside. Dates are YYYY-MM-DD, which sort as text.
@@ -186,20 +199,45 @@ export function startDayProblem(day: string, today: string): string | null {
   return null;
 }
 
-type MachineFields = Pick<MachineRowDto, 'name' | 'priceCents' | 'dailyRateCents' | 'startDay'>;
+type MachineFields = Pick<MachineRowDto, 'name' | 'priceCents' | 'projectRateCents' | 'hireRateCents' | 'startDay'>;
 
 /**
  * What an edit changes, and only that: the server refuses a price or a start
  * day sent for a machine whose investor has been paid, so a field left alone
  * is not sent. Null when nothing was changed.
+ *
+ * R3: a machine whose hire rate is not reviewed can be saved with nothing
+ * changed, because the form shows both rates and saving it is how the owner
+ * says the hire rate is right as it stands. Every save then sends the marker
+ * and both rates as the form shows them, so what is stored is what was seen,
+ * even on a machine that has no hire rate stored and shows its project rate.
  */
-export function machineChanges(machine: MachineFields, typed: MachineFields): EditMachineInput | null {
+export function machineChanges(
+  machine: MachineFields & Pick<MachineRowDto, 'hireRateReviewed'>,
+  typed: MachineFields,
+): EditMachineInput | null {
   const changes: EditMachineInput = {};
   if (typed.name !== machine.name) changes.name = typed.name;
   if (typed.priceCents !== machine.priceCents) changes.priceCents = typed.priceCents;
-  if (typed.dailyRateCents !== machine.dailyRateCents) changes.dailyRateCents = typed.dailyRateCents;
   if (typed.startDay !== machine.startDay) changes.startDay = typed.startDay;
+  if (!machine.hireRateReviewed) {
+    return { ...changes, projectRateCents: typed.projectRateCents, hireRateCents: typed.hireRateCents, ratesReviewed: true };
+  }
+  if (typed.projectRateCents !== machine.projectRateCents) changes.projectRateCents = typed.projectRateCents;
+  if (typed.hireRateCents !== machine.hireRateCents) changes.hireRateCents = typed.hireRateCents;
   return Object.keys(changes).length > 0 ? changes : null;
+}
+
+/**
+ * KTD6: whether the register came from an API that knows a machine's two
+ * rates. The back-office and the API go live separately; an older API sends
+ * only the one daily rate and would drop a rate typed in the new forms, so the
+ * page offers no form until this holds. An empty register has nothing to tell
+ * the two apart by, and passes.
+ */
+export function registerHasTwoRates(register: { machines: readonly object[] }): boolean {
+  // Typed loosely on purpose: what is checked is a register that may predate `MachineRowDto`.
+  return register.machines.every((m) => typeof (m as { projectRateCents?: unknown }).projectRateCents === 'number');
 }
 
 // ── Investors ───────────────────────────────────────────────────────────────

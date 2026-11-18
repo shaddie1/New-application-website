@@ -199,9 +199,10 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
           purchaseDate: new Date(parsed.data.purchaseDate),
           costCents: parsed.data.priceCents,
           condition: 'GOOD',
-          // Until the form sends two rates, the one rate is the project rate, and
-          // the empty hire rate is read as it, not reviewed (KTD1).
-          projectRateCents: parsed.data.dailyRateCents,
+          projectRateCents: parsed.data.projectRateCents,
+          hireRateCents: parsed.data.hireRateCents,
+          // KTD2: the owner typed both rates, so the hire rate is reviewed.
+          hireRateReviewedAt: new Date(),
           countsFrom: new Date(startDay),
           createdById: req.machinesActor!.id,
         },
@@ -227,10 +228,15 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
           if (asset.projectRateCents !== null) {
             return { status: 409, error: 'This asset is already on the register. Open it there to change its rate or start day.' };
           }
-          // As when adding a machine: the one rate is the project rate (KTD1).
+          // As when adding a machine, the hire rate is reviewed (KTD2).
           await tx.asset.update({
             where: { id },
-            data: { projectRateCents: parsed.data.dailyRateCents, countsFrom: new Date(startDay) },
+            data: {
+              projectRateCents: parsed.data.projectRateCents,
+              hireRateCents: parsed.data.hireRateCents,
+              hireRateReviewedAt: new Date(),
+              countsFrom: new Date(startDay),
+            },
           });
           return null;
         });
@@ -244,7 +250,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
     guarded.patch<{ Params: { id: string } }>('/:id', { preHandler: requireMachinesEdit }, async (req, reply) => {
       const parsed = EditMachineSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: firstProblem(parsed.error) });
-      const { name, priceCents, dailyRateCents, condition, startDay } = parsed.data;
+      const { name, priceCents, projectRateCents, hireRateCents, ratesReviewed, condition, startDay } = parsed.data;
 
       const { id } = req.params;
       // KTD10: the price and start day are checked and written in one transaction.
@@ -277,8 +283,11 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
           data: {
             ...(name !== undefined && { name }),
             ...(priceCents !== undefined && { costCents: priceCents }),
-            // The one rate the edit form sends is the project rate.
-            ...(dailyRateCents !== undefined && { projectRateCents: dailyRateCents }),
+            // R5: lines already made keep the rate they were made at.
+            ...(projectRateCents !== undefined && { projectRateCents }),
+            ...(hireRateCents !== undefined && { hireRateCents }),
+            // R3 and KTD2: the owner saved both rates from the edit form, which shows them.
+            ...(ratesReviewed && { hireRateReviewedAt: new Date() }),
             ...(startDay !== undefined && { countsFrom: new Date(startDay) }),
             ...(condition !== undefined && { condition }),
             // Retiring stamps the time and any other condition brings the machine back, as the asset list does.

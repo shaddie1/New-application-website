@@ -22,13 +22,22 @@ const CONDITIONS = ['NEW', 'GOOD', 'FAIR', 'POOR', 'RETIRED'] as const;
 
 const DayStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date must be YYYY-MM-DD.');
 
-const RATE_RULE = 'The daily rate must be whole shillings, above zero.';
-// Whole shillings keep half a day a whole number of cents.
-const RateCents = z
-  .number({ required_error: RATE_RULE, invalid_type_error: RATE_RULE })
-  .int(RATE_RULE)
-  .positive(RATE_RULE)
-  .multipleOf(100, RATE_RULE);
+/** A daily rate, named in its own message: "The hire rate must be ...". Whole shillings keep half a day a whole number of cents. */
+const RateCents = (rate: 'project rate' | 'hire rate') => {
+  const rule = `The ${rate} must be whole shillings, above zero.`;
+  return z.number({ required_error: rule, invalid_type_error: rule }).int(rule).positive(rule).multipleOf(100, rule);
+};
+const ProjectRateCents = RateCents('project rate');
+const HireRateCents = RateCents('hire rate');
+
+/**
+ * KTD6: a back-office page opened before the two rates came in still sends the
+ * one daily rate, and nothing in it says which rate the owner meant. zod drops
+ * a key it does not know, so the key is named here and refused whenever it is
+ * sent. It is the first key of each schema below, so its message is the one the
+ * page shows, ahead of the missing rates an older page also leaves out.
+ */
+const OldDailyRate = z.undefined({ invalid_type_error: 'This page is out of date. Reload it and try again.' });
 
 const PRICE_RULE = 'The price must be a whole number of cents, zero or more.';
 const PriceCents = z.number({ required_error: PRICE_RULE, invalid_type_error: PRICE_RULE }).int(PRICE_RULE).nonnegative(PRICE_RULE);
@@ -38,23 +47,31 @@ const MachineName = z.string({ required_error: 'Give the machine a name.' }).tri
 // The purchase date is today when left out, so what comes in is wider than
 // AddMachineInput: only what comes out is held to it.
 export const AddMachineSchema = z.object({
+  dailyRateCents: OldDailyRate,
   name: MachineName,
   purchaseDate: DayStr.default(nairobiToday),
   priceCents: PriceCents,
-  dailyRateCents: RateCents,
+  projectRateCents: ProjectRateCents,
+  hireRateCents: HireRateCents,
   startDay: DayStr.optional(),
 }) satisfies z.ZodType<AddMachineInput, z.ZodTypeDef, unknown>;
 
 export const GiveMachineRateSchema = z.object({
-  dailyRateCents: RateCents,
+  dailyRateCents: OldDailyRate,
+  projectRateCents: ProjectRateCents,
+  hireRateCents: HireRateCents,
   startDay: DayStr.optional(),
 }) satisfies z.ZodType<GiveMachineRateInput>;
 
-// The rate is optional, never nullable: it can be changed and not cleared (R3).
+// Each rate is optional, never nullable: it can be changed and not cleared (R5).
 export const EditMachineSchema = z.object({
+  dailyRateCents: OldDailyRate,
   name: MachineName.optional(),
   priceCents: PriceCents.optional(),
-  dailyRateCents: RateCents.optional(),
+  projectRateCents: ProjectRateCents.optional(),
+  hireRateCents: HireRateCents.optional(),
+  // R3: only `true` means anything. Leaving it out leaves the mark as it is.
+  ratesReviewed: z.literal(true).optional(),
   condition: z.enum(CONDITIONS).optional(),
   startDay: DayStr.optional(),
 }) satisfies z.ZodType<EditMachineInput>;

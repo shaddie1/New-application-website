@@ -595,22 +595,27 @@ export const api = {
   // The rest of this block is the owner's alone. Every change to a machine
   // answers with that machine's fresh detail.
 
-  /** Assets not on the register yet: the ones that can be given a daily rate. */
+  /** Assets not on the register yet: the ones that can be given daily rates. */
   machineAssets: () =>
     request<{ assets: MachineAssetOption[] }>('/admin/machines/assets', { method: 'GET', auth: true }),
 
+  /** With both daily rates: the machine's hire rate is reviewed from the start. */
   addMachine: (input: AddMachineInput) =>
     request<{ machine: MachineDetailDto }>('/admin/machines', {
       method: 'POST', auth: true, body: JSON.stringify(input),
     }),
 
-  /** Puts an asset already in the asset list on the register. */
+  /** Puts an asset already in the asset list on the register, with both daily rates. */
   giveMachineRate: (assetId: string, input: GiveMachineRateInput) =>
     request<{ machine: MachineDetailDto }>(`/admin/machines/from-asset/${encodeURIComponent(assetId)}`, {
       method: 'POST', auth: true, body: JSON.stringify(input),
     }),
 
-  /** Name, price, rate and start day; a `condition` of RETIRED retires the machine and any other brings it back. */
+  /**
+   * Name, price, either rate and start day; `ratesReviewed` clears "hire rate
+   * not reviewed"; a `condition` of RETIRED retires the machine and any other
+   * brings it back.
+   */
   editMachine: (machineId: string, input: EditMachineInput) =>
     request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}`, {
       method: 'PATCH', auth: true, body: JSON.stringify(input),

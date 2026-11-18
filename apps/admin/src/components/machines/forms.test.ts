@@ -9,6 +9,7 @@ import {
   declaredPeriodWarning,
   fieldDays,
   fieldShillings,
+  hireRateWarning,
   investorRowsFor,
   machineChanges,
   nairobiDay,
@@ -18,6 +19,7 @@ import {
   parsePrice,
   parseRate,
   readInvestorsForm,
+  registerHasTwoRates,
   startDayProblem,
   type InvestorRow,
 } from './forms';
@@ -36,6 +38,58 @@ describe('parseRate', () => {
     ['', 'Enter a daily rate.'],
   ])('refuses "%s" and says why', (typed, reason) => {
     expect(parseRate(typed)).toEqual({ ok: false, reason });
+  });
+
+  describe.each([
+    ['project rate', 'A project rate'],
+    ['hire rate', 'A hire rate'],
+  ] as const)('as the %s field (R1)', (rate, named) => {
+    it('accepts "3500"', () => {
+      expect(parseRate('3500', rate)).toEqual({ ok: true, cents: 350_000 });
+    });
+
+    it.each([
+      ['3500.50', `${named} is in whole shillings, with no cents.`],
+      ['0', `${named} must be more than KSh 0.`],
+      ['-5', `${named} cannot be negative.`],
+      ['', `Enter a ${rate}.`],
+    ])('refuses "%s" with its own message', (typed, reason) => {
+      expect(parseRate(typed, rate)).toEqual({ ok: false, reason });
+    });
+  });
+});
+
+describe('hireRateWarning (R4)', () => {
+  // AE4: a project rate of KSh 2,000.
+  it('warns when the hire rate is below the project rate', () => {
+    expect(hireRateWarning(200_000, 150_000)).toBe('Hire rate is usually higher than the project rate — continue?');
+  });
+
+  it('says nothing when the hire rate is the project rate or above it', () => {
+    expect(hireRateWarning(200_000, 200_000)).toBeNull();
+    expect(hireRateWarning(200_000, 350_000)).toBeNull();
+  });
+});
+
+describe('registerHasTwoRates (KTD6)', () => {
+  const row = { id: 'm1', name: 'Scrubber', projectRateCents: 200_000, hireRateCents: 350_000, dailyRateCents: 200_000 };
+  // A machine as the API sent it before the two rates.
+  const oldRow = { id: 'm2', name: 'Polisher', dailyRateCents: 150_000 };
+
+  it('passes a register whose machines each carry a project rate', () => {
+    expect(registerHasTwoRates({ machines: [row, { ...row, id: 'm2' }] })).toBe(true);
+  });
+
+  it('fails a register from the older API, whose machines carry only the one daily rate', () => {
+    expect(registerHasTwoRates({ machines: [oldRow] })).toBe(false);
+  });
+
+  it('fails when any machine has no project rate', () => {
+    expect(registerHasTwoRates({ machines: [row, oldRow] })).toBe(false);
+  });
+
+  it('passes an empty register: there is nothing to tell the two APIs apart by', () => {
+    expect(registerHasTwoRates({ machines: [] })).toBe(true);
   });
 });
 
@@ -213,18 +267,47 @@ describe('startDayProblem', () => {
 });
 
 describe('machineChanges', () => {
-  const machine = { name: 'Scrubber', priceCents: 26_000_000, dailyRateCents: 200_000, startDay: '2026-11-01' };
+  const fields = {
+    name: 'Scrubber', priceCents: 26_000_000, projectRateCents: 200_000, hireRateCents: 350_000, startDay: '2026-11-01',
+  };
 
-  it('sends only what was changed', () => {
-    expect(machineChanges(machine, { ...machine, dailyRateCents: 250_000 })).toEqual({ dailyRateCents: 250_000 });
-    expect(machineChanges(machine, { ...machine, name: 'Floor scrubber', startDay: '2026-10-01' })).toEqual({
-      name: 'Floor scrubber',
-      startDay: '2026-10-01',
+  describe('for a machine whose hire rate is reviewed', () => {
+    const machine = { ...fields, hireRateReviewed: true };
+
+    it('sends only what was changed', () => {
+      expect(machineChanges(machine, { ...fields, projectRateCents: 250_000 })).toEqual({ projectRateCents: 250_000 });
+      expect(machineChanges(machine, { ...fields, hireRateCents: 400_000 })).toEqual({ hireRateCents: 400_000 });
+      expect(machineChanges(machine, { ...fields, name: 'Floor scrubber', startDay: '2026-10-01' })).toEqual({
+        name: 'Floor scrubber',
+        startDay: '2026-10-01',
+      });
+    });
+
+    it('is null when nothing was changed', () => {
+      expect(machineChanges(machine, { ...fields })).toBeNull();
     });
   });
 
-  it('is null when nothing was changed', () => {
-    expect(machineChanges(machine, { ...machine })).toBeNull();
+  describe('for a machine whose hire rate is not reviewed (R3, AE3)', () => {
+    // Both rates are its one rate from before the hire rate came in.
+    const flagged = { ...fields, hireRateCents: 200_000, hireRateReviewed: false };
+    const typed = { ...fields, hireRateCents: 200_000 };
+
+    it('can be saved with nothing changed, and confirms both rates as they stand', () => {
+      expect(machineChanges(flagged, typed)).toEqual({ projectRateCents: 200_000, hireRateCents: 200_000, ratesReviewed: true });
+    });
+
+    it('sends the new hire rate with the marker', () => {
+      expect(machineChanges(flagged, { ...typed, hireRateCents: 350_000 })).toEqual({
+        projectRateCents: 200_000, hireRateCents: 350_000, ratesReviewed: true,
+      });
+    });
+
+    it('sends the marker with every save, a change of name included', () => {
+      expect(machineChanges(flagged, { ...typed, name: 'Floor scrubber' })).toEqual({
+        name: 'Floor scrubber', projectRateCents: 200_000, hireRateCents: 200_000, ratesReviewed: true,
+      });
+    });
   });
 });
 
