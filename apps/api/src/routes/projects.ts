@@ -13,6 +13,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { requireStaff } from '../auth/roles.js';
 
 const STAGES = ['ENQUIRY', 'SURVEY', 'SCHEDULED', 'IN_PROGRESS', 'SNAGGING', 'COMPLETE', 'CANCELLED'] as const;
 const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
@@ -38,7 +39,7 @@ const DEFAULT_QUESTIONS: { question: string; section: string }[] = [
   { section: 'Handover', question: 'Has the client walked the site and signed off?' },
   { section: 'Handover', question: 'Have all snags raised by the client been closed?' },
   { section: 'Closing', question: 'Has payment been received in full?' },
-  { section: 'Closing', question: 'Has the job been recorded in Financials with its expenses?' },
+  { section: 'Closing', question: 'Has the job been recorded in Jobs & costs with its expenses?' },
 ];
 
 const CreateSchema = z.object({
@@ -142,8 +143,10 @@ function shown(field: string, value: unknown): string {
 
 export const projectRoutes: FastifyPluginAsync = async (app) => {
   // Projects are day-to-day operations, so any signed-in staff member can use
-  // them — the same bar as bookings and quotes.
+  // them — the same bar as bookings and quotes. Customers cannot: projects
+  // carry client names, phones, sites and contract values.
   app.addHook('preHandler', requireAuth);
+  app.addHook('preHandler', requireStaff);
 
   app.get('/', async (_req, reply) => {
     const rows = await prisma.project.findMany({
@@ -255,6 +258,14 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>('/:id', async (req, reply) => {
     const existing = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'project not found' });
+    const jobCount = await prisma.job.count({ where: { projectId: req.params.id } });
+    if (jobCount > 0) {
+      const error =
+        jobCount === 1
+          ? 'This project has 1 job under it. Ask the owner to move it first.'
+          : `This project has ${jobCount} jobs under it. Ask the owner to move them first.`;
+      return reply.code(409).send({ error, jobCount });
+    }
     await prisma.project.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
   });

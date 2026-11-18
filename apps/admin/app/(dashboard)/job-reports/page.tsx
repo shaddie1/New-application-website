@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ExpenseCategory, ExpenseDto, JobDto } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { money as fmt } from '../../../src/lib/money';
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   MATERIALS: 'Materials',
@@ -21,10 +22,6 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   PENDING:  { label: 'Pending review', cls: 'bg-warning/15 text-warning' },
   APPROVED: { label: 'Approved',       cls: 'bg-success/15 text-success' },
 };
-
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
-}
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 
@@ -170,7 +167,7 @@ export default function JobReportsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Job Reports</h1>
+          <h1 className="font-serif text-3xl">Job reports</h1>
           <p className="text-text-muted text-sm mt-1">Submit job details after each completed job. The owner reviews and approves them.</p>
         </div>
         <button
@@ -299,6 +296,11 @@ export default function JobReportsPage() {
             const isExpanded = expandedId === report.id;
             const isPending = report.status === 'PENDING';
             const statusMeta = STATUS_LABELS[report.status];
+            // The owner may log machine days on a job. Their amount is inside the report's
+            // total, so it is taken out of "Expenses" and shown beside it as one Machines
+            // amount: the two add up to what the job cost. The machine, its days and its
+            // rate are the owner's to see and are not sent here.
+            const machineCents = report.machineCents ?? 0;
             return (
               <div key={report.id} className="rounded-xl border border-border bg-surface overflow-hidden">
                 <div className="px-5 py-4 flex items-start gap-4">
@@ -335,8 +337,14 @@ export default function JobReportsPage() {
                       </span>
                       <span>
                         <span className="text-text-muted text-xs">Expenses </span>
-                        <span className="text-danger font-medium">{fmt(report.totalExpensesCents)}</span>
+                        <span className="font-medium">{fmt(report.totalExpensesCents - machineCents)}</span>
                       </span>
+                      {machineCents > 0 && (
+                        <span>
+                          <span className="text-text-muted text-xs">Machines </span>
+                          <span className="font-medium">{fmt(machineCents)}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

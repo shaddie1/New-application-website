@@ -5,6 +5,9 @@
  * the M-Pesa tests mock `fetch`, so no real network/credentials are used.
  */
 process.env.NODE_ENV = 'test';
+// Month and day boundaries must hold on a server clock that is not UTC. Pinned
+// off UTC so a date built in local time fails here on every machine.
+process.env.TZ = 'Africa/Nairobi';
 process.env.DATABASE_URL ??= 'postgresql://user:pass@localhost:5432/onyxhawk_test';
 process.env.JWT_SECRET ??= 'test-jwt-secret-that-is-at-least-32-characters-long';
 

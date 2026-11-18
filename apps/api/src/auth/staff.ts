@@ -13,6 +13,7 @@ export const STAFF_ROLES = new Set<UserRole>([
   UserRole.MARKETING,
   UserRole.CLEANING_SUPERVISOR,
   UserRole.SHAREHOLDER,
+  UserRole.COO,
 ]);
 
 /** How each staff role reads to people: the same labels as the admin Team page. */

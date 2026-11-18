@@ -33,6 +33,7 @@ enum UserRole {
   MARKETING
   CLEANING_SUPERVISOR
   SHAREHOLDER
+  COO
 }
 
 enum LoyaltyTier {
@@ -94,10 +95,19 @@ model User {
   projectsCreated      Project[]            @relation("ProjectCreatedBy")
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
+  quoteSurveysUpdated  QuoteSurvey[]        @relation("QuoteSurveyUpdatedBy")
+  quoteCostingsUpdated QuoteCosting[]       @relation("QuoteCostingUpdatedBy")
+  quoteEstimatesComputed  QuoteEstimate[]   @relation("QuoteEstimateComputedBy")
+  quoteEstimatesSubmitted QuoteEstimate[]   @relation("QuoteEstimateSubmittedBy")
+  quoteEstimatesDecided   QuoteEstimate[]   @relation("QuoteEstimateDecidedBy")
+  quoteRatesUpdated    QuoteRates[]         @relation("QuoteRatesUpdatedBy")
   marketingSpends      MarketingSpend[]     @relation("MarketingSpendCreatedBy")
   assetsCreated        Asset[]              @relation("AssetCreatedBy")
   assetMaintenance     AssetMaintenance[]   @relation("AssetMaintenanceCreatedBy")
-  investmentsCreated   Investment[]         @relation("InvestmentCreatedBy")
+  machineLinesCreated     MachineLine[]     @relation("MachineLineCreatedBy")
+  machineInvestorsCreated MachineInvestor[] @relation("MachineInvestorCreatedBy")
+  machinePayoutsCreated   MachinePayout[]   @relation("MachinePayoutCreatedBy")
+  investmentsCreated  Investment[]         @relation("InvestmentCreatedBy")
   distributionsCreated ProfitDistribution[] @relation("ProfitDistributionCreatedBy")
   targetsCreated       MonthlyTarget[]      @relation("MonthlyTargetCreatedBy")
   websiteJobsCreated   WebsiteJob[]         @relation("WebsiteJobCreatedBy")
@@ -398,6 +408,8 @@ model BookingPhoto {
 enum QuoteStatus {
   PENDING
   SITE_VISIT_SCHEDULED
+  AWAITING_APPROVAL // estimate sent to the COO/owner
+  APPROVED          // estimate approved; client quotation can be issued
   QUOTED
   WON              // converted to a Booking
   LOST
@@ -423,8 +435,115 @@ model QuoteRequest {
   updatedAt       DateTime     @updatedAt
 
   photos          QuoteRequestPhoto[]
+  survey          QuoteSurvey?
+  costing         QuoteCosting?
+  estimates       QuoteEstimate[]
 
   @@index([userId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quote Builder — survey, estimate and the rates card behind them
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DistanceZone {
+  ZONE1 // up to 10 km
+  ZONE2 // 10–25 km
+  ZONE3 // over 25 km
+}
+
+enum SoilLevel {
+  LIGHT
+  NORMAL
+  HEAVY
+}
+
+enum EstimateStatus {
+  DRAFT      // computed, not yet sent for approval
+  SUBMITTED  // awaiting the COO/owner
+  APPROVED
+  REJECTED
+  SUPERSEDED // replaced by a newer estimate (survey or rates changed)
+}
+
+/**
+ * What the surveyor found on site. One per quote request; replaced whole on
+ * every save. Areas and items are JSON lists validated by the API — they are
+ * only ever read back as a unit to compute the estimate.
+ */
+model QuoteSurvey {
+  id                 String       @id @default(cuid())
+  quoteRequest       QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  quoteRequestId     String       @unique
+  distanceZone       DistanceZone @default(ZONE1)
+  soilLevel          SoilLevel    @default(NORMAL)
+  frequencyLabel     String       // must match a label in QuoteRates.frequencyTable
+  workingWindowHours Float        @default(7)
+  supervisorOnSite   Boolean      @default(false)
+  traineeSourced     Boolean      @default(false)
+  notes              String?
+  areas              Json         // QuoteSurveyAreaInput[]
+  items              Json         // QuoteSurveyItemInput[]
+  updatedBy          User?        @relation("QuoteSurveyUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById        String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+/**
+ * What a quote costs to deliver beyond the survey, and the client's price.
+ * Kept apart from the survey, which every staff role reads, so only the
+ * owner, admin, finance and the COO see it. One per quote; the JSON is
+ * validated by the API and only ever read back whole to compute the estimate.
+ */
+model QuoteCosting {
+  id             String       @id @default(cuid())
+  quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  quoteRequestId String       @unique
+  data           Json         // QuoteCosting
+  updatedBy      User?        @relation("QuoteCostingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+/**
+ * A priced estimate, frozen with the survey, rates and costing it was computed
+ * from so a later edit never silently changes an approved figure. The newest
+ * non-superseded row is the quote's current estimate.
+ */
+model QuoteEstimate {
+  id              String         @id @default(cuid())
+  quoteRequest    QuoteRequest   @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  quoteRequestId  String
+  status          EstimateStatus @default(DRAFT)
+  surveySnapshot  Json
+  ratesSnapshot   Json
+  costingSnapshot Json?          // null on estimates computed before costing existed
+  ratesUpdatedAt  DateTime?
+  output          Json           // QuoteEstimateOutput
+  computedBy      User?          @relation("QuoteEstimateComputedBy", fields: [computedById], references: [id], onDelete: SetNull)
+  computedById    String?
+  computedAt      DateTime       @default(now())
+  submittedBy     User?          @relation("QuoteEstimateSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedById   String?
+  submittedAt     DateTime?
+  decidedBy       User?          @relation("QuoteEstimateDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedById     String?
+  decidedAt       DateTime?
+  decisionNote    String?
+
+  @@index([quoteRequestId, computedAt])
+}
+
+/** The rates card. A single row (id "default"); the JSON is the QuoteRates DTO. */
+model QuoteRates {
+  id          String   @id @default("default")
+  data        Json
+  updatedBy   User?    @relation("QuoteRatesUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model QuoteRequestPhoto {
@@ -643,12 +762,30 @@ model Job {
   reportedBy     User?     @relation("JobsReportedBy", fields: [reportedById], references: [id])
   reportedById   String?
   expenses       Expense[]
+  // Days machines worked on this job. Each line is a cost of the job.
+  machineLines   MachineLine[]
+  // Where the job sits for per-project money. `projectId` is set only when
+  // `placement` is PROJECT; the database checks the two agree. Restrict, so a
+  // project that holds jobs cannot be deleted.
+  placement      JobPlacement @default(UNSORTED)
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId      String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   @@index([date])
   @@index([createdById])
   @@index([status])
+  @@index([projectId])
+}
+
+// Where a job sits for per-project money. STANDALONE is what the back-office
+// calls a "one-off job"; it is not named ONE_OFF because PaymentFrequency
+// already uses that for a project billed once.
+enum JobPlacement {
+  UNSORTED
+  PROJECT
+  STANDALONE
 }
 
 enum JobStatus {
@@ -774,7 +911,14 @@ model Asset {
   notes        String?
   receiptRef   String?
   receiptUrl   String?
+  // Machine register. An asset is on the register when it has a daily rate.
+  // `countsFrom` is its start day: what it earns and its repairs both count
+  // from that day. The two are set together and only through /admin/machines.
+  dailyRateCents Int?
+  countsFrom     DateTime?    @db.Date
   maintenance  AssetMaintenance[]
+  machineLines     MachineLine[]
+  machineInvestors MachineInvestor[]
   createdBy    User           @relation("AssetCreatedBy", fields: [createdById], references: [id])
   createdById  String
   createdAt    DateTime       @default(now())
@@ -799,6 +943,70 @@ model AssetMaintenance {
 
   @@index([assetId])
   @@index([date])
+}
+
+/**
+ * The days one machine worked on one job, and what that earned it. The amount
+ * is a cost of the job and the same amount is what the machine has earned, so
+ * the two cannot drift: nothing about a machine's pot is stored anywhere else.
+ * The line takes the job's date. `rateCents` and `amountCents` are snapshots
+ * from the moment of logging; the database checks amount = halfDays x rate / 2.
+ * A hire to an outside customer is a one-off job with one line marked isHire.
+ * Lines go with their job (Cascade) and stop their machine being deleted
+ * (Restrict).
+ */
+model MachineLine {
+  id          String   @id @default(cuid())
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  assetId     String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId       String
+  halfDays    Int
+  rateCents   Int
+  amountCents Int
+  isHire      Boolean  @default(false)
+  createdBy   User     @relation("MachineLineCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([assetId, jobId])
+  @@index([jobId])
+}
+
+/**
+ * Someone who paid for all or part of a machine. Their share is
+ * contributionCents over the machine's price; whatever the investors did not
+ * cover is the company's. Investors have no sign-in.
+ */
+model MachineInvestor {
+  id                String          @id @default(cuid())
+  asset             Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assetId           String
+  name              String
+  contributionCents Int
+  payouts           MachinePayout[]
+  createdBy         User            @relation("MachineInvestorCreatedBy", fields: [createdById], references: [id])
+  createdById       String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([assetId])
+}
+
+/** One payment to a machine's investor from that machine's pot. */
+model MachinePayout {
+  id          String          @id @default(cuid())
+  investor    MachineInvestor @relation(fields: [investorId], references: [id], onDelete: Restrict)
+  investorId  String
+  date        DateTime        @db.Date
+  amountCents Int
+  reference   String? // M-Pesa code or bank transfer reference
+  createdBy   User            @relation("MachinePayoutCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime        @default(now())
+
+  @@index([investorId])
 }
 
 enum InvestmentKind {
@@ -933,6 +1141,7 @@ model Project {
   notes           String?
   checklist       ProjectCheck[]
   events          ProjectEvent[]
+  jobs            Job[]
   createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   createdById     String
   createdAt       DateTime      @default(now())
@@ -1115,6 +1324,9 @@ model Shareholder {
   user        User?           @relation("UserShareholder", fields: [userId], references: [id])
   userId      String?         @unique
   sortOrder   Int             @default(0)
+  // Set when the holder is removed from the cap table. The row stays, so the
+  // payouts declared for them keep their name; reads of current holders skip it.
+  removedAt   DateTime?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 

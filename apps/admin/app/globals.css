@@ -2,33 +2,104 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── The admin's colour tokens ────────────────────────────────────────────────
+   Every colour in apps/admin is defined here and nowhere else; the one
+   exception is the printed quotation template in quotes/page.tsx.
+   tailwind.config.ts maps class names to these, and
+   src/lib/contrast.test.ts measures them.
+
+   UI colours are stored as red, green and blue channels, so Tailwind can add
+   the opacity for classes such as `bg-danger/10`. Chart colours are stored
+   whole, because the SVG charts read them directly. */
 :root {
   color-scheme: light;
 
-  /* ── Chart theme ─────────────────────────────────────────────────────────
-     Charts read these rather than hard-coded hex, so a second mode
-     (Boardroom: navy surface, white text, aqua data) can re-theme every
-     chart by overriding this block alone. */
-  --chart-surface: #ffffff;
-  --chart-ink: #0f1c2e;      /* headings, axis labels, the net-profit line */
-  --chart-muted: #4a5568;    /* secondary labels */
-  --chart-grid: #e5eaf0;     /* horizontal gridlines — deliberately faint */
-  --chart-track: #eef2f6;    /* ring/progress track */
-  --chart-accent: #0d9488;   /* aqua: the primary data colour (3.7:1 on white) */
-  --chart-accent-deep: #0f766e; /* deep aqua: accent text on light surfaces */
-  --chart-positive: #1f7a4d;
-  --chart-negative: #b14747;
+  /* Surfaces */
+  --page: 250 247 242;          /* warm page background */
+  --surface: 255 255 255;       /* cards, inputs, dialogs */
+  --sunken: 241 236 227;        /* table heads, neutral pills, pressed areas */
+  --mist: 246 242 235;          /* hover, alternating bands */
+
+  /* Lines */
+  --line: 233 227 216;          /* hairlines inside and around cards */
+  --border: 221 213 199;        /* input and table borders */
+  --border-strong: 184 174 156; /* a border that has to be seen */
+
+  /* Text */
+  --ink: 15 28 46;              /* headings, body text, figures */
+  --muted: 74 85 104;           /* labels, secondary text */
+
+  /* Navy: primary */
+  --navy: 19 58 104;            /* primary buttons, links */
+  --navy-deep: 16 42 74;        /* dark bands and selected pills */
+  --navy-soft: 232 238 247;     /* navy-tinted pills */
+  --on-dark: 250 247 242;       /* text on navy-deep */
+  --on-dark-muted: 169 184 203; /* labels on navy-deep */
+
+  /* Teal: good */
+  --teal: 13 109 102;           /* teal text: income, profit, success */
+  --teal-fill: 13 148 136;      /* teal marks: progress, checks. Not for text */
+  --teal-soft: 227 245 242;     /* teal-tinted wells */
+  --teal-light: 94 234 212;     /* teal on navy-deep */
+
+  /* Amber: needs attention. Red: a loss, an error, a destructive action */
+  --amber: 158 72 9;
+  --red: 166 61 61;
+
+  /* Gold, from the hawk in the logo */
+  --gold: 201 165 92;           /* decoration only: fills, borders, icons. Never text */
+  --brass: 122 92 30;           /* the gold that can be read as text */
+
+  --steel: 58 94 122;           /* "in progress" status pills */
+
+  --focus: var(--teal);         /* keyboard focus ring */
+
+  /* ── Charts ──────────────────────────────────────────────────────────────
+     Six colours for parts of a whole, in a fixed order. Any two of them stay
+     distinguishable for red-green colour-blind readers and each is at least
+     3:1 on the card surface; see the note in src/components/charts.tsx before
+     changing or re-ordering them. */
+  --chart-1: #024e9a;           /* blue, from the navy */
+  --chart-2: #0d9488;           /* teal */
+  --chart-3: #a98904;           /* old gold */
+  --chart-4: #793d67;           /* plum */
+  --chart-5: #b84f3c;           /* terracotta */
+  --chart-6: #7471b3;           /* slate violet */
+  --chart-other: #b0aca2;       /* "Other": a remainder, not a category */
+
+  --chart-surface: rgb(var(--surface));
+  --chart-ink: rgb(var(--ink));          /* axis labels, the net-profit line, target notches */
+  --chart-muted: rgb(var(--muted));      /* secondary labels */
+  --chart-grid: rgb(var(--line));        /* horizontal gridlines, deliberately faint */
+  --chart-track: rgb(var(--sunken));     /* ring and progress tracks */
+  --chart-accent: rgb(var(--teal-fill)); /* the one colour for a single series */
+  --chart-accent-deep: rgb(var(--teal));
+  --chart-positive: rgb(var(--teal));
+  --chart-negative: rgb(var(--red));
 }
 
+/* The sans comes from `fontFamily.sans` in tailwind.config.ts, which Tailwind
+   puts on the page for us. */
 body {
-  /* Bright brand surface: white page, charcoal text (company brand sheet). */
-  background-color: #ffffff;
-  color: #0f1c2e;
-  font-family: var(--font-raleway), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background-color: rgb(var(--page));
+  color: rgb(var(--ink));
 }
 
-/* Tabular figures keep KPI numbers and deltas from shifting width as they
-   animate or update. */
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
+@layer components {
+  /* A figure: money, a count, a percentage. The sans, with digits at full
+     height and equal width, so figures line up in a column and do not shift
+     as they change. Use it on anything a reader compares or adds up. */
+  .figure {
+    font-family: theme('fontFamily.sans');
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+}
+
+/* One keyboard focus ring for every link, button and input. It sits after the
+   utilities, and `:root` gives it the weight to win over the `outline-none`
+   that many inputs carry. Elements that cannot be reached with Tab (dialog
+   panels, menu items moved through with the arrow keys) are left alone. */
+:root :focus-visible:not([tabindex='-1']) {
+  outline: 2px solid rgb(var(--focus));
+  outline-offset: 2px;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AllTimeTotals,
   ClientSegment,
@@ -8,10 +8,17 @@ import type {
   ExpenseDto,
   FinancialSummary,
   JobDto,
+  JobPlaceInput,
   MonthlyTrendItem,
+  ProjectDto,
 } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
+import { daysText } from '../../../src/components/machines/wording';
+import { JobPlaceMover, PlacementPicker, refusalMessage } from '../../../src/components/project-money/PlacementPicker';
+import { SortJobs } from '../../../src/components/project-money/SortJobs';
 import { useRequireAdmin } from '../../../src/lib/auth';
+import { deleteJobMessage } from '../../../src/lib/jobMachines';
+import { money as fmt } from '../../../src/lib/money';
 
 // How many months of history the Monthly trends tab can show at once.
 const TREND_RANGES = [6, 12, 24];
@@ -39,10 +46,6 @@ const CATEGORIES: ExpenseCategory[] = [
   'MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS',
 ];
 
-function fmt(cents: number) {
-  return `KSh ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
-}
-
 function monthRange(year: number, month: number) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const from = `${year}-${pad(month)}-01`;
@@ -59,7 +62,7 @@ const blankExpenseForm = () => ({
   date: todayIso(),
 });
 
-type Tab = 'jobs' | 'submissions' | 'trends';
+type Tab = 'jobs' | 'submissions' | 'sort' | 'trends';
 
 export default function FinancialsPage() {
   const session = useRequireAdmin();
@@ -87,6 +90,13 @@ export default function FinancialsPage() {
   // options cannot drift from what the business actually sells.
   const [serviceLines, setServiceLines] = useState<{ code: string; name: string }[]>([]);
   const [savingJob, setSavingJob] = useState(false);
+  // Every job sits under one contract or is marked one-off, so each picker needs the contracts.
+  const [projects, setProjects] = useState<ProjectDto[]>([]);
+  const [jobPlace, setJobPlace] = useState<JobPlaceInput | null>(null);
+  const [createJobRefusal, setCreateJobRefusal] = useState<string | null>(null);
+  const [reportPlaces, setReportPlaces] = useState<Record<string, JobPlaceInput>>({});
+  const [approveRefusal, setApproveRefusal] = useState<{ reportId: string; message: string } | null>(null);
+  const [unsortedCount, setUnsortedCount] = useState<number | null>(null);
 
   // Per-job expansion + expense form
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
@@ -125,11 +135,33 @@ export default function FinancialsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // The count on the "Sort jobs" tab label. Asked again whenever a job not yet sorted is moved or deleted.
+  const refreshUnsortedCount = useCallback(() => {
+    api.unsortedJobs()
+      .then((r) => setUnsortedCount(r.jobs.length))
+      .catch(() => undefined); // the label keeps its last count; the Sort jobs tab reports its own failed load
+  }, []);
+
+  // The month on screen, so a reply for a month the owner has since left is dropped.
+  const shownMonth = useRef(from);
+  shownMonth.current = from;
+
+  // After jobs are placed in the Sort jobs tab, the Jobs tab must show their new place.
+  const refreshJobs = useCallback(() => {
+    api.jobs(from, to)
+      .then((r) => { if (shownMonth.current === from) setJobs(r.jobs); })
+      .catch(() => undefined); // the Jobs tab keeps its list; changing month reloads it
+  }, [from, to]);
+
   useEffect(() => {
     api.serviceLines()
       .then((r) => setServiceLines(r.serviceLines))
       .catch(() => undefined); // classification stays optional if the catalog is unreachable
-  }, []);
+    api.projects()
+      .then((r) => setProjects(r.projects))
+      .catch(() => setError('Could not load the contracts list. Reload the page before saving or moving a job.'));
+    refreshUnsortedCount();
+  }, [refreshUnsortedCount]);
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear((y) => y - 1); }
@@ -148,9 +180,10 @@ export default function FinancialsPage() {
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
     const incomeKes = parseFloat(jobForm.incomeKes);
-    if (!jobForm.title.trim()) return;
+    if (!jobForm.title.trim() || !jobPlace) return;
     setSavingJob(true);
     setError(null);
+    setCreateJobRefusal(null);
     try {
       const res = await api.createJob({
         title: jobForm.title.trim(),
@@ -164,6 +197,7 @@ export default function FinancialsPage() {
         region: jobForm.region.trim() || undefined,
         clientSegment: jobForm.clientSegment || undefined,
         notes: jobForm.notes.trim() || undefined,
+        place: jobPlace,
       });
       setJobs((prev) => [res.job, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
       setSummary((prev) => prev ? {
@@ -174,11 +208,12 @@ export default function FinancialsPage() {
       setJobForm((f) => ({
         ...f, title: '', incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '',
       }));
+      setJobPlace(null);
       setShowJobForm(false);
       setExpandedJobId(res.job.id);
       setExpenseForm(blankExpenseForm());
     } catch (err) {
-      setError(err instanceof ApiError ? `Could not save job (${err.status}).` : 'Could not save job.');
+      setCreateJobRefusal(refusalMessage(err, 'Could not save job.'));
     } finally {
       setSavingJob(false);
     }
@@ -186,7 +221,7 @@ export default function FinancialsPage() {
 
   // ── Delete job ─────────────────────────────────────────────────────────────
   const handleDeleteJob = async (job: JobDto) => {
-    if (!confirm(`Delete "${job.title}" and all its expenses?`)) return;
+    if (!confirm(deleteJobMessage(job))) return;
     setDeletingJobId(job.id);
     try {
       await api.deleteJob(job.id);
@@ -198,6 +233,7 @@ export default function FinancialsPage() {
         netCents: prev.netCents - job.netCents,
       } : prev);
       if (expandedJobId === job.id) setExpandedJobId(null);
+      if (job.placement === 'UNSORTED') refreshUnsortedCount();
     } catch {
       setError('Could not delete job.');
     } finally {
@@ -207,9 +243,18 @@ export default function FinancialsPage() {
 
   // ── Approve a pending submission ────────────────────────────────────────────
   const handleApprove = async (report: JobDto) => {
+    const place = reportPlaces[report.id];
+    if (!place) return;
     setApprovingId(report.id);
+    setApproveRefusal(null);
     try {
-      await api.approveReport(report.id);
+      await api.approveReport(report.id, { place });
+    } catch (err) {
+      setApproveRefusal({ reportId: report.id, message: refusalMessage(err, 'Could not approve report.') });
+      setApprovingId(null);
+      return;
+    }
+    try {
       setPendingReports((prev) => prev.filter((r) => r.id !== report.id));
       // Reload the jobs list and summary to reflect the newly approved job
       const [sumRes, jobsRes] = await Promise.all([
@@ -219,7 +264,7 @@ export default function FinancialsPage() {
       setSummary(sumRes.summary);
       setJobs(jobsRes.jobs);
     } catch {
-      setError('Could not approve report.');
+      setError('The report was approved, but the page could not refresh. Reload to see the job.');
     } finally {
       setApprovingId(null);
     }
@@ -323,7 +368,7 @@ export default function FinancialsPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Financials</h1>
+        <h1 className="font-serif text-3xl">Jobs &amp; costs</h1>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">←</button>
           <span className="text-sm font-medium w-36 text-center">{monthLabel}</span>
@@ -337,19 +382,19 @@ export default function FinancialsPage() {
       <div className="mb-6 rounded-xl border border-border bg-surface-dark px-5 py-4 flex flex-wrap items-center gap-x-10 gap-y-3">
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Projects so far</p>
-          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="figure mt-1 text-2xl text-text-on-dark">
             {loading || !totals ? '—' : totals.totalProjects}
           </p>
         </div>
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Income generated so far</p>
-          <p className="mt-1 text-2xl text-aqua-light" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="figure mt-1 text-2xl text-aqua-light">
             {loading || !totals ? '—' : fmt(totals.totalIncomeCents)}
           </p>
         </div>
         <div>
           <p className="text-text-on-dark-muted text-xs uppercase tracking-widest">Net profit so far</p>
-          <p className="mt-1 text-2xl text-text-on-dark" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="figure mt-1 text-2xl text-text-on-dark">
             {loading || !totals ? '—' : fmt(totals.totalNetCents)}
           </p>
         </div>
@@ -359,9 +404,9 @@ export default function FinancialsPage() {
       </div>
 
       {/* Summary cards — the selected month */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <SummaryCard label="Income" cents={summary?.incomeCents} color="text-success" loading={loading} />
-        <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} color="text-danger" loading={loading} />
+        <SummaryCard label="Total expenses" cents={summary?.totalExpensesCents} loading={loading} />
         <SummaryCard
           label="Net profit"
           cents={summary?.netCents}
@@ -372,10 +417,11 @@ export default function FinancialsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-border">
+      <div className="flex flex-wrap gap-1 mb-4 border-b border-border">
         {([
           { key: 'jobs', label: `Jobs — ${monthLabel}` },
           { key: 'submissions', label: `Submissions${pendingReports.length > 0 ? ` (${pendingReports.length})` : ''}` },
+          { key: 'sort', label: `Sort jobs${unsortedCount ? ` (${unsortedCount})` : ''}` },
           { key: 'trends', label: 'Monthly trends' },
         ] as { key: Tab; label: string }[]).map(({ key, label }) => (
           <button
@@ -529,6 +575,14 @@ export default function FinancialsPage() {
                   {REGIONS.map((r) => <option key={r} value={r} />)}
                 </datalist>
               </div>
+              <div className="col-span-2">
+                <PlacementPicker
+                  label="Contract or one-off"
+                  projects={projects}
+                  value={jobPlace}
+                  onChange={setJobPlace}
+                />
+              </div>
               <div className="col-span-full">
                 <label className="block text-xs text-text-muted mb-1">Notes (optional)</label>
                 <input
@@ -539,10 +593,15 @@ export default function FinancialsPage() {
                   onChange={(e) => setJobForm((f) => ({ ...f, notes: e.target.value }))}
                 />
               </div>
-              <div className="col-span-full flex justify-end">
+              <div className="col-span-full flex flex-wrap items-center justify-end gap-3">
+                {createJobRefusal ? (
+                  <p role="alert" className="text-xs text-danger">{createJobRefusal}</p>
+                ) : !jobPlace && (
+                  <p className="text-xs text-text-muted">Choose a contract or &ldquo;One-off job&rdquo; to save.</p>
+                )}
                 <button
                   type="submit"
-                  disabled={savingJob}
+                  disabled={savingJob || !jobPlace}
                   className="rounded-lg bg-navy text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
                 >
                   {savingJob ? 'Saving…' : 'Create job'}
@@ -565,6 +624,11 @@ export default function FinancialsPage() {
             onAddExpense={(e, id) => void handleAddExpense(e, id)}
             onDeleteExpense={(jobId, ex) => void handleDeleteExpense(jobId, ex)}
             onExpenseFormChange={setExpenseForm}
+            projects={projects}
+            onJobMoved={(moved) => {
+              if (jobs.find((j) => j.id === moved.id)?.placement === 'UNSORTED') refreshUnsortedCount();
+              setJobs((prev) => prev.map((j) => (j.id === moved.id ? moved : j)));
+            }}
           />
         </>
       )}
@@ -617,7 +681,7 @@ export default function FinancialsPage() {
                         </span>
                         <span>
                           <span className="text-text-muted text-xs">Expenses </span>
-                          <span className="text-danger font-medium">{fmt(report.totalExpensesCents)}</span>
+                          <span className="font-medium">{fmt(report.totalExpensesCents)}</span>
                         </span>
                         <span>
                           <span className="text-text-muted text-xs">Net </span>
@@ -650,11 +714,25 @@ export default function FinancialsPage() {
                           </table>
                         </div>
                       )}
+                      <div className="mt-3 max-w-md">
+                        <PlacementPicker
+                          label="Contract or one-off (needed to approve)"
+                          projects={projects}
+                          value={reportPlaces[report.id] ?? null}
+                          onChange={(place) => {
+                            if (place) setReportPlaces((prev) => ({ ...prev, [report.id]: place }));
+                          }}
+                          disabled={approvingId === report.id}
+                        />
+                        {approveRefusal?.reportId === report.id && (
+                          <p role="alert" className="mt-1 text-xs text-danger">{approveRefusal.message}</p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-col gap-2 shrink-0">
                       <button
                         onClick={() => void handleApprove(report)}
-                        disabled={approvingId === report.id}
+                        disabled={approvingId === report.id || !reportPlaces[report.id]}
                         className="rounded-lg bg-success text-white px-4 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
                       >
                         {approvingId === report.id ? '…' : 'Approve'}
@@ -674,6 +752,9 @@ export default function FinancialsPage() {
           )}
         </div>
       )}
+
+      {/* ── Tab: Sort jobs ─────────────────────────────────────────────────── */}
+      {tab === 'sort' && <SortJobs projects={projects} onCountChange={setUnsortedCount} onPlaced={refreshJobs} />}
 
       {/* ── Tab: Monthly trends ────────────────────────────────────────────── */}
       {tab === 'trends' && (
@@ -772,7 +853,7 @@ export default function FinancialsPage() {
                         <td className="px-5 py-3">{t.label}</td>
                         <td className="px-5 py-3 text-right text-text-muted">{t.jobCount}</td>
                         <td className="px-5 py-3 text-right text-success">{fmt(t.incomeCents)}</td>
-                        <td className="px-5 py-3 text-right text-danger">{fmt(t.totalExpensesCents)}</td>
+                        <td className="px-5 py-3 text-right">{fmt(t.totalExpensesCents)}</td>
                         <td className={`px-5 py-3 text-right font-medium ${t.netCents >= 0 ? 'text-success' : 'text-danger'}`}>
                           {fmt(t.netCents)}
                         </td>
@@ -788,7 +869,7 @@ export default function FinancialsPage() {
                       <td className="px-5 py-3 text-right font-medium text-success">
                         {fmt(trends.reduce((acc, t) => acc + t.incomeCents, 0))}
                       </td>
-                      <td className="px-5 py-3 text-right font-medium text-danger">
+                      <td className="px-5 py-3 text-right font-medium">
                         {fmt(trends.reduce((acc, t) => acc + t.totalExpensesCents, 0))}
                       </td>
                       <td className={`px-5 py-3 text-right font-medium ${trends.reduce((acc, t) => acc + t.netCents, 0) >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -811,7 +892,7 @@ export default function FinancialsPage() {
 function JobList({
   jobs, loading, monthLabel, expandedJobId, expenseForm, savingExpense,
   deletingJobId, deletingExpenseId, onToggleExpand, onDeleteJob,
-  onAddExpense, onDeleteExpense, onExpenseFormChange,
+  onAddExpense, onDeleteExpense, onExpenseFormChange, projects, onJobMoved,
 }: {
   jobs: JobDto[];
   loading: boolean;
@@ -826,6 +907,8 @@ function JobList({
   onAddExpense: (e: React.FormEvent, jobId: string) => void;
   onDeleteExpense: (jobId: string, expense: ExpenseDto) => void;
   onExpenseFormChange: React.Dispatch<React.SetStateAction<ReturnType<typeof blankExpenseForm>>>;
+  projects: ProjectDto[];
+  onJobMoved: (job: JobDto) => void;
 }) {
   if (loading) return (
     <div className="rounded-xl border border-border bg-surface py-10 text-center text-text-muted text-sm">Loading…</div>
@@ -840,6 +923,8 @@ function JobList({
       {jobs.map((job) => {
         const isExpanded = expandedJobId === job.id;
         const isDeleting = deletingJobId === job.id;
+        // Sent only for a job that has machine days. They are inside the job's expenses total.
+        const machineLines = job.machineLines ?? [];
         return (
           <div key={job.id} className="rounded-xl border border-border bg-surface overflow-hidden">
             <div className="px-5 py-4 flex items-start gap-4">
@@ -912,7 +997,7 @@ function JobList({
                   <span className="text-border">|</span>
                   <span>
                     <span className="text-text-muted text-xs">Expenses </span>
-                    <span className="text-danger font-medium">{fmt(job.totalExpensesCents)}</span>
+                    <span className="font-medium">{fmt(job.totalExpensesCents)}</span>
                   </span>
                   <span className="text-border">|</span>
                   <span>
@@ -938,6 +1023,9 @@ function JobList({
                   {isDeleting ? '…' : 'Delete'}
                 </button>
               </div>
+            </div>
+            <div className="px-5 pb-4">
+              <JobPlaceMover job={job} projects={projects} onMoved={onJobMoved} />
             </div>
 
             {isExpanded && (
@@ -974,7 +1062,44 @@ function JobList({
                     </tbody>
                   </table>
                 ) : (
-                  <p className="px-5 py-3 text-text-muted text-sm">No expenses yet.</p>
+                  <p className="px-5 py-3 text-text-muted text-sm">
+                    {machineLines.length > 0 ? 'No other expenses yet.' : 'No expenses yet.'}
+                  </p>
+                )}
+
+                {/* The job's machine days: read-only here, with no edit or delete, because the
+                    Machines page is where they are logged and each machine's pot is kept. */}
+                {machineLines.length > 0 && (
+                  <div className="border-t border-border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border">
+                          <th className="px-5 py-2 text-left font-normal">Machine</th>
+                          <th className="px-5 py-2 text-left font-normal">Days</th>
+                          <th className="px-5 py-2 text-right font-normal">Rate a day</th>
+                          <th className="px-5 py-2 text-right font-normal">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {machineLines.map((line) => (
+                          <tr key={line.id}>
+                            <td className="px-5 py-2">
+                              {line.machineName}
+                              {line.isHire && (
+                                <span className="ml-2 rounded-full bg-bg-muted px-2 py-0.5 text-xs text-text-muted">Hire</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-2 text-text-muted">{daysText(line.halfDays)}</td>
+                            <td className="px-5 py-2 text-right text-text-muted">{fmt(line.rateCents)}</td>
+                            <td className="px-5 py-2 text-right font-medium">{fmt(line.amountCents)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="px-5 py-2 text-xs text-text-muted border-t border-border">
+                      Machine days are part of this job&apos;s expenses. To change them, go to the Machines page.
+                    </p>
+                  </div>
                 )}
 
                 <form
@@ -1053,7 +1178,7 @@ function SummaryCard({
   return (
     <div className={`rounded-xl border p-5 ${accent ? 'border-aqua/40 bg-white' : 'border-border bg-surface'}`}>
       <p className="text-text-muted text-xs uppercase tracking-widest">{label}</p>
-      <p className={`mt-2 text-3xl ${color ?? ''}`} style={{ fontFamily: 'Georgia, serif' }}>
+      <p className={`figure mt-2 text-3xl ${color ?? ''}`}>
         {loading || cents === undefined ? '—' : fmt(cents)}
       </p>
     </div>

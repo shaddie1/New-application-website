@@ -358,7 +358,7 @@ export default function WebsiteJobsPage() {
   if (forbidden) {
     return (
       <div className="rounded-xl border border-line bg-white p-8 text-center">
-        <h1 className="text-2xl" style={{ fontFamily: 'Georgia, serif' }}>No access</h1>
+        <h1 className="font-serif text-2xl">No access</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-charcoal-muted">
           Website jobs are managed by the owner, admins and marketing. Ask one of them to add or publish a job.
         </p>
@@ -375,7 +375,7 @@ export default function WebsiteJobsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl" style={{ fontFamily: 'Georgia, serif' }}>Website jobs</h1>
+          <h1 className="font-serif text-3xl">Website jobs</h1>
           <p className="mt-1 text-sm text-charcoal-muted">
             Finished jobs shown on the website under Our work. A new job stays off the website until you publish it.
           </p>

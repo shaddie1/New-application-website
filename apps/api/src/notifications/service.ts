@@ -107,6 +107,8 @@ export async function notifyQuoteResponded(
   status: string,
   quotedAmountCents: number | null,
   log: SmsLogger,
+  /** Set when the client agreed a monthly price: the text quotes that instead of the per-visit figure. */
+  monthlyPriceCents: number | null = null,
 ): Promise<void> {
   const q = await prisma.quoteRequest.findUnique({
     where: { id: quoteRequestId },
@@ -115,7 +117,9 @@ export async function notifyQuoteResponded(
   if (!q) return;
 
   const body =
-    status === 'QUOTED' && quotedAmountCents != null
+    status === 'QUOTED' && monthlyPriceCents != null
+      ? `We've quoted KSh ${(monthlyPriceCents / 100).toLocaleString()} per month for "${q.siteType}".`
+      : status === 'QUOTED' && quotedAmountCents != null
       ? `We've quoted KSh ${(quotedAmountCents / 100).toLocaleString()} for "${q.siteType}".`
       : status === 'SITE_VISIT_SCHEDULED'
       ? `We'd like to schedule a site visit for "${q.siteType}".`

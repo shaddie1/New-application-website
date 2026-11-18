@@ -1,26 +1,37 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ClientSegment, ExpenseCategory, JobStatus, ShareholderKind } from '@prisma/client';
+import { ClientSegment, ExpenseCategory, JobPlacement, JobStatus, Prisma, ShareholderKind } from '@prisma/client';
 import type {
+  CostsByGroup,
   ExpenseDto,
   FinancialSummary,
   CreateExpenseInput,
   JobDto,
+  JobMachineLineDto,
   CreateJobInput,
   UpdateJobInput,
+  JobPlaceInput,
+  ApproveReportInput,
+  PlaceJobsInput,
   MonthlyTrendItem,
   ShareholderDto,
-  CreateShareholderInput,
   UpdateShareholderInput,
+  ReplaceStakesInput,
+  ReplaceStakesResult,
   ShareholderAllocation,
   AllTimeTotals,
   EquityOverview,
+  EquityHistory,
+  EquityHistoryMonth,
+  UnsortedJobDto,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
-
-const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
+import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
+import { machineAmountCents } from '../machines/amounts.js';
+import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
+import { suggester } from '../projectMoney/suggest.js';
 
 const DateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
@@ -28,6 +39,13 @@ const DateRangeSchema = z.object({
 });
 
 const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
+
+const PlaceSchema = z.discriminatedUnion('placement', [
+  z.object({ placement: z.literal('PROJECT'), projectId: z.string().trim().min(1) }).strict(),
+  z.object({ placement: z.literal('STANDALONE') }).strict(),
+]) satisfies z.ZodType<JobPlaceInput>;
+
+const CHOOSE_PLACE = 'choose a project or mark the job one-off';
 
 const CreateJobSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -41,6 +59,7 @@ const CreateJobSchema = z.object({
   serviceLineCode: z.string().trim().max(60).optional(),
   region: z.string().trim().max(120).optional(),
   clientSegment: z.enum(SEGMENTS).optional(),
+  place: PlaceSchema,
 }) satisfies z.ZodType<CreateJobInput>;
 
 const UpdateJobSchema = z.object({
@@ -54,7 +73,15 @@ const UpdateJobSchema = z.object({
   serviceLineCode: z.string().trim().max(60).nullable().optional(),
   region: z.string().trim().max(120).nullable().optional(),
   clientSegment: z.enum(SEGMENTS).nullable().optional(),
+  place: PlaceSchema.optional(),
 }) satisfies z.ZodType<UpdateJobInput>;
+
+const ApproveReportSchema = z.object({ place: PlaceSchema }) satisfies z.ZodType<ApproveReportInput>;
+
+const PlaceJobsSchema = z.object({
+  jobIds: z.array(z.string().min(1)).min(1),
+  place: PlaceSchema,
+}) satisfies z.ZodType<PlaceJobsInput>;
 
 const CreateExpenseSchema = z.object({
   category: z.enum(['MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS']),
@@ -66,24 +93,42 @@ const CreateExpenseSchema = z.object({
 // 10000 basis points = 100.00%.
 const BASIS_POINTS_TOTAL = 10_000;
 
-const CreateShareholderSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  title: z.string().trim().max(100).nullable().optional(),
-  kind: z.enum(['COMPANY', 'INDIVIDUAL']),
-  basisPoints: z.number().int().min(0).max(BASIS_POINTS_TOTAL),
-  notes: z.string().trim().max(500).optional(),
-  userId: z.string().trim().min(1).nullable().optional(),
-}) satisfies z.ZodType<CreateShareholderInput>;
-
+// A holder's details. Stakes are not among them: they change only through the
+// replace-all request.
 const UpdateShareholderSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   title: z.string().trim().max(100).nullable().optional(),
   kind: z.enum(['COMPANY', 'INDIVIDUAL']).optional(),
-  basisPoints: z.number().int().min(0).max(BASIS_POINTS_TOTAL).optional(),
   notes: z.string().trim().max(500).nullable().optional(),
   userId: z.string().trim().min(1).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 }) satisfies z.ZodType<UpdateShareholderInput>;
+
+const HolderStakeSchema = z.object({ id: z.string().min(1), basisPoints: z.number() }).strict();
+
+// The shape only. What a stake may be, a blank name and the total are judged
+// inside the save's transaction, after the check that the form is not stale,
+// so each refusal can say what is wrong in a sentence.
+const ReplaceStakesSchema = z.object({
+  expected: z.array(HolderStakeSchema),
+  holders: z.array(
+    z.union([
+      HolderStakeSchema,
+      z.object({
+        name: z.string().trim().max(200, 'A name can be at most 200 characters.'),
+        title: z.string().trim().max(100, 'A title can be at most 100 characters.').nullable().optional(),
+        kind: z.enum(['COMPANY', 'INDIVIDUAL']),
+        basisPoints: z.number(),
+      }).strict(),
+    ]),
+  ),
+}) satisfies z.ZodType<ReplaceStakesInput>;
+
+const STAKES_CHANGED = 'The stakes changed since you opened this form. Reload and try again.';
+
+// A job's machine days with each machine's name, oldest first. Every query
+// that feeds toJobDto includes them: its row type requires them.
+const jobMachineLines = { include: { asset: { select: { name: true } } }, orderBy: { createdAt: 'asc' } } as const;
 
 export const financialsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
@@ -97,7 +142,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const { from, to } = dateRange(parsed.data.from, parsed.data.to);
 
-    const [jobs, expenses] = await Promise.all([
+    const [jobs, expenses, machineCents] = await Promise.all([
       prisma.job.findMany({
         where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
         select: { incomeCents: true, discountCents: true },
@@ -106,21 +151,25 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
         select: { category: true, amountCents: true },
       }),
+      machineAmountCents(from, to),
     ]);
 
     const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
 
     const catTotal = (cat: ExpenseCategory): number =>
       expenses.filter((e) => e.category === cat).reduce((acc, e) => acc + e.amountCents, 0);
-    const expensesByCategoryCents: Record<ExpenseCategory, number> = {
+    // Machines is a group only when it has an amount: a period with no
+    // machine days carries the five groups alone.
+    const expensesByCategoryCents: CostsByGroup = {
       MATERIALS: catTotal('MATERIALS'),
       TRANSPORT: catTotal('TRANSPORT'),
       EMPLOYEE_PAY: catTotal('EMPLOYEE_PAY'),
       LUNCH: catTotal('LUNCH'),
       MISCELLANEOUS: catTotal('MISCELLANEOUS'),
+      ...(machineCents > 0 && { MACHINES: machineCents }),
     };
 
-    const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+    const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
 
     const summary: FinancialSummary = {
       incomeCents,
@@ -157,7 +206,7 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const results = await Promise.all(
       monthSlots.map(async ({ year, month, label, from, to }) => {
-        const [jobs, expenses] = await Promise.all([
+        const [jobs, expenses, machineCents] = await Promise.all([
           prisma.job.findMany({
             where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
             select: { incomeCents: true, discountCents: true },
@@ -166,11 +215,13 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
             where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
             select: { amountCents: true },
           }),
+          machineAmountCents(from, to),
         ]);
         const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-        const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+        const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
         const item: MonthlyTrendItem = {
           year, month, label, incomeCents, totalExpensesCents,
+          ...(machineCents > 0 && { machineCents }),
           netCents: incomeCents - totalExpensesCents,
           jobCount: jobs.length,
         };
@@ -193,7 +244,9 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
       include: {
         expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
         reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
       },
       orderBy: { date: 'desc' },
     });
@@ -202,7 +255,10 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/jobs', async (req, reply) => {
     const parsed = CreateJobSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (!parsed.success) return reply.code(400).send(refusal(parsed.error));
+
+    const place = await resolvePlace(parsed.data.place);
+    if (!place) return reply.code(400).send({ error: 'project not found' });
 
     const row = await prisma.job.create({
       data: {
@@ -218,19 +274,28 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         serviceLineCode: parsed.data.serviceLineCode,
         region: parsed.data.region,
         clientSegment: parsed.data.clientSegment as ClientSegment | undefined,
+        ...place,
         createdById: req.auth!.sub,
       },
-      include: { expenses: true, reportedBy: { select: { fullName: true } } },
+      include: {
+        expenses: true,
+        machineLines: jobMachineLines,
+        reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
+      },
     });
     return reply.code(201).send({ job: toJobDto(row) });
   });
 
   app.patch<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
     const parsed = UpdateJobSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (!parsed.success) return reply.code(400).send(refusal(parsed.error));
 
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'job not found' });
+
+    const place = parsed.data.place && (await resolvePlace(parsed.data.place));
+    if (place === null) return reply.code(400).send({ error: 'project not found' });
 
     const row = await prisma.job.update({
       where: { id: req.params.id },
@@ -247,10 +312,41 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.clientSegment !== undefined && {
           clientSegment: parsed.data.clientSegment as ClientSegment | null,
         }),
+        ...place,
       },
-      include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
+      include: {
+        expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
+        reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
+      },
     });
     return reply.send({ job: toJobDto(row) });
+  });
+
+  // Sort several jobs into one place. Every job is checked before any is
+  // written, in one transaction, so a refusal changes nothing.
+  app.post('/jobs/place', async (req, reply) => {
+    const parsed = PlaceJobsSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send(refusal(parsed.error));
+
+    const place = await resolvePlace(parsed.data.place);
+    if (!place) return reply.code(400).send({ error: 'project not found' });
+
+    const { jobIds } = parsed.data;
+    const result = await prisma.$transaction(async (tx) => {
+      const found = await tx.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, status: true } });
+      const statusOf = new Map(found.map((j) => [j.id, j.status]));
+      for (const jobId of jobIds) {
+        const status = statusOf.get(jobId);
+        if (!status) return { error: 'job not found', jobId };
+        // A report's place is chosen when it is approved.
+        if (status === 'PENDING') return { error: 'job is waiting for approval', jobId };
+      }
+      const { count } = await tx.job.updateMany({ where: { id: { in: jobIds } }, data: place });
+      return { placed: count };
+    });
+    return reply.code('error' in result ? 400 : 200).send(result);
   });
 
   app.delete<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
@@ -299,7 +395,9 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       where: { status: 'PENDING' },
       include: {
         expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
         reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -310,10 +408,22 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing || existing.status !== 'PENDING') return reply.code(404).send({ error: 'pending report not found' });
 
+    // The body holds the place and nothing else, so any bad body means no place was chosen.
+    const parsed = ApproveReportSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: CHOOSE_PLACE });
+
+    const place = await resolvePlace(parsed.data.place);
+    if (!place) return reply.code(400).send({ error: 'project not found' });
+
     const row = await prisma.job.update({
       where: { id: req.params.id },
-      data: { status: 'APPROVED' },
-      include: { expenses: { orderBy: { date: 'desc' } }, reportedBy: { select: { fullName: true } } },
+      data: { status: 'APPROVED', ...place },
+      include: {
+        expenses: { orderBy: { date: 'desc' } },
+        machineLines: jobMachineLines,
+        reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
+      },
     });
     return reply.send({ job: toJobDto(row) });
   });
@@ -323,6 +433,29 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     if (!existing || existing.status !== 'PENDING') return reply.code(404).send({ error: 'pending report not found' });
     await prisma.job.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
+  });
+
+  // ── Jobs still to sort ─────────────────────────────────────────────────────
+
+  app.get('/unsorted', async (_req, reply) => {
+    const [rows, projects] = await Promise.all([
+      prisma.job.findMany({
+        where: { placement: JobPlacement.UNSORTED, status: { in: COUNTED_STATUSES } },
+        select: { id: true, date: true, title: true, clientName: true, clientPhone: true, incomeCents: true, discountCents: true },
+        orderBy: { date: 'asc' },
+      }),
+      prisma.project.findMany({ select: { id: true, title: true, clientName: true, clientPhone: true, stage: true } }),
+    ]);
+    const suggest = suggester(projects);
+    const jobs: UnsortedJobDto[] = rows.map((j) => ({
+      jobId: j.id,
+      date: j.date.toISOString().slice(0, 10),
+      title: j.title,
+      clientName: j.clientName,
+      chargedCents: j.incomeCents - j.discountCents,
+      ...suggest(j),
+    }));
+    return reply.send({ jobs });
   });
 
   // ── All-time totals ────────────────────────────────────────────────────────
@@ -342,39 +475,86 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  app.post('/shareholders', async (req, reply) => {
-    const parsed = CreateShareholderSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  // Every stake at once: the only request that adds a holder, removes one or
+  // changes a stake. Everything is checked before anything is written, in one
+  // serializable transaction, so a refusal changes nothing and two saves that
+  // arrive together cannot both write.
+  app.put('/shareholders/stakes', async (req, reply) => {
+    const parsed = ReplaceStakesSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]!.message });
+    const { expected, holders } = parsed.data;
 
-    if (parsed.data.userId) {
-      const linkErr = await checkLinkableUser(parsed.data.userId);
-      if (linkErr) return reply.code(400).send({ error: linkErr });
+    let refused: StakesRefusal | null;
+    try {
+      refused = await prisma.$transaction(
+        async (tx) => {
+          const active = await tx.shareholder.findMany({
+            where: { removedAt: null },
+            select: { id: true, basisPoints: true },
+          });
+          const problem = stakesRefusal(active, expected, holders);
+          if (problem) return problem;
+
+          // New holders go to the end of the table, removed rows counted.
+          const last = await tx.shareholder.findFirst({ orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } });
+          let nextOrder = (last?.sortOrder ?? -1) + 1;
+          const kept = new Set<string>();
+          for (const holder of holders) {
+            if ('id' in holder) {
+              kept.add(holder.id);
+              await tx.shareholder.update({ where: { id: holder.id }, data: { basisPoints: holder.basisPoints } });
+            } else {
+              await tx.shareholder.create({
+                data: {
+                  name: holder.name,
+                  title: holder.title ?? null,
+                  kind: holder.kind as ShareholderKind,
+                  basisPoints: holder.basisPoints,
+                  sortOrder: nextOrder,
+                },
+              });
+              nextOrder += 1;
+            }
+          }
+
+          // A removed holder keeps their row, so declared payouts keep their
+          // name. Clearing the link ends the access it gave the account.
+          const removedAt = new Date();
+          for (const holder of active) {
+            if (!kept.has(holder.id)) {
+              await tx.shareholder.update({ where: { id: holder.id }, data: { removedAt, userId: null } });
+            }
+          }
+          return null;
+        },
+        { isolationLevel: 'Serializable' },
+      );
+    } catch (err) {
+      // The database stopped this save because another one wrote first.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
+        return reply.code(409).send({ error: STAKES_CHANGED });
+      }
+      throw err;
     }
+    if (refused) return reply.code(refused.status).send({ error: refused.error });
 
-    // Append to the end of the table.
-    const last = await prisma.shareholder.findFirst({ orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } });
-
-    const row = await prisma.shareholder.create({
-      data: {
-        name: parsed.data.name,
-        title: parsed.data.title ?? null,
-        kind: parsed.data.kind as ShareholderKind,
-        basisPoints: parsed.data.basisPoints,
-        notes: parsed.data.notes,
-        userId: parsed.data.userId ?? null,
-        sortOrder: (last?.sortOrder ?? -1) + 1,
-      },
-      include: { user: { select: { fullName: true } } },
-    });
-    return reply.code(201).send({ shareholder: toShareholderDto(row) });
+    const rows = await listShareholders();
+    const result: ReplaceStakesResult = {
+      shareholders: rows,
+      totalBasisPoints: rows.reduce((acc, s) => acc + s.basisPoints, 0),
+    };
+    return reply.send(result);
   });
 
   app.patch<{ Params: { id: string } }>('/shareholders/:id', async (req, reply) => {
+    if (typeof req.body === 'object' && req.body !== null && 'basisPoints' in req.body) {
+      return reply.code(400).send({ error: 'Stakes change only through Edit stakes.' });
+    }
     const parsed = UpdateShareholderSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
     const existing = await prisma.shareholder.findUnique({ where: { id: req.params.id } });
-    if (!existing) return reply.code(404).send({ error: 'shareholder not found' });
+    if (!existing || existing.removedAt) return reply.code(404).send({ error: 'shareholder not found' });
 
     if (parsed.data.userId) {
       const linkErr = await checkLinkableUser(parsed.data.userId, req.params.id);
@@ -387,7 +567,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
         ...(parsed.data.name !== undefined && { name: parsed.data.name }),
         ...(parsed.data.title !== undefined && { title: parsed.data.title }),
         ...(parsed.data.kind !== undefined && { kind: parsed.data.kind as ShareholderKind }),
-        ...(parsed.data.basisPoints !== undefined && { basisPoints: parsed.data.basisPoints }),
         ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
         ...(parsed.data.userId !== undefined && { userId: parsed.data.userId }),
         ...(parsed.data.sortOrder !== undefined && { sortOrder: parsed.data.sortOrder }),
@@ -395,13 +574,6 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       include: { user: { select: { fullName: true } } },
     });
     return reply.send({ shareholder: toShareholderDto(row) });
-  });
-
-  app.delete<{ Params: { id: string } }>('/shareholders/:id', async (req, reply) => {
-    const existing = await prisma.shareholder.findUnique({ where: { id: req.params.id } });
-    if (!existing) return reply.code(404).send({ error: 'shareholder not found' });
-    await prisma.shareholder.delete({ where: { id: req.params.id } });
-    return reply.send({ ok: true });
   });
 
   // ── Equity overview ────────────────────────────────────────────────────────
@@ -412,26 +584,13 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const parsed = DateRangeSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    const { from, to } = dateRange(parsed.data.from, parsed.data.to);
-
-    const [shareholders, periodJobs, periodExpenses, allTime] = await Promise.all([
+    const [shareholders, figures, allTime] = await Promise.all([
       listShareholders(),
-      prisma.job.findMany({
-        where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
-        select: { incomeCents: true, discountCents: true },
-      }),
-      prisma.expense.findMany({
-        where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
-        select: { amountCents: true },
-      }),
+      periodFigures(parsed.data.from, parsed.data.to),
       allTimeTotals(),
     ]);
 
-    const periodIncomeCents = periodJobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
-    const periodExpensesCents = periodExpenses.reduce((acc, e) => acc + e.amountCents, 0);
-    const periodNetCents = periodIncomeCents - periodExpensesCents;
-
-    const period = allocate(periodNetCents, shareholders);
+    const period = allocate(figures.netCents, shareholders);
     const lifetime = allocate(allTime.totalNetCents, shareholders);
 
     const allocations: ShareholderAllocation[] = shareholders.map((s, i) => ({
@@ -445,19 +604,99 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       totalBasisPoints: shareholders.reduce((acc, s) => acc + s.basisPoints, 0),
       unallocatedPeriodCents: period.unallocatedCents,
       unallocatedAllTimeCents: lifetime.unallocatedCents,
-      periodNetCents,
+      periodNetCents: figures.netCents,
+      periodIncomeCents: figures.incomeCents,
+      periodExpensesCents: figures.expensesCents,
+      ...(figures.machineCents > 0 && { periodMachineCents: figures.machineCents }),
+      periodProjects: figures.jobCount,
       fromDate: parsed.data.from,
       toDate: parsed.data.to,
       allTime,
     };
     return reply.send({ overview });
   });
+
+  // ── Equity history ─────────────────────────────────────────────────────────
+  // Each of the last months' net profit split across the current holders at
+  // today's stakes: past stake changes are not stored. A month's figures are
+  // the equity overview's for that month, so its last entry matches the
+  // overview's "this month" to the cent.
+
+  app.get('/equity/history', async (req, reply) => {
+    const MonthsSchema = z.object({ months: z.coerce.number().int().min(1).max(24).default(12) });
+    const parsed = MonthsSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const [year, month] = nairobiToday().split('-').map(Number) as [number, number];
+    const slots = monthsEndingAt(year, month, parsed.data.months);
+
+    const [shareholders, figures] = await Promise.all([
+      listShareholders(),
+      Promise.all(
+        slots.map((slot) => {
+          const { from, to } = monthDays(slot.year, slot.month);
+          return periodFigures(from, to);
+        }),
+      ),
+    ]);
+
+    const months: EquityHistoryMonth[] = slots.map((slot, i) => {
+      const { netCents } = figures[i]!;
+      const split = allocate(netCents, shareholders);
+      return {
+        ...slot,
+        netCents,
+        shares: shareholders.map((s, k) => ({
+          shareholderId: s.id,
+          shareholderName: s.name,
+          basisPoints: s.basisPoints,
+          shareCents: split.shares[k]!,
+        })),
+        unallocatedCents: split.unallocatedCents,
+        // The current month is still running.
+        partial: i === slots.length - 1,
+      };
+    });
+
+    const history: EquityHistory = { months };
+    return reply.send({ history });
+  });
 };
 
 // ── Ownership helpers ──────────────────────────────────────────────────────
 
+/**
+ * What a period's net profit is made of: counted jobs dated `fromDate` to
+ * `toDate` (YYYY-MM-DD, both inclusive), their income less discounts, the
+ * costs dated in the period on counted jobs, and the machine days on the
+ * period's jobs. The equity overview and the equity history both split this
+ * net figure. `expensesCents` holds the machine days; `machineCents` is that
+ * part alone.
+ */
+async function periodFigures(fromDate: string, toDate: string) {
+  const { from, to } = dateRange(fromDate, toDate);
+
+  const [jobs, expenses, machineCents] = await Promise.all([
+    prisma.job.findMany({
+      where: { date: { gte: from, lte: to }, status: { in: COUNTED_STATUSES } },
+      select: { incomeCents: true, discountCents: true },
+    }),
+    prisma.expense.findMany({
+      where: { date: { gte: from, lte: to }, job: { status: { in: COUNTED_STATUSES } } },
+      select: { amountCents: true },
+    }),
+    machineAmountCents(from, to),
+  ]);
+
+  const incomeCents = jobs.reduce((acc, j) => acc + j.incomeCents - j.discountCents, 0);
+  const expensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
+  return { incomeCents, expensesCents, machineCents, netCents: incomeCents - expensesCents, jobCount: jobs.length };
+}
+
+/** The current holders, in table order. Removed holders are left out. */
 async function listShareholders(): Promise<ShareholderDto[]> {
   const rows = await prisma.shareholder.findMany({
+    where: { removedAt: null },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     include: { user: { select: { fullName: true } } },
   });
@@ -488,14 +727,56 @@ function toShareholderDto(row: {
   };
 }
 
-// A shareholder may be linked to at most one staff account, and vice versa.
-async function checkLinkableUser(userId: string, selfId?: string): Promise<string | null> {
+// A current shareholder may be linked to at most one staff account, and vice versa.
+async function checkLinkableUser(userId: string, selfId: string): Promise<string | null> {
   const user = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
-    select: { id: true, shareholder: { select: { id: true } } },
+    select: { id: true, shareholder: { select: { id: true, removedAt: true } } },
   });
   if (!user) return 'user not found';
-  if (user.shareholder && user.shareholder.id !== selfId) return 'that user is already on the cap table';
+  const holder = user.shareholder;
+  if (holder && !holder.removedAt && holder.id !== selfId) return 'that user is already on the cap table';
+  return null;
+}
+
+type StakesRefusal = { status: 400 | 409; error: string };
+
+// Judges a whole set of stakes against the current holders, before anything
+// is written. Null when the set may be saved.
+function stakesRefusal(
+  active: { id: string; basisPoints: number }[],
+  expected: ReplaceStakesInput['expected'],
+  holders: ReplaceStakesInput['holders'],
+): StakesRefusal | null {
+  // The form must have opened with exactly the current holders at their stored stakes.
+  const opened = new Map(expected.map((e) => [e.id, e.basisPoints]));
+  const upToDate =
+    expected.length === active.length &&
+    opened.size === active.length &&
+    active.every((a) => opened.get(a.id) === a.basisPoints);
+  if (!upToDate) return { status: 409, error: STAKES_CHANGED };
+
+  const refuse = (error: string): StakesRefusal => ({ status: 400, error });
+
+  if (holders.length === 0) return refuse('At least one shareholder must remain.');
+  if (holders.some((h) => !Number.isInteger(h.basisPoints) || h.basisPoints < 1 || h.basisPoints > BASIS_POINTS_TOTAL)) {
+    return refuse('Each stake must be between 0.01% and 100%, with at most two decimal places.');
+  }
+  if (holders.some((h) => !('id' in h) && h.name === '')) return refuse('Every new shareholder needs a name.');
+
+  // A holder listed twice would count twice in the total and be written once.
+  const keptIds = holders.flatMap((h) => ('id' in h ? [h.id] : []));
+  if (new Set(keptIds).size !== keptIds.length) {
+    return refuse('A shareholder appears twice in this form. Reload and try again.');
+  }
+  if (keptIds.some((id) => !opened.has(id))) {
+    return refuse('This form names a shareholder who is not on the cap table. Reload and try again.');
+  }
+
+  const total = holders.reduce((acc, h) => acc + h.basisPoints, 0);
+  if (total !== BASIS_POINTS_TOTAL) {
+    return refuse(`Stakes must add up to exactly 100%. These add up to ${(total / 100).toFixed(2)}%.`);
+  }
   return null;
 }
 
@@ -531,32 +812,14 @@ function allocate(
   return { shares, unallocatedCents: netCents - distributableCents };
 }
 
+// Adds up in the project-money module, so the contracts table's totals line
+// and these figures cannot drift apart.
 async function allTimeTotals(): Promise<AllTimeTotals> {
-  const [jobs, expenses] = await Promise.all([
-    prisma.job.aggregate({
-      where: { status: { in: COUNTED_STATUSES } },
-      _sum: { incomeCents: true, discountCents: true },
-      _min: { date: true },
-      _max: { date: true },
-      _count: { _all: true },
-    }),
-    prisma.expense.aggregate({
-      where: { job: { status: { in: COUNTED_STATUSES } } },
-      _sum: { amountCents: true },
-    }),
-  ]);
-
-  const totalIncomeCents = (jobs._sum.incomeCents ?? 0) - (jobs._sum.discountCents ?? 0);
-  const totalExpensesCents = expenses._sum.amountCents ?? 0;
-
-  return {
-    totalProjects: jobs._count._all,
-    totalIncomeCents,
-    totalExpensesCents,
-    totalNetCents: totalIncomeCents - totalExpensesCents,
-    firstJobDate: jobs._min.date ? jobs._min.date.toISOString().slice(0, 10) : null,
-    lastJobDate: jobs._max.date ? jobs._max.date.toISOString().slice(0, 10) : null,
-  };
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: COUNTED_STATUSES } },
+    select: moneyJobSelect,
+  });
+  return allTimeTotalsOf(jobs);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -565,6 +828,19 @@ async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<v
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
   if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+}
+
+function refusal(error: z.ZodError) {
+  const onlyThePlace = error.issues.every((issue) => issue.path[0] === 'place');
+  return { error: onlyThePlace ? CHOOSE_PLACE : error.flatten() };
+}
+
+async function resolvePlace(
+  place: JobPlaceInput,
+): Promise<{ placement: 'PROJECT'; projectId: string } | { placement: 'STANDALONE'; projectId: null } | null> {
+  if (place.placement === 'STANDALONE') return { placement: 'STANDALONE', projectId: null };
+  const project = await prisma.project.findUnique({ where: { id: place.projectId }, select: { id: true } });
+  return project ? { placement: 'PROJECT', projectId: project.id } : null;
 }
 
 function dateRange(from: string, to: string) {
@@ -588,9 +864,23 @@ type JobRow = {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  placement: JobPlacement;
+  projectId: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
+  /** Required, so a query that returns a job without loading them fails typecheck. */
+  machineLines: MachineLineRow[];
   reportedBy: { fullName: string } | null;
+  project: { title: string } | null;
+};
+
+type MachineLineRow = {
+  id: string;
+  halfDays: number;
+  rateCents: number;
+  amountCents: number;
+  isHire: boolean;
+  asset: { name: string };
 };
 
 type ExpenseRow = {
@@ -606,7 +896,10 @@ type ExpenseRow = {
 
 function toJobDto(row: JobRow): JobDto {
   const expenses = row.expenses.map(toExpenseDto);
-  const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+  const machineCents = row.machineLines.reduce((acc, l) => acc + l.amountCents, 0);
+  // The machine days are inside the total: the admin works out a job's profit
+  // as income less this total after a cost is added or removed.
+  const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
   const actualIncomeCents = row.incomeCents - row.discountCents;
   return {
     id: row.id,
@@ -624,10 +917,27 @@ function toJobDto(row: JobRow): JobDto {
     serviceLineCode: row.serviceLineCode,
     region: row.region,
     clientSegment: row.clientSegment,
+    placement: row.placement,
+    projectId: row.projectId,
+    projectTitle: row.project?.title ?? null,
     expenses,
     totalExpensesCents,
     netCents: actualIncomeCents - totalExpensesCents,
     createdAt: row.createdAt.toISOString(),
+    // Both are left out of a job with no machine days.
+    ...(machineCents > 0 && { machineCents }),
+    ...(row.machineLines.length > 0 && { machineLines: row.machineLines.map(toMachineLineDto) }),
+  };
+}
+
+function toMachineLineDto(row: MachineLineRow): JobMachineLineDto {
+  return {
+    id: row.id,
+    machineName: row.asset.name,
+    halfDays: row.halfDays,
+    rateCents: row.rateCents,
+    amountCents: row.amountCents,
+    isHire: row.isHire,
   };
 }
 

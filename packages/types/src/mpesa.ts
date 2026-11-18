@@ -22,6 +22,23 @@ export interface MpesaStkResponse {
   CustomerMessage: string;
 }
 
+export interface MpesaStkQueryRequest {
+  BusinessShortCode: string;
+  Password: string; // as for MpesaStkRequest
+  Timestamp: string;
+  CheckoutRequestID: string;
+}
+
+/** STK push query answer once Safaricom has a final result for the request. */
+export interface MpesaStkQueryResponse {
+  ResponseCode: string;
+  ResponseDescription: string;
+  MerchantRequestID: string;
+  CheckoutRequestID: string;
+  ResultCode: string; // "0" = paid
+  ResultDesc: string;
+}
+
 export interface MpesaStkCallbackItem {
   Name: string;
   Value?: string | number;

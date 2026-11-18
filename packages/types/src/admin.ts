@@ -1,6 +1,7 @@
 /** Admin/back-office DTOs (apps/admin). */
 import type { BookingDto } from './booking.js';
 import type { QuoteRequestDto, QuoteStatus } from './quote.js';
+import type { ClientPriceBasis, QuoteCostingDto, QuoteEstimateDto, QuoteSurveyDto } from './quoteBuilder.js';
 import type { UserRole } from './auth.js';
 
 export interface CrewMemberSummary {
@@ -31,10 +32,35 @@ export interface CrewUserDto {
 export interface AdminQuoteRequestDto extends QuoteRequestDto {
   customerName: string;
   customerPhone: string;
+  /** Site survey captured by staff; null until one is saved. */
+  survey: QuoteSurveyDto | null;
+  /**
+   * Costs and the client's price, and the internal estimate. Only serialised
+   * for roles allowed to see costs and margins (owner, admin, financial
+   * manager, COO) — null for everyone else.
+   */
+  costing: QuoteCostingDto | null;
+  estimate: QuoteEstimateDto | null;
+  /** Client-facing price once an estimate is approved. Safe for every staff role. */
+  approvedPricePerVisitCents: number | null;
+  /** MONTH when the client agreed a monthly price, which is then approvedMonthlyValueCents exactly. */
+  approvedPriceBasis: ClientPriceBasis | null;
+  approvedMonthlyValueCents: number | null;
+  /** Approval trail. */
+  submittedForApprovalAt: string | null;
+  submittedForApprovalByName: string | null;
+  approvedAt: string | null;
+  approvedByName: string | null;
+  /** Approval or rejection note; null for roles without estimate access. */
+  approvalNote: string | null;
 }
 
 export interface RespondQuoteInput {
   status: QuoteStatus;
+  /**
+   * Ignored for QUOTED — the price comes from the approved estimate. Kept for
+   * older clients and for WON/LOST where no amount is needed.
+   */
   quotedAmountCents?: number;
 }
 
@@ -53,7 +79,8 @@ export type StaffRole =
   | 'FINANCIAL_MANAGER'
   | 'MARKETING'
   | 'CLEANING_SUPERVISOR'
-  | 'SHAREHOLDER';
+  | 'SHAREHOLDER'
+  | 'COO';
 
 export interface AdminStaffDto {
   id: string;
@@ -89,7 +116,21 @@ export interface AdminQuotesResult {
 
 export type ExpenseCategory = 'MATERIALS' | 'TRANSPORT' | 'EMPLOYEE_PAY' | 'LUNCH' | 'MISCELLANEOUS';
 
+/**
+ * Costs added up by group: the five expense categories, and the machines' days
+ * as a group of their own. `MACHINES` is sent only when its amount is above
+ * zero, and a server older than it never sends it, so the admin reads it as
+ * optional. A cost typed into a form is always one of the five.
+ */
+export type CostsByGroup = Record<ExpenseCategory, number> & { MACHINES?: number };
+
 export type JobStatus = 'OWNER_ENTRY' | 'PENDING' | 'APPROVED';
+
+/** Where a job sits for project money. STANDALONE is what the back-office calls a one-off job. */
+export type JobPlacement = 'UNSORTED' | 'PROJECT' | 'STANDALONE';
+
+/** The place the owner chooses for a job: under one project, or one-off. "Not yet sorted" cannot be chosen. */
+export type JobPlaceInput = { placement: 'PROJECT'; projectId: string } | { placement: 'STANDALONE' };
 
 export interface ExpenseDto {
   id: string;
@@ -109,6 +150,20 @@ export interface CreateExpenseInput {
   date: string; // YYYY-MM-DD
 }
 
+/** One machine's days on a job, as the owner's job list shows them. They are logged on the Machines page. */
+export interface JobMachineLineDto {
+  id: string;
+  machineName: string;
+  /** Days are counted in halves: 5 is two and a half days. */
+  halfDays: number;
+  /** The machine's daily rate when the days were logged. */
+  rateCents: number;
+  /** Days x rate: a cost of the job. */
+  amountCents: number;
+  /** True when the job is the machine's hire to an outside customer. */
+  isHire: boolean;
+}
+
 // A Job represents one cleaning engagement with its own income + expenses.
 export interface JobDto {
   id: string;
@@ -126,10 +181,18 @@ export interface JobDto {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  placement: JobPlacement;
+  projectId: string | null; // set only when placement is PROJECT
+  projectTitle: string | null;
   expenses: ExpenseDto[];
+  /** Every cost in `expenses` and the job's machine days, so income less this is the job's profit. */
   totalExpensesCents: number;
   netCents: number; // actualIncomeCents - totalExpensesCents
   createdAt: string;
+  /** The machine days inside `totalExpensesCents`. Sent only when above zero. */
+  machineCents?: number;
+  /** The job's machine days. Sent only to the owner, and only when the job has some: a job report carries the amount alone. */
+  machineLines?: JobMachineLineDto[];
 }
 
 export interface CreateJobInput {
@@ -145,6 +208,8 @@ export interface CreateJobInput {
   serviceLineCode?: string;
   region?: string;
   clientSegment?: ClientSegment;
+  /** A new job cannot be saved without its place. */
+  place: JobPlaceInput;
 }
 
 export interface UpdateJobInput {
@@ -158,11 +223,26 @@ export interface UpdateJobInput {
   clientPhone?: string;
   clientLocation?: string;
   notes?: string;
+  /** Moves the job to another project, or between a project and one-off. */
+  place?: JobPlaceInput;
+}
+
+/** Approving a crew job report: the owner chooses its place in the same step. */
+export interface ApproveReportInput {
+  place: JobPlaceInput;
+}
+
+/** Sorting several jobs into one place at once. All are placed, or none. */
+export interface PlaceJobsInput {
+  jobIds: string[];
+  place: JobPlaceInput;
 }
 
 export interface FinancialSummary {
   incomeCents: number;
-  expensesByCategoryCents: Record<ExpenseCategory, number>;
+  /** Costs by their own date. Machine days, under `MACHINES`, by the date of their job. */
+  expensesByCategoryCents: CostsByGroup;
+  /** Every group above added up, machine days included. */
   totalExpensesCents: number;
   netCents: number;
   fromDate: string;
@@ -186,6 +266,8 @@ export interface MonthlyTrendItem {
   label: string; // e.g. "Jun 2026"
   incomeCents: number;
   totalExpensesCents: number;
+  /** The machine days inside `totalExpensesCents`, counted in the month of their job. Sent only when above zero. */
+  machineCents?: number;
   netCents: number;
   jobCount: number;
 }
@@ -416,17 +498,60 @@ export interface TargetProgress {
   percent: number;
 }
 
+/**
+ * Which ranges an overview's change figures compare. `same-period`: the month
+ * is the current one in Nairobi, so days 1 to today are set against the same
+ * days of the month before. `full-month`: whole month against whole month.
+ */
+export type ComparisonMode = 'same-period' | 'full-month';
+
+/** Revenue, net profit and job count over one side of a comparison. */
+export interface ComparisonFigures {
+  revenueCents: number;
+  netCents: number;
+  jobCount: number;
+}
+
+export interface OverviewComparison {
+  mode: ComparisonMode;
+  /** Today's day of the month in Nairobi for `same-period`; null for `full-month`. */
+  cutoffDay: number | null;
+  /** The requested month's side: days 1 to `cutoffDay`, or the whole month. */
+  current: ComparisonFigures;
+  /** The month before: the same days (stopping at its last day), or the whole month. */
+  previous: ComparisonFigures;
+}
+
+/** One whole calendar month of an overview's `series`. */
+export interface OverviewSeriesMonth {
+  year: number;
+  month: number; // 1 to 12
+  label: string; // e.g. "Jun"
+  revenueCents: number;
+  netCents: number;
+  jobCount: number;
+}
+
 export interface DashboardOverview {
   year: number;
   month: number;
   monthLabel: string;
+  /** Whole-month figures, whatever the comparison below covers. */
   revenue: TargetProgress;
   netProfit: TargetProgress;
   jobs: TargetProgress;
-  /** Same month last period, for the "vs last month" line. */
+  /** The previous side of `comparison`, kept under their earlier names. */
   previousRevenueCents: number;
   previousNetCents: number;
   previousJobCount: number;
+  /** A server older than this field does not send it, so the admin reads it as optional. */
+  comparison: OverviewComparison;
+  /**
+   * The six months ending at the requested one, oldest first, each a whole
+   * month: the last entry equals the headline figures above. A server older
+   * than this field does not send it, so the admin reads it as optional.
+   */
+  series: OverviewSeriesMonth[];
   hasTargets: boolean;
 }
 
@@ -635,23 +760,46 @@ export interface ShareholderDto {
   sortOrder: number;
 }
 
-export interface CreateShareholderInput {
-  name: string;
-  title?: string | null;
-  kind: ShareholderKind;
-  basisPoints: number;
-  notes?: string;
-  userId?: string | null;
-}
-
+/** A holder's details. A stake is not among them: stakes change only through `ReplaceStakesInput`. */
 export interface UpdateShareholderInput {
   name?: string;
   title?: string | null;
   kind?: ShareholderKind;
-  basisPoints?: number;
   notes?: string | null;
   userId?: string | null;
   sortOrder?: number;
+}
+
+/** One current holder's stake, by id. */
+export interface HolderStake {
+  id: string;
+  basisPoints: number;
+}
+
+/** A holder the Edit stakes form adds. They start with no notes and no linked account. */
+export interface NewHolderStake {
+  name: string;
+  title?: string | null;
+  kind: ShareholderKind;
+  basisPoints: number;
+}
+
+/**
+ * Every stake at once: the only request that adds a holder, removes one or
+ * changes a stake. `expected` is every current holder's stake as the form
+ * opened with it; the save is refused if the stored stakes differ. `holders`
+ * is the full new set and must total 10000. A current holder left out of
+ * `holders` is removed.
+ */
+export interface ReplaceStakesInput {
+  expected: HolderStake[];
+  holders: Array<HolderStake | NewHolderStake>;
+}
+
+/** The current holders after the save, in table order. */
+export interface ReplaceStakesResult {
+  shareholders: ShareholderDto[];
+  totalBasisPoints: number;
 }
 
 // One shareholder's cut of the profit, for a period and for all time.
@@ -668,6 +816,8 @@ export interface AllTimeTotals {
   totalProjects: number; // count of counted jobs, ever
   totalIncomeCents: number;
   totalExpensesCents: number;
+  /** The machine days inside `totalExpensesCents`. Sent only when above zero. */
+  totalMachineCents?: number;
   totalNetCents: number;
   firstJobDate: string | null; // YYYY-MM-DD; null when there are no jobs yet
   lastJobDate: string | null; // YYYY-MM-DD
@@ -683,7 +833,44 @@ export interface EquityOverview {
   unallocatedAllTimeCents: number;
   // Net profit being split, for the requested period.
   periodNetCents: number;
+  // What periodNetCents is made of: income less expenses, and the number of
+  // counted jobs dated in the period (the period's "Total projects"). A server
+  // older than these fields leaves them out, so the admin reads them as optional.
+  periodIncomeCents: number;
+  periodExpensesCents: number;
+  // What was set aside for machines in the period: the machine days inside
+  // periodExpensesCents, counted by the date of their job. Sent only when above zero.
+  periodMachineCents?: number;
+  periodProjects: number;
   fromDate: string;
   toDate: string;
   allTime: AllTimeTotals;
+}
+
+/** One current holder's cut of one month's net profit, at today's stake. */
+export interface EquityHistoryShare {
+  shareholderId: string;
+  shareholderName: string;
+  basisPoints: number;
+  shareCents: number; // negative in a loss month
+}
+
+/** One calendar month of the ownership history. */
+export interface EquityHistoryMonth {
+  year: number;
+  month: number; // 1 to 12
+  label: string; // e.g. "Jun"
+  // Net profit of the whole calendar month, as the equity overview gives it for that month.
+  netCents: number;
+  // Every current holder, in table order, the same holders in every month. A removed holder is in none.
+  shares: EquityHistoryShare[];
+  // Net profit the stakes do not cover; the shares and this add up to netCents.
+  unallocatedCents: number;
+  // True for the last month only: it is the current month in Nairobi and still running.
+  partial: boolean;
+}
+
+/** Each month's net profit split at today's stakes, oldest first, ending at the current month. */
+export interface EquityHistory {
+  months: EquityHistoryMonth[];
 }

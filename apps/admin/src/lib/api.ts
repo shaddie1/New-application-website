@@ -16,12 +16,16 @@ import type {
   JobDto,
   CreateJobInput,
   UpdateJobInput,
+  ApproveReportInput,
+  PlaceJobsInput,
   CreateJobReportInput,
   MonthlyTrendItem,
   ShareholderDto,
-  CreateShareholderInput,
   UpdateShareholderInput,
+  ReplaceStakesInput,
+  ReplaceStakesResult,
   EquityOverview,
+  EquityHistory,
   AllTimeTotals,
   MarketingSpendDto,
   CreateMarketingSpendInput,
@@ -48,13 +52,40 @@ import type {
   CreateCompanyDocumentInput,
   DocumentsResult,
   DocumentUploadUrlResult,
+  QuoteRates,
+  QuoteRatesDto,
+  QuoteSurveyInput,
+  ClientQuotationDto,
+  QuoteBuilderOptions,
+  QuoteCostingInput,
+  QuoteBuilderAssetDto,
+  CreateBuilderQuoteInput,
   WebsiteJobsResult,
   WebsiteJobPhotoUploadUrlResult,
   SaveWebsiteJobInput,
   WebsiteJobMutationResult,
+  ProjectMoneyTable,
+  ProjectMoneyDetail,
+  UnsortedJobDto,
+  MachinesAccessDto,
+  MachineRegisterDto,
+  MachineDetailDto,
+  MachineJobPickerDto,
+  AddMachineInput,
+  GiveMachineRateInput,
+  EditMachineInput,
+  ReplaceMachineInvestorsInput,
+  AddMachineRepairInput,
+  LogMachineDaysInput,
+  EditMachineDaysInput,
+  LogMachineHireInput,
+  EditMachineHireInput,
+  PayMachineInvestorInput,
+  AssetCategory,
 } from '@onyxhawk/types';
 
 import { loadSession, saveSession, clearSession } from './session';
+import { createSessionRenewal } from './session-refresh';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -80,10 +111,10 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
 
   let res = await fetch(`${API_URL}${path}`, { ...rest, headers: finalHeaders });
 
-  if (res.status === 401 && auth && session?.refreshToken) {
-    const refreshed = await tryRefresh(session.refreshToken);
-    if (refreshed) {
-      finalHeaders.Authorization = `Bearer ${refreshed.accessToken}`;
+  if (res.status === 401 && auth) {
+    const renewed = await sessionRenewal.renew(session?.accessToken ?? null);
+    if (renewed) {
+      finalHeaders.Authorization = `Bearer ${renewed.accessToken}`;
       res = await fetch(`${API_URL}${path}`, { ...rest, headers: finalHeaders });
     }
   }
@@ -101,24 +132,28 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
   return (await res.json()) as T;
 }
 
-async function tryRefresh(refreshToken: string): Promise<Session | null> {
-  try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!res.ok) {
-      clearSession();
-      return null;
-    }
-    const next = (await res.json()) as Session;
-    saveSession(next);
-    return next;
-  } catch {
-    return null;
-  }
-}
+// One renewal per expiry, shared by every request waiting on it.
+const sessionRenewal = createSessionRenewal({
+  refreshUrl: `${API_URL}/auth/refresh`,
+  // Called through an arrow: the browser's fetch refuses to run detached from window.
+  fetch: (url, init) => fetch(url, init),
+  load: loadSession,
+  save: saveSession,
+  clear: clearSession,
+});
+
+/** Tells `listener` when a renewal was refused and the stored session cleared. */
+export const onSessionRenewalFailed = sessionRenewal.onFailed;
+
+/** An asset that is not on the machine register yet, as `GET /admin/machines/assets` lists it. */
+export type MachineAssetOption = {
+  id: string;
+  name: string;
+  category: AssetCategory;
+  /** 0 when the asset has no cost on record. */
+  costCents: number;
+  purchaseDate: string; // YYYY-MM-DD
+};
 
 export const api = {
   /** Staff sign-in: staff enter their email and the code is sent there. */
@@ -177,6 +212,83 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  // ── Quote builder ────────────────────────────────────────────────────────
+  quoteBuilderOptions: () =>
+    request<{ options: QuoteBuilderOptions }>('/admin/quote-builder/options', { method: 'GET', auth: true }),
+
+  quoteRates: () => request<QuoteRatesDto>('/admin/quote-builder/rates', { method: 'GET', auth: true }),
+
+  saveQuoteRates: (rates: QuoteRates) =>
+    request<QuoteRatesDto>('/admin/quote-builder/rates', { method: 'PUT', auth: true, body: JSON.stringify(rates) }),
+
+  saveQuoteSurvey: (quoteId: string, input: QuoteSurveyInput) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/survey`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  /** Saves the cost questionnaire and the client's price, then re-runs the estimate. */
+  saveQuoteCosting: (quoteId: string, input: QuoteCostingInput) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/costing`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  /** Machines in the asset register that are not retired, for the owned-machine picker. */
+  quoteBuilderAssets: () =>
+    request<{ assets: QuoteBuilderAssetDto[] }>('/admin/quote-builder/assets', { method: 'GET', auth: true }),
+
+  /** Starts a quote for a client who came by phone, referral or tender. */
+  createBuilderQuote: (input: CreateBuilderQuoteInput) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>('/admin/quote-builder/quotes', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  recomputeEstimate: (quoteId: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/estimate`, {
+      method: 'POST',
+      auth: true,
+      body: '{}', // Fastify refuses an empty body once Content-Type is JSON
+    }),
+
+  submitEstimate: (quoteId: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/submit`, {
+      method: 'POST',
+      auth: true,
+      body: '{}', // Fastify refuses an empty body once Content-Type is JSON
+    }),
+
+  withdrawEstimate: (quoteId: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/withdraw`, {
+      method: 'POST',
+      auth: true,
+      body: '{}', // Fastify refuses an empty body once Content-Type is JSON
+    }),
+
+  approveEstimate: (quoteId: string, note?: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/approve`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ note }),
+    }),
+
+  rejectEstimate: (quoteId: string, note: string) =>
+    request<{ quoteRequest: AdminQuoteRequestDto }>(`/admin/quote-builder/${encodeURIComponent(quoteId)}/reject`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ note }),
+    }),
+
+  clientQuotation: (quoteId: string) =>
+    request<{ quotation: ClientQuotationDto }>(
+      `/admin/quote-builder/${encodeURIComponent(quoteId)}/client-quotation`,
+      { method: 'GET', auth: true },
+    ),
+
   // ── Team / staff (owner only) ────────────────────────────────────────────
   staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),
 
@@ -222,6 +334,17 @@ export const api = {
       auth: true,
     }),
 
+  /** Puts several jobs in one place at once. All are placed, or none. */
+  placeJobs: (input: PlaceJobsInput) =>
+    request<{ placed: number }>('/admin/financials/jobs/place', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  unsortedJobs: () =>
+    request<{ jobs: UnsortedJobDto[] }>('/admin/financials/unsorted', { method: 'GET', auth: true }),
+
   addJobExpense: (jobId: string, input: CreateExpenseInput) =>
     request<{ expense: ExpenseDto }>(
       `/admin/financials/jobs/${encodeURIComponent(jobId)}/expenses`,
@@ -252,30 +375,33 @@ export const api = {
       { method: 'GET', auth: true },
     ),
 
+  /** Each month's net profit split at today's stakes, oldest first, ending at the current month. */
+  equityHistory: (months = 12) =>
+    request<{ history: EquityHistory }>(
+      `/admin/financials/equity/history?months=${months}`,
+      { method: 'GET', auth: true },
+    ),
+
   shareholders: () =>
     request<{ shareholders: ShareholderDto[]; totalBasisPoints: number }>(
       '/admin/financials/shareholders',
       { method: 'GET', auth: true },
     ),
 
-  addShareholder: (input: CreateShareholderInput) =>
-    request<{ shareholder: ShareholderDto }>('/admin/financials/shareholders', {
-      method: 'POST',
+  /** Every stake at once: the only request that adds a holder, removes one or changes a stake. */
+  replaceStakes: (input: ReplaceStakesInput) =>
+    request<ReplaceStakesResult>('/admin/financials/shareholders/stakes', {
+      method: 'PUT',
       auth: true,
       body: JSON.stringify(input),
     }),
 
+  /** A holder's details. The server refuses a stake sent here. */
   updateShareholder: (id: string, input: UpdateShareholderInput) =>
     request<{ shareholder: ShareholderDto }>(`/admin/financials/shareholders/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       auth: true,
       body: JSON.stringify(input),
-    }),
-
-  removeShareholder: (id: string) =>
-    request<{ ok: true }>(`/admin/financials/shareholders/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      auth: true,
     }),
 
   // ── Finance: marketing, assets, investments, distributions ───────────────
@@ -443,6 +569,123 @@ export const api = {
       auth: true,
     }),
 
+  // ── Project money (owner, admin, financial manager, COO) ─────────────────
+  projectMoneyTable: () =>
+    request<{ table: ProjectMoneyTable }>('/admin/project-money', { method: 'GET', auth: true }),
+
+  projectMoneyDetail: (projectId: string) =>
+    request<{ detail: ProjectMoneyDetail }>(
+      `/admin/project-money/projects/${encodeURIComponent(projectId)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  // ── Machines (owner, admin, financial manager, COO, current shareholders) ─
+  /** What this account may do on the Machines page. Answered for any back-office account, never refused. */
+  machinesAccess: () =>
+    request<{ access: MachinesAccessDto }>('/admin/machines/access', { method: 'GET', auth: true }),
+
+  machineRegister: () =>
+    request<{ register: MachineRegisterDto }>('/admin/machines', { method: 'GET', auth: true }),
+
+  machine: (machineId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}`, {
+      method: 'GET', auth: true,
+    }),
+
+  // The rest of this block is the owner's alone. Every change to a machine
+  // answers with that machine's fresh detail.
+
+  /** Assets not on the register yet: the ones that can be given a daily rate. */
+  machineAssets: () =>
+    request<{ assets: MachineAssetOption[] }>('/admin/machines/assets', { method: 'GET', auth: true }),
+
+  addMachine: (input: AddMachineInput) =>
+    request<{ machine: MachineDetailDto }>('/admin/machines', {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Puts an asset already in the asset list on the register. */
+  giveMachineRate: (assetId: string, input: GiveMachineRateInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/from-asset/${encodeURIComponent(assetId)}`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Name, price, rate and start day; a `condition` of RETIRED retires the machine and any other brings it back. */
+  editMachine: (machineId: string, input: EditMachineInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}`, {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Refused when the machine has days, a hire or a payment: it is retired instead. */
+  deleteMachine: (machineId: string) =>
+    request<{ ok: true }>(`/admin/machines/${encodeURIComponent(machineId)}`, { method: 'DELETE', auth: true }),
+
+  /** The whole list at once: it replaces the investors stored. */
+  replaceMachineInvestors: (machineId: string, input: ReplaceMachineInvestorsInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/investors`, {
+      method: 'PUT', auth: true, body: JSON.stringify(input),
+    }),
+
+  addMachineRepair: (machineId: string, input: AddMachineRepairInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/repairs`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  deleteMachineRepair: (machineId: string, repairId: string) =>
+    request<{ machine: MachineDetailDto }>(
+      `/admin/machines/${encodeURIComponent(machineId)}/repairs/${encodeURIComponent(repairId)}`,
+      { method: 'DELETE', auth: true },
+    ),
+
+  /** The jobs that can take this machine's days, newest first, and the periods whose payout is declared. */
+  machineJobs: (machineId: string, search: string) =>
+    request<{ picker: MachineJobPickerDto }>(
+      `/admin/machines/${encodeURIComponent(machineId)}/jobs?search=${encodeURIComponent(search)}`,
+      { method: 'GET', auth: true },
+    ),
+
+  logMachineDays: (machineId: string, input: LogMachineDaysInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/lines`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  editMachineDays: (lineId: string, input: EditMachineDaysInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/lines/${encodeURIComponent(lineId)}`, {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Days on a job only. A hire's line goes with its hire, through `deleteMachineHire`. */
+  deleteMachineDays: (lineId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/lines/${encodeURIComponent(lineId)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
+  logMachineHire: (machineId: string, input: LogMachineHireInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/hires`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  editMachineHire: (lineId: string, input: EditMachineHireInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/hires/${encodeURIComponent(lineId)}`, {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** Removes the hire's one-off job with it, and any costs logged on that job. */
+  deleteMachineHire: (lineId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/hires/${encodeURIComponent(lineId)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
+  payMachineInvestor: (machineId: string, input: PayMachineInvestorInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/${encodeURIComponent(machineId)}/payouts`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  deleteMachinePayout: (payoutId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/payouts/${encodeURIComponent(payoutId)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
   // ── Company documents (shareholders only) ────────────────────────────────
   documents: () => request<DocumentsResult>('/admin/documents', { method: 'GET', auth: true }),
 
@@ -504,9 +747,9 @@ export const api = {
   pendingReports: () =>
     request<{ reports: JobDto[] }>('/admin/financials/reports', { method: 'GET', auth: true }),
 
-  approveReport: (id: string) =>
+  approveReport: (id: string, input: ApproveReportInput) =>
     request<{ job: JobDto }>(`/admin/financials/reports/${encodeURIComponent(id)}/approve`, {
-      method: 'PATCH', auth: true,
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
     }),
 
   deleteReport: (id: string) =>
@@ -540,7 +783,7 @@ export const api = {
       { method: 'DELETE', auth: true },
     ),
 
-  // ── Dev OTP viewer (owner only, returns [] in production) ────────────────
+  // ── Dev sign-in-code viewer (owner only; the server answers 404 outside development) ─────────────────
   recentOtps: () =>
     request<{ codes: { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
       '/admin/otps/recent',

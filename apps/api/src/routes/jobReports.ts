@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { ExpenseCategory, ClientSegment } from '@prisma/client';
+import { ExpenseCategory, ClientSegment, JobPlacement } from '@prisma/client';
 import type {
   ExpenseDto,
   JobDto,
@@ -10,6 +10,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { requireStaff } from '../auth/roles.js';
 
 const CreateReportSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -29,8 +30,14 @@ const CreateExpenseSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
 }) satisfies z.ZodType<CreateExpenseInput>;
 
+// A job's machine days, by their amounts only. The person who reported a job
+// sees one Machines amount for it: no machine name, days or rate is loaded.
+const machineAmounts = { select: { amountCents: true } } as const;
+
 export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
+  // Staff report the jobs they did; reports feed the owner's financials.
   app.addHook('preHandler', requireAuth);
+  app.addHook('preHandler', requireStaff);
 
   // List own submitted reports.
   app.get('/', async (req, reply) => {
@@ -38,7 +45,9 @@ export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
       where: { createdById: req.auth!.sub, status: { in: ['PENDING', 'APPROVED'] } },
       include: {
         expenses: { orderBy: { date: 'desc' } },
+        machineLines: machineAmounts,
         reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -64,7 +73,12 @@ export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
         createdById: req.auth!.sub,
         reportedById: req.auth!.sub,
       },
-      include: { expenses: true, reportedBy: { select: { fullName: true } } },
+      include: {
+        expenses: true,
+        machineLines: machineAmounts,
+        reportedBy: { select: { fullName: true } },
+        project: { select: { title: true } },
+      },
     });
     return reply.code(201).send({ report: toJobDto(row) });
   });
@@ -134,9 +148,14 @@ type JobRow = {
   serviceLineCode: string | null;
   region: string | null;
   clientSegment: ClientSegment | null;
+  placement: JobPlacement;
+  projectId: string | null;
   createdAt: Date;
   expenses: ExpenseRow[];
+  /** Required, so a query that returns a job without loading them fails typecheck. */
+  machineLines: { amountCents: number }[];
   reportedBy: { fullName: string } | null;
+  project: { title: string } | null;
 };
 
 type ExpenseRow = {
@@ -152,7 +171,10 @@ type ExpenseRow = {
 
 function toJobDto(row: JobRow): JobDto {
   const expenses = row.expenses.map(toExpenseDto);
-  const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0);
+  const machineCents = row.machineLines.reduce((acc, l) => acc + l.amountCents, 0);
+  // The machine days are inside the total: the admin works out a report's
+  // profit as income less this total after a cost is added or removed.
+  const totalExpensesCents = expenses.reduce((acc, e) => acc + e.amountCents, 0) + machineCents;
   const actualIncomeCents = row.incomeCents - row.discountCents;
   return {
     id: row.id,
@@ -170,10 +192,15 @@ function toJobDto(row: JobRow): JobDto {
     region: row.region,
     clientSegment: row.clientSegment,
     notes: row.notes,
+    placement: row.placement,
+    projectId: row.projectId,
+    projectTitle: row.project?.title ?? null,
     expenses,
     totalExpensesCents,
     netCents: actualIncomeCents - totalExpensesCents,
     createdAt: row.createdAt.toISOString(),
+    // One amount, and only when there is one: the lines themselves are the owner's to see.
+    ...(machineCents > 0 && { machineCents }),
   };
 }
 
