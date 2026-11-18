@@ -24,6 +24,7 @@ export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   MARKETING: 'Marketing Personnel',
   CLEANING_SUPERVISOR: 'Cleaning Supervisor',
   SHAREHOLDER: 'Shareholder',
+  COO: 'COO',
 };
 
 /** The role to show for a staff account. The owner is an ADMIN with isOwner set, shown as "Owner" as on the Team page. */
