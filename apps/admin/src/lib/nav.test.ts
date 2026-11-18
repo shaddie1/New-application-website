@@ -23,8 +23,9 @@ describe('isActivePath', () => {
     expect(highlighted('/finance/assets')).toEqual(['Company finance']);
   });
 
-  it('highlights Dashboard only on /', () => {
-    expect(highlighted('/')).toEqual(['Dashboard']);
+  it('has no Dashboard: the home address highlights nothing, as it only sends people on', () => {
+    expect(highlighted('/')).toEqual([]);
+    expect(OPERATIONS.map((item) => item.label)).not.toContain('Dashboard');
   });
 
   it('highlights Projects on a page under /projects', () => {
@@ -50,8 +51,8 @@ describe('isActivePath', () => {
 });
 
 describe('menuSections', () => {
-  const owner = { isOwner: true, canPublishWebsite: true };
-  const staff = { isOwner: false, canPublishWebsite: false };
+  const owner = { isOwner: true, canPublishWebsite: true, canSeeInsights: true };
+  const staff = { isOwner: false, canPublishWebsite: false, canSeeInsights: false };
 
   /** Each section as its title and its items' labels. */
   const labels = (viewer: Parameters<typeof menuSections>[0]) =>
@@ -60,7 +61,7 @@ describe('menuSections', () => {
 
   it('puts Machines under Finance for an owner who may see the register', () => {
     expect(labels({ ...owner, canViewMachines: true })).toEqual([
-      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes']],
+      ['Operations', ['Projects', 'Calendar', 'Bookings', 'Quotes']],
       ['Finance', ['Insights', 'Jobs & costs', 'Company finance', 'Quote rates', 'Machines']],
       ['Governance', ['Ownership', 'Documents', 'Team']],
       ['Website', ['Website jobs']],
@@ -69,20 +70,34 @@ describe('menuSections', () => {
 
   it('gives any other viewer of the register a Finance section holding only Machines', () => {
     expect(labels({ ...staff, canViewMachines: true })).toEqual([
-      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
+      ['Operations', ['Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
       ['Finance', ['Machines']],
     ]);
-    expect(labels({ isOwner: false, canPublishWebsite: true, canViewMachines: true }).map(([title]) => title)).toEqual([
+    expect(labels({ ...staff, canPublishWebsite: true, canViewMachines: true }).map(([title]) => title)).toEqual([
       'Operations', 'Finance', 'Website',
     ]);
   });
 
+  it('gives an admin, the financial manager and a shareholder Insights under Finance, before Machines', () => {
+    expect(labels({ ...staff, canSeeInsights: true, canViewMachines: true })).toEqual([
+      ['Operations', ['Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
+      ['Finance', ['Insights', 'Machines']],
+    ]);
+    expect(labels({ ...staff, canSeeInsights: true, canViewMachines: false })).toEqual([
+      ['Operations', ['Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
+      ['Finance', ['Insights']],
+    ]);
+    // The rest of Finance and Governance stay the owner's.
+    const theirs = items({ ...staff, canSeeInsights: true, canViewMachines: true }).map((item) => item.label);
+    for (const item of [...OWNER_FINANCE.slice(1), ...OWNER_GOVERNANCE]) expect(theirs).not.toContain(item.label);
+  });
+
   it('leaves Machines out, and the Finance section with it, for someone who may not see the register', () => {
     expect(labels({ ...staff, canViewMachines: false })).toEqual([
-      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
+      ['Operations', ['Projects', 'Calendar', 'Bookings', 'Quotes', 'Job reports']],
     ]);
     expect(labels({ ...owner, canViewMachines: false })).toEqual([
-      ['Operations', ['Dashboard', 'Projects', 'Calendar', 'Bookings', 'Quotes']],
+      ['Operations', ['Projects', 'Calendar', 'Bookings', 'Quotes']],
       ['Finance', ['Insights', 'Jobs & costs', 'Company finance', 'Quote rates']],
       ['Governance', ['Ownership', 'Documents', 'Team']],
       ['Website', ['Website jobs']],
@@ -90,7 +105,11 @@ describe('menuSections', () => {
   });
 
   it('highlights Machines only on /machines, in the owner’s menu and in a viewer’s', () => {
-    for (const menu of [items({ ...owner, canViewMachines: true }), items({ ...staff, canViewMachines: true })]) {
+    for (const menu of [
+      items({ ...owner, canViewMachines: true }),
+      items({ ...staff, canViewMachines: true }),
+      items({ ...staff, canSeeInsights: true, canViewMachines: true }),
+    ]) {
       expect(highlighted('/machines', menu)).toEqual(['Machines']);
       expect(highlighted('/machines/abc', menu)).toEqual(['Machines']);
       expect(highlighted('/machines-old', menu)).toEqual([]);
