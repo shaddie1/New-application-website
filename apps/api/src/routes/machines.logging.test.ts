@@ -1,3 +1,4 @@
+import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FinancialSummary, JobDto, MachineDetailDto, MachineJobPickerDto, MachineRegisterDto } from '@onyxhawk/types';
 
@@ -26,6 +27,7 @@ const linesUrl = (id: string) => `${MACHINES}/${id}/lines`;
 const lineUrl = (lineId: string) => `${MACHINES}/lines/${lineId}`;
 const hiresUrl = (id: string) => `${MACHINES}/${id}/hires`;
 const hireUrl = (lineId: string) => `${MACHINES}/hires/${lineId}`;
+const hirePaidUrl = (lineId: string) => `${MACHINES}/hires/${lineId}/paid`;
 const payoutsUrl = (id: string) => `${MACHINES}/${id}/payouts`;
 const payoutUrl = (payoutId: string) => `${MACHINES}/payouts/${payoutId}`;
 
@@ -130,8 +132,10 @@ async function summaryOf(range: string): Promise<FinancialSummary> {
   return res.json().summary;
 }
 
-// AE2: three days of the scrubber, hired out from 3 November for KSh 10,500.
-const JANE_HIRE = { customerName: 'Jane Wanjiru', startDate: '2026-11-03', halfDays: 6, chargedCents: ksh(10_500) };
+// Three days of the scrubber hired out from 3 November, at its hire rate of KSh 2,000: KSh 6,000.
+const JANE_HIRE = { customerName: 'Jane Wanjiru', startDate: '2026-11-03', halfDays: 6 };
+
+const RELOAD = { error: 'This page is out of date. Reload it and try again.' };
 
 const logHire = async (machineId = 'scrubber', body: object = JANE_HIRE) =>
   answered(await as('owner', 'POST', hiresUrl(machineId), body), 201);
@@ -139,6 +143,20 @@ const logHire = async (machineId = 'scrubber', body: object = JANE_HIRE) =>
 /** The one-off jobs that hires made. */
 const hireJobs = () => t.jobs.filter((j) => j.title.startsWith('Hire:'));
 const hireLineId = (m: MachineDetailDto) => m.lines.find((l) => l.isHire)!.id;
+
+/** Sets a seeded machine's stored hire rate: null is a machine an older API added with none. */
+const setHireRate = (id: string, shillings: number | null) => {
+  t.assets.find((a) => a.id === id)!.hireRateCents = shillings === null ? null : ksh(shillings);
+};
+
+/** Every figure the owner reads that a paid mark must leave alone: the pot, the investors and November's net. */
+async function figuresOf(machineId: string) {
+  const m = await machine(machineId);
+  return {
+    earnedCents: m.earnedCents, potCents: m.potCents, investors: m.investors,
+    novemberNetCents: (await summaryOf(NOVEMBER)).netCents,
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -301,16 +319,48 @@ describe('POST /admin/machines/:id/lines: log days on a job', () => {
     const logged = answered(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 5 }), 201);
 
     expect(t.machineLines.at(-1)).toMatchObject({
-      assetId: 'scrubber', jobId: 'mallJob', halfDays: 5, rateCents: 200_000, amountCents: 500_000, isHire: false,
-      createdById: 'owner',
+      assetId: 'scrubber', jobId: 'mallJob', halfDays: 5, rateCents: 200_000, standardRateCents: 200_000,
+      amountCents: 500_000, isHire: false, createdById: 'owner',
     });
     expect(logged).toMatchObject({ earnedCents: ksh(5_000), potCents: ksh(5_000) });
     expect(logged.lines).toEqual([{
       id: expect.any(String), jobId: 'mallJob', date: '2026-10-14', jobTitle: 'Mall deep clean', halfDays: 5,
       rateCents: 200_000, amountCents: 500_000, isHire: false, chargedCents: null,
-      standardRateCents: null, paidOn: null, endDate: null,
+      standardRateCents: 200_000, paidOn: null, endDate: null,
     }]);
     expect(await machine('scrubber')).toEqual(logged);
+  });
+
+  it('R6: days take the project rate, not the hire rate, when no rate is sent', async () => {
+    setHireRate('scrubber', 3_500);
+
+    answered(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 6 }), 201);
+
+    // Three days at the project rate of KSh 2,000.
+    expect(t.machineLines.at(-1)).toMatchObject({ halfDays: 6, rateCents: 200_000, standardRateCents: 200_000, amountCents: 600_000 });
+  });
+
+  it('AE5: two days sent at KSh 1,500 store that rate, the usual KSh 2,000 beside it, and KSh 3,000', async () => {
+    const logged = answered(
+      await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 4, rateCents: ksh(1_500) }),
+      201,
+    );
+
+    expect(t.machineLines.at(-1)).toMatchObject({ halfDays: 4, rateCents: 150_000, standardRateCents: 200_000, amountCents: 300_000 });
+    expect(logged.lines[0]).toMatchObject({ rateCents: 150_000, standardRateCents: 200_000, amountCents: 300_000 });
+    expect(logged.earnedCents).toBe(ksh(3_000));
+  });
+
+  it.each([
+    ['0', 0],
+    ['below zero', ksh(-1_500)],
+    ['with cents', 150_050],
+    ['not a number', '1500'],
+  ])('refuses a rate that is %s, and stores nothing', async (_what, rateCents) => {
+    const error = refused(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 4, rateCents }), 400);
+
+    expect(error).toBe('The daily rate must be whole shillings, above zero.');
+    expect(t.machineLines.map((l) => l.id)).toEqual(['pl1']);
   });
 
   it('AE1: the logged days take KSh 5,000 off the job\'s profit in Jobs & costs', async () => {
@@ -420,6 +470,46 @@ describe('PATCH and DELETE /admin/machines/lines/:lineId: correct or remove logg
     expect(again.earnedCents).toBe(ksh(8_500));
   });
 
+  it('AE2: after the project rate rises to KSh 2,500, a record logged at KSh 2,000 still counts at it, and a new one at KSh 2,500', async () => {
+    answered(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 4 }), 201);
+
+    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { projectRateCents: ksh(2_500) }));
+    const after = answered(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'novJob', halfDays: 2 }), 201);
+
+    const byJob = Object.fromEntries(after.lines.map((l) => [l.jobId, [l.rateCents, l.standardRateCents, l.amountCents]]));
+    expect(byJob).toEqual({ mallJob: [200_000, 200_000, 400_000], novJob: [250_000, 250_000, 250_000] });
+    expect(after.earnedCents).toBe(ksh(6_500));
+  });
+
+  it('KTD9: a new rate for logged days reprices them and keeps their usual rate', async () => {
+    const logged = answered(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 4 }), 201);
+    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { projectRateCents: ksh(2_500) }));
+
+    const edited = answered(await as('owner', 'PATCH', lineUrl(logged.lines[0]!.id), { rateCents: ksh(1_800) }));
+
+    // Two days at KSh 1,800; the usual rate is still the KSh 2,000 of the day they were logged.
+    expect(edited.lines[0]).toMatchObject({ halfDays: 4, rateCents: 180_000, standardRateCents: 200_000, amountCents: 360_000 });
+    expect(t.machineLines.at(-1)).toMatchObject({ halfDays: 4, rateCents: 180_000, standardRateCents: 200_000, amountCents: 360_000 });
+  });
+
+  it('KTD9: days and a rate changed together; an older line keeps its empty usual rate', async () => {
+    const edited = answered(await as('owner', 'PATCH', lineUrl('pl1'), { halfDays: 3, rateCents: ksh(1_200) }));
+
+    // One and a half days at KSh 1,200.
+    expect(edited.lines[0]).toMatchObject({ halfDays: 3, rateCents: 120_000, standardRateCents: null, amountCents: 180_000 });
+  });
+
+  it.each([
+    ['0', 0],
+    ['below zero', ksh(-1_500)],
+    ['with cents', 150_050],
+  ])('refuses to change the rate to one that is %s', async (_what, rateCents) => {
+    const error = refused(await as('owner', 'PATCH', lineUrl('pl1'), { rateCents }), 400);
+
+    expect(error).toBe('The daily rate must be whole shillings, above zero.');
+    expect(t.machineLines[0]).toMatchObject({ id: 'pl1', halfDays: 2, rateCents: 150_000, amountCents: 150_000 });
+  });
+
   it('edits a line on a retired machine', async () => {
     const edited = answered(await as('owner', 'PATCH', lineUrl('pl1'), { halfDays: 3 }));
 
@@ -437,6 +527,13 @@ describe('PATCH and DELETE /admin/machines/lines/:lineId: correct or remove logg
     refused(await as('owner', 'PATCH', lineUrl('pl1'), { halfDays }), 400);
 
     expect(t.machineLines[0]).toMatchObject({ id: 'pl1', halfDays: 2, amountCents: 150_000 });
+  });
+
+  it('refuses a change with neither days nor a rate, and says what to change', async () => {
+    const error = refused(await as('owner', 'PATCH', lineUrl('pl1'), { note: 'nothing' }), 400);
+
+    expect(error).toBe('Change the days or the daily rate.');
+    expect(t.machineLines[0]).toMatchObject({ id: 'pl1', halfDays: 2, rateCents: 150_000, amountCents: 150_000 });
   });
 
   it('removes the days, and the machine\'s earned falls by their amount', async () => {
@@ -469,57 +566,102 @@ describe('PATCH and DELETE /admin/machines/lines/:lineId: correct or remove logg
 });
 
 describe('POST /admin/machines/:id/hires: log a hire', () => {
-  it('AE2: a 3-day hire at KSh 10,500 becomes a one-off, owner-entered job with no project and a hire line of KSh 6,000', async () => {
-    const hired = await logHire('scrubber', { ...JANE_HIRE, customerName: '  Jane Wanjiru ' });
+  it('KTD4: a 3-day hire becomes a one-off, owner-entered job whose income is the hire line\'s KSh 6,000', async () => {
+    const hired = await logHire('scrubber', {
+      ...JANE_HIRE, customerName: '  Jane Wanjiru ', customerPhone: ' +254 722 000 111 ', notes: ' Collect from the yard ',
+    });
 
     expect(hireJobs()).toEqual([expect.objectContaining({
-      title: 'Hire: Floor scrubber', date: day('2026-11-03'), incomeCents: ksh(10_500), discountCents: 0,
-      status: 'OWNER_ENTRY', placement: 'STANDALONE', projectId: null, clientName: 'Jane Wanjiru', createdById: 'owner',
+      title: 'Hire: Floor scrubber', date: day('2026-11-03'), incomeCents: ksh(6_000), discountCents: 0,
+      status: 'OWNER_ENTRY', placement: 'STANDALONE', projectId: null, clientName: 'Jane Wanjiru',
+      clientPhone: '+254 722 000 111', notes: 'Collect from the yard', createdById: 'owner',
     })]);
     const [hireJob] = hireJobs();
     expect(t.machineLines.at(-1)).toMatchObject({
-      assetId: 'scrubber', jobId: hireJob!.id, halfDays: 6, rateCents: 200_000, amountCents: 600_000, isHire: true,
-      createdById: 'owner',
+      assetId: 'scrubber', jobId: hireJob!.id, halfDays: 6, rateCents: 200_000, standardRateCents: 200_000,
+      amountCents: 600_000, isHire: true, createdById: 'owner',
     });
     expect(hired).toMatchObject({ earnedCents: ksh(6_000), potCents: ksh(6_000) });
     expect(hired.lines).toEqual([{
       id: expect.any(String), jobId: hireJob!.id, date: '2026-11-03', jobTitle: 'Hire: Floor scrubber',
-      halfDays: 6, rateCents: 200_000, amountCents: 600_000, isHire: true, chargedCents: ksh(10_500),
-      customerName: 'Jane Wanjiru',
-      standardRateCents: null, paidOn: null, endDate: '2026-11-05', customerPhone: null, notes: null, paymentRef: null,
+      halfDays: 6, rateCents: 200_000, amountCents: 600_000, isHire: true, chargedCents: ksh(6_000),
+      customerName: 'Jane Wanjiru', standardRateCents: 200_000, paidOn: null, endDate: '2026-11-05',
+      customerPhone: '+254 722 000 111', notes: 'Collect from the yard', paymentRef: null,
     }]);
   });
 
-  it('AE2: the hire shows in Jobs & costs with income KSh 10,500, machine cost KSh 6,000 and profit KSh 4,500', async () => {
-    await logHire();
+  it('AE1: three days on a job and a 2-day hire take the project and the hire rate: KSh 13,000, split KSh 6,000 and KSh 7,000', async () => {
+    setHireRate('scrubber', 3_500);
+
+    answered(await as('owner', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 6 }), 201);
+    const hired = await logHire('scrubber', { ...JANE_HIRE, halfDays: 4 });
+
+    expect(t.machineLines.filter((l) => l.assetId === 'scrubber').map((l) => [l.isHire, l.rateCents, l.standardRateCents, l.amountCents]))
+      .toEqual([[false, 200_000, 200_000, 600_000], [true, 350_000, 350_000, 700_000]]);
+    expect(hired.earnedCents).toBe(ksh(13_000));
+    expect(hired.earnedSplit).toEqual({ projectHalfDays: 6, projectCents: ksh(6_000), hireHalfDays: 4, hireCents: ksh(7_000) });
+  });
+
+  it('AE6: a 2-day hire at KSh 3,500 is KSh 7,000 of income and of machine cost: the month\'s net does not move and the pot is KSh 7,000 higher', async () => {
+    setHireRate('scrubber', 3_500);
+    const netBefore = (await summaryOf(NOVEMBER)).netCents;
+    expect(netBefore).toBe(ksh(30_000));
+    expect((await machine('scrubber')).earnedCents).toBe(0);
+
+    const hired = await logHire('scrubber', { ...JANE_HIRE, halfDays: 4 });
 
     expect((await jobsIn(NOVEMBER)).find((j) => j.id === hireJobs()[0]!.id)).toMatchObject({
       title: 'Hire: Floor scrubber', date: '2026-11-03', status: 'OWNER_ENTRY', placement: 'STANDALONE',
-      projectId: null, projectTitle: null, clientName: 'Jane Wanjiru', actualIncomeCents: ksh(10_500),
-      machineCents: ksh(6_000), totalExpensesCents: ksh(6_000), netCents: ksh(4_500),
+      projectId: null, projectTitle: null, clientName: 'Jane Wanjiru', actualIncomeCents: ksh(7_000),
+      machineCents: ksh(7_000), totalExpensesCents: ksh(7_000), netCents: 0,
     });
+    const after = await summaryOf(NOVEMBER);
+    expect(after).toMatchObject({ incomeCents: ksh(37_000), totalExpensesCents: ksh(7_000) });
+    expect(after.netCents).toBe(netBefore);
+    expect(hired).toMatchObject({ earnedCents: ksh(7_000), potCents: ksh(7_000) });
   });
 
-  it('AE14: a 3-day hire charged KSh 5,000 is accepted: the pot is KSh 6,000 higher and the job shows a loss of KSh 1,000', async () => {
-    const hired = await logHire('scrubber', { ...JANE_HIRE, chargedCents: ksh(5_000) });
+  it('R8: a hire at a changed rate of KSh 3,000 for 2 days has income and amount KSh 6,000, with the usual KSh 3,500', async () => {
+    setHireRate('scrubber', 3_500);
 
-    expect(hired).toMatchObject({ earnedCents: ksh(6_000), potCents: ksh(6_000) });
-    expect(hired.lines[0]).toMatchObject({ amountCents: ksh(6_000), chargedCents: ksh(5_000) });
+    const hired = await logHire('scrubber', { ...JANE_HIRE, halfDays: 4, rateCents: ksh(3_000) });
+
+    expect(hireJobs()[0]).toMatchObject({ incomeCents: ksh(6_000), discountCents: 0 });
+    expect(t.machineLines.at(-1)).toMatchObject({ rateCents: 300_000, standardRateCents: 350_000, amountCents: 600_000 });
+    expect(hired.lines[0]).toMatchObject({ rateCents: 300_000, standardRateCents: 350_000, amountCents: 600_000, chargedCents: ksh(6_000) });
+  });
+
+  it('R9: a cost of KSh 500 added to the hire\'s job makes that job\'s net KSh -500', async () => {
+    await logHire();
+    t.expenses.push(cost('e9', hireJobs()[0]!.id, 'TRANSPORT', 500, '2026-11-03'));
+
     expect((await jobsIn(NOVEMBER)).find((j) => j.id === hireJobs()[0]!.id)).toMatchObject({
-      actualIncomeCents: ksh(5_000), machineCents: ksh(6_000), netCents: ksh(-1_000),
+      actualIncomeCents: ksh(6_000), machineCents: ksh(6_000), totalExpensesCents: ksh(6_500), netCents: ksh(-500),
     });
   });
 
-  it('accepts a hire charged nothing', async () => {
-    const hired = await logHire('scrubber', { ...JANE_HIRE, chargedCents: 0 });
+  it('KTD1: a hire on a machine with no hire rate stored is priced at its project rate', async () => {
+    setHireRate('steamer', null);
 
-    expect(hired.lines[0]).toMatchObject({ amountCents: ksh(6_000), chargedCents: 0 });
+    const hired = await logHire('steamer', JANE_HIRE);
+
+    // Three days at the steamer's project rate of KSh 1,000.
+    expect(hired.lines[0]).toMatchObject({ rateCents: 100_000, standardRateCents: 100_000, amountCents: 300_000, chargedCents: ksh(3_000) });
+  });
+
+  it('KTD6: a hire that still carries an amount charged is refused with the reload message, and nothing is stored', async () => {
+    const res = await as('owner', 'POST', hiresUrl('scrubber'), { ...JANE_HIRE, chargedCents: ksh(10_500) });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(RELOAD);
+    expect(hireJobs()).toEqual([]);
+    expect(t.machineLines.map((l) => l.id)).toEqual(['pl1']);
   });
 
   it('refuses the same machine, customer and start date logged again, and accepts the same customer on another date', async () => {
     await logHire();
 
-    const error = refused(await as('owner', 'POST', hiresUrl('scrubber'), { ...JANE_HIRE, halfDays: 2, chargedCents: ksh(4_000) }), 409);
+    const error = refused(await as('owner', 'POST', hiresUrl('scrubber'), { ...JANE_HIRE, halfDays: 2 }), 409);
 
     expect(error).toMatch(/already logged/);
     expect(error).toContain('Jane Wanjiru');
@@ -558,8 +700,9 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
     ['a start date that is not a date', { startDate: '03/11/2026' }],
     ['0 days', { halfDays: 0 }],
     ['a quarter day', { halfDays: 0.5 }],
-    ['a charge below zero', { chargedCents: ksh(-1) }],
-    ['a charge that is not whole cents', { chargedCents: 10.5 }],
+    ['a rate of 0', { rateCents: 0 }],
+    ['a rate below zero', { rateCents: ksh(-3_500) }],
+    ['a rate with cents', { rateCents: 350_050 }],
   ])('refuses a hire with %s', async (_what, wrong) => {
     refused(await as('owner', 'POST', hiresUrl('scrubber'), { ...JANE_HIRE, ...wrong }), 400);
 
@@ -575,24 +718,27 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
     expect(hireJobs()).toEqual([]);
   });
 
-  it('a second machine can log days on a hire\'s job', async () => {
+  it('a hire is one machine: another machine\'s days are refused on a hire\'s job, which its picker leaves out', async () => {
     await logHire();
     const [hireJob] = hireJobs();
+    const novemberNet = (await summaryOf(NOVEMBER)).netCents;
 
-    const logged = answered(await as('owner', 'POST', linesUrl('steamer'), { jobId: hireJob!.id, halfDays: 2 }), 201);
+    const error = refused(await as('owner', 'POST', linesUrl('steamer'), { jobId: hireJob!.id, halfDays: 2 }), 409);
 
-    expect(logged.earnedCents).toBe(ksh(1_000));
-    expect(logged.lines[0]).toMatchObject({ jobId: hireJob!.id, isHire: false, chargedCents: null });
-    // KSh 10,500 charged, less the scrubber's KSh 6,000 and the steamer's KSh 1,000.
-    expect((await jobsIn(NOVEMBER)).find((j) => j.id === hireJob!.id)).toMatchObject({
-      machineCents: ksh(7_000), netCents: ksh(3_500),
-    });
+    expect(error).toBe('This job is a machine hire. To hire this machine out as well, log a hire for it on its own page.');
+    expect(t.machineLines.filter((l) => l.assetId === 'steamer')).toEqual([]);
+    expect((await jobsIn(NOVEMBER)).find((j) => j.id === hireJob!.id)).toMatchObject({ machineCents: ksh(6_000), netCents: 0 });
+    expect((await summaryOf(NOVEMBER)).netCents).toBe(novemberNet);
+    expect((await picker('steamer')).jobs.map((j) => j.jobId)).not.toContain(hireJob!.id);
+    // The hired machine's own picker leaves it out too, as it did.
+    expect((await picker('scrubber')).jobs.map((j) => j.jobId)).not.toContain(hireJob!.id);
   });
 
-  it('R31: a second machine\'s days on a hire\'s job name the customer to nobody, and the owner still sees the customer on the hire', async () => {
+  it('R31: a second machine\'s days on a hire\'s job, from before hires were one machine, name the customer to nobody, and the owner still sees the customer on the hire', async () => {
     await logHire();
     const [hireJob] = hireJobs();
-    answered(await as('owner', 'POST', linesUrl('steamer'), { jobId: hireJob!.id, halfDays: 2 }), 201);
+    // One day of the steamer on the hire's job, logged before such days were refused.
+    t.machineLines.push(line('sl1', 'steamer', hireJob!.id, 2, 1_000));
 
     // The COO opens the second machine: the job reads "Hire" and the customer is nowhere in the answer.
     const res = await as('coo', 'GET', machineUrl('steamer'));
@@ -613,29 +759,69 @@ describe('POST /admin/machines/:id/hires: log a hire', () => {
 });
 
 describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
-  // Two days from 28 October, for KSh 9,000, to a customer whose name was mistyped.
-  const CORRECTED = { customerName: 'Jane W. Kamau', startDate: '2026-10-28', halfDays: 4, chargedCents: ksh(9_000) };
+  // Two days from 28 October, to a customer whose name was mistyped.
+  const CORRECTED = { customerName: 'Jane W. Kamau', startDate: '2026-10-28', halfDays: 4 };
 
-  it('writes the job and the line together, and the line keeps the rate it was logged at', async () => {
+  it('KTD9: new days are priced at the hire\'s own rate after the hire rate rose, and the job\'s income follows the amount', async () => {
     const lineId = hireLineId(await logHire());
-    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { projectRateCents: ksh(2_500) }));
+    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { hireRateCents: ksh(2_500) }));
 
     const edited = answered(await as('owner', 'PATCH', hireUrl(lineId), CORRECTED));
 
     expect(hireJobs()).toEqual([expect.objectContaining({
       title: 'Hire: Floor scrubber', clientName: 'Jane W. Kamau', date: day('2026-10-28'),
-      incomeCents: ksh(9_000), status: 'OWNER_ENTRY', placement: 'STANDALONE', projectId: null,
+      incomeCents: ksh(4_000), discountCents: 0, status: 'OWNER_ENTRY', placement: 'STANDALONE', projectId: null,
     })]);
     expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({
-      halfDays: 4, rateCents: 200_000, amountCents: 400_000, isHire: true,
+      halfDays: 4, rateCents: 200_000, standardRateCents: 200_000, amountCents: 400_000, isHire: true,
     });
     expect(edited.earnedCents).toBe(ksh(4_000));
     expect(edited.lines).toEqual([{
       id: lineId, jobId: hireJobs()[0]!.id, date: '2026-10-28', jobTitle: 'Hire: Floor scrubber',
-      halfDays: 4, rateCents: 200_000, amountCents: 400_000, isHire: true, chargedCents: ksh(9_000),
+      halfDays: 4, rateCents: 200_000, amountCents: 400_000, isHire: true, chargedCents: ksh(4_000),
       customerName: 'Jane W. Kamau',
-      standardRateCents: null, paidOn: null, endDate: '2026-10-29', customerPhone: null, notes: null, paymentRef: null,
+      standardRateCents: 200_000, paidOn: null, endDate: '2026-10-29', customerPhone: null, notes: null, paymentRef: null,
     }]);
+  });
+
+  it('KTD10: after the hire rate rose, correcting the client\'s details leaves the rate, usual rate, amount and income alone', async () => {
+    const lineId = hireLineId(await logHire());
+    answered(await as('owner', 'PATCH', machineUrl('scrubber'), { hireRateCents: ksh(2_500) }));
+
+    const edited = answered(await as('owner', 'PATCH', hireUrl(lineId), {
+      customerName: 'Jane W. Kamau', startDate: '2026-11-03', customerPhone: '+254 722 000 111', notes: 'Paid half up front',
+    }));
+
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({
+      halfDays: 6, rateCents: 200_000, standardRateCents: 200_000, amountCents: 600_000,
+    });
+    expect(hireJobs()[0]).toMatchObject({
+      clientName: 'Jane W. Kamau', clientPhone: '+254 722 000 111', notes: 'Paid half up front', incomeCents: ksh(6_000), discountCents: 0,
+    });
+    expect(edited.lines[0]).toMatchObject({ customerName: 'Jane W. Kamau', customerPhone: '+254 722 000 111', notes: 'Paid half up front' });
+  });
+
+  it('a phone or notes sent blank are cleared, and left out they stay', async () => {
+    const lineId = hireLineId(await logHire('scrubber', { ...JANE_HIRE, customerPhone: '+254 722 000 111', notes: 'Gate B' }));
+
+    answered(await as('owner', 'PATCH', hireUrl(lineId), { customerName: 'Jane Wanjiru', startDate: '2026-11-03' }));
+    expect(hireJobs()[0]).toMatchObject({ clientPhone: '+254 722 000 111', notes: 'Gate B' });
+
+    answered(await as('owner', 'PATCH', hireUrl(lineId), { customerName: 'Jane Wanjiru', startDate: '2026-11-03', customerPhone: ' ', notes: '' }));
+    expect(hireJobs()[0]).toMatchObject({ clientPhone: null, notes: null });
+  });
+
+  it('a new rate alone reprices the hire\'s days, and its income with them', async () => {
+    const lineId = hireLineId(await logHire());
+
+    const edited = answered(await as('owner', 'PATCH', hireUrl(lineId), {
+      customerName: 'Jane Wanjiru', startDate: '2026-11-03', rateCents: ksh(2_500),
+    }));
+
+    // Three days at KSh 2,500; the usual rate stays the KSh 2,000 it was logged with.
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ halfDays: 6, rateCents: 250_000, standardRateCents: 200_000, amountCents: 750_000 });
+    expect(hireJobs()[0]).toMatchObject({ incomeCents: ksh(7_500), discountCents: 0 });
+    expect(edited.lines[0]).toMatchObject({ amountCents: ksh(7_500), chargedCents: ksh(7_500) });
   });
 
   it('a new start date moves the job, and the month figures move with it', async () => {
@@ -643,26 +829,38 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
 
     // October: the mall and clinic jobs, and the mall job's KSh 60,000 of costs.
     expect(await summaryOf(OCTOBER)).toMatchObject({ incomeCents: ksh(120_000), totalExpensesCents: ksh(60_000), netCents: ksh(60_000) });
-    // November: the sofa job and the hire, less the scrubber's KSh 6,000.
-    expect(await summaryOf(NOVEMBER)).toMatchObject({ incomeCents: ksh(40_500), totalExpensesCents: ksh(6_000), netCents: ksh(34_500) });
+    // November: the sofa job and the hire's KSh 6,000, less the same KSh 6,000 for the scrubber.
+    expect(await summaryOf(NOVEMBER)).toMatchObject({ incomeCents: ksh(36_000), totalExpensesCents: ksh(6_000), netCents: ksh(30_000) });
 
     answered(await as('owner', 'PATCH', hireUrl(lineId), CORRECTED));
 
     const october = await summaryOf(OCTOBER);
-    expect(october).toMatchObject({ incomeCents: ksh(129_000), totalExpensesCents: ksh(64_000), netCents: ksh(65_000) });
+    expect(october).toMatchObject({ incomeCents: ksh(124_000), totalExpensesCents: ksh(64_000), netCents: ksh(60_000) });
     expect(october.expensesByCategoryCents.MACHINES).toBe(ksh(4_000));
     const november = await summaryOf(NOVEMBER);
     expect(november).toMatchObject({ incomeCents: ksh(30_000), totalExpensesCents: 0, netCents: ksh(30_000) });
     expect(november.expensesByCategoryCents).not.toHaveProperty('MACHINES');
   });
 
-  it('the amount charged is what was typed, whatever discount the hire\'s job was given in Jobs & costs', async () => {
+  it('KTD4: a change of days clears a discount the hire\'s job carried, so what is charged is the amount', async () => {
     const lineId = hireLineId(await logHire());
     hireJobs()[0]!.discountCents = ksh(500);
 
-    const edited = answered(await as('owner', 'PATCH', hireUrl(lineId), { ...JANE_HIRE, chargedCents: ksh(9_000) }));
+    const edited = answered(await as('owner', 'PATCH', hireUrl(lineId), { ...JANE_HIRE, halfDays: 8 }));
 
-    expect(edited.lines[0]!.chargedCents).toBe(ksh(9_000));
+    expect(hireJobs()[0]).toMatchObject({ incomeCents: ksh(8_000), discountCents: 0 });
+    expect(edited.lines[0]!.chargedCents).toBe(ksh(8_000));
+  });
+
+  it('KTD6: a correction that still carries an amount charged is refused with the reload message, and nothing changes', async () => {
+    const lineId = hireLineId(await logHire());
+
+    const res = await as('owner', 'PATCH', hireUrl(lineId), { ...CORRECTED, chargedCents: ksh(9_000) });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(RELOAD);
+    expect(hireJobs()).toEqual([expect.objectContaining({ date: day('2026-11-03'), clientName: 'Jane Wanjiru', incomeCents: ksh(6_000) })]);
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ halfDays: 6, amountCents: 600_000 });
   });
 
   it('edits a hire on a machine that has since been retired', async () => {
@@ -680,14 +878,14 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
     const error = refused(await as('owner', 'PATCH', hireUrl(lineId), { ...CORRECTED, startDate: '2026-05-31' }), 409);
 
     expect(error).toContain('1 Jun 2026');
-    expect(hireJobs()).toEqual([expect.objectContaining({ date: day('2026-11-03'), clientName: 'Jane Wanjiru', incomeCents: ksh(10_500) })]);
+    expect(hireJobs()).toEqual([expect.objectContaining({ date: day('2026-11-03'), clientName: 'Jane Wanjiru', incomeCents: ksh(6_000) })]);
     expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ halfDays: 6, amountCents: 600_000 });
   });
 
   it('refuses a start date before the start day of another machine with days on the hire\'s job', async () => {
     const lineId = hireLineId(await logHire());
-    // The steamer's start day is 1 November, and it has a day on the hire's job of 3 November.
-    answered(await as('owner', 'POST', linesUrl('steamer'), { jobId: hireJobs()[0]!.id, halfDays: 2 }), 201);
+    // The steamer's start day is 1 November, and it has a day on the hire's job of 3 November, from before such days were refused.
+    t.machineLines.push(line('sl1', 'steamer', hireJobs()[0]!.id, 2, 1_000));
 
     const error = refused(await as('owner', 'PATCH', hireUrl(lineId), CORRECTED), 409);
 
@@ -699,13 +897,16 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
   it.each([
     ['no customer', { customerName: '' }],
     ['a quarter day', { halfDays: 0.5 }],
-    ['a charge below zero', { chargedCents: ksh(-1) }],
+    ['a rate of 0', { rateCents: 0 }],
+    ['a rate below zero', { rateCents: ksh(-2_000) }],
+    ['a rate with cents', { rateCents: 200_050 }],
   ])('refuses a correction with %s', async (_what, wrong) => {
     const lineId = hireLineId(await logHire());
 
     refused(await as('owner', 'PATCH', hireUrl(lineId), { ...CORRECTED, ...wrong }), 400);
 
-    expect(hireJobs()).toEqual([expect.objectContaining({ date: day('2026-11-03'), clientName: 'Jane Wanjiru', incomeCents: ksh(10_500) })]);
+    expect(hireJobs()).toEqual([expect.objectContaining({ date: day('2026-11-03'), clientName: 'Jane Wanjiru', incomeCents: ksh(6_000) })]);
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ halfDays: 6, rateCents: 200_000, amountCents: 600_000 });
   });
 
   it.each(['nope', 'pl1'])('answers 404 for %s, which is not a hire', async (lineId) => {
@@ -715,6 +916,177 @@ describe('PATCH /admin/machines/hires/:lineId: correct a hire', () => {
     expect(res.json()).toEqual({ error: 'hire not found' });
     expect(t.machineLines[0]).toMatchObject({ id: 'pl1', halfDays: 2 });
     expect(t.jobs.find((j) => j.id === 'officeJob')).toMatchObject({ title: 'Office clean', date: day('2026-09-02') });
+  });
+});
+
+describe('R10 and KTD10: a hire recorded before hires were charged at days x rate', () => {
+  // AE7: three days from 3 November at the KSh 2,000 of the time, charged KSh 10,500 (KSh 11,000 less
+  // KSh 500 off), with no usual rate stored. The scrubber's hire rate is now KSh 3,500.
+  beforeEach(() => {
+    setHireRate('scrubber', 3_500);
+    t.jobs.push(job('oldHire', 'Hire: Floor scrubber', '2026-11-03', 11_000, {
+      discountCents: ksh(500), clientName: 'Jane Wanjiru', clientPhone: null, notes: null,
+    }));
+    t.machineLines.push(line('ohl', 'scrubber', 'oldHire', 6, 2_000, { isHire: true }));
+  });
+
+  const CLIENT = { customerName: 'Jane Wanjiru', startDate: '2026-11-03' };
+  const recorded = () => ({
+    line: t.machineLines.find((l) => l.id === 'ohl'),
+    job: t.jobs.find((j) => j.id === 'oldHire'),
+  });
+
+  it('shows both of its figures', async () => {
+    expect((await machine('scrubber')).lines[0]).toMatchObject({
+      id: 'ohl', amountCents: ksh(6_000), chargedCents: ksh(10_500), standardRateCents: null,
+    });
+  });
+
+  it.each([
+    ['its client\'s name', { customerName: 'Jane W. Kamau' }],
+    ['its phone', { customerPhone: '+254 722 000 111' }],
+    ['its notes', { notes: 'Paid by cheque' }],
+  ])('AE7: a change of %s leaves both figures', async (_what, change) => {
+    const edited = answered(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, ...change }));
+
+    expect(recorded().line).toMatchObject({ halfDays: 6, rateCents: 200_000, standardRateCents: null, amountCents: 600_000 });
+    expect(recorded().job).toMatchObject({ incomeCents: ksh(11_000), discountCents: ksh(500) });
+    expect(edited.lines[0]).toMatchObject({ amountCents: ksh(6_000), chargedCents: ksh(10_500), standardRateCents: null });
+  });
+
+  it('AE7: marking it paid leaves both figures', async () => {
+    answered(await as('owner', 'PUT', hirePaidUrl('ohl'), { paidOn: '2026-11-14' }));
+
+    expect(recorded().line).toMatchObject({ amountCents: 600_000, standardRateCents: null, hirePaidOn: day('2026-11-14') });
+    expect(recorded().job).toMatchObject({ incomeCents: ksh(11_000), discountCents: ksh(500) });
+  });
+
+  it('AE7: 6 half days at KSh 3,500 make the amount and the income KSh 10,500, clear the discount and store the usual rate', async () => {
+    const edited = answered(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, halfDays: 6, rateCents: ksh(3_500) }));
+
+    expect(recorded().line).toMatchObject({ halfDays: 6, rateCents: 350_000, standardRateCents: 350_000, amountCents: 1_050_000 });
+    expect(recorded().job).toMatchObject({ incomeCents: ksh(10_500), discountCents: 0 });
+    expect(edited.lines[0]).toMatchObject({ amountCents: ksh(10_500), chargedCents: ksh(10_500), standardRateCents: 350_000 });
+    // The job's profit goes from KSh 4,500 to nothing; the pot is KSh 4,500 higher.
+    expect((await jobsIn(NOVEMBER)).find((j) => j.id === 'oldHire')).toMatchObject({ actualIncomeCents: ksh(10_500), netCents: 0 });
+    expect(edited.earnedCents).toBe(ksh(10_500));
+  });
+
+  it('KTD10: once changed it is an ordinary hire: a later change of days alone is priced at its rate', async () => {
+    answered(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, halfDays: 6, rateCents: ksh(3_500) }));
+
+    answered(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, halfDays: 4 }));
+
+    expect(recorded().line).toMatchObject({ halfDays: 4, rateCents: 350_000, standardRateCents: 350_000, amountCents: 700_000 });
+    expect(recorded().job).toMatchObject({ incomeCents: ksh(7_000), discountCents: 0 });
+  });
+
+  it.each([
+    ['days without a rate', { halfDays: 4 }],
+    ['a rate without days', { rateCents: ksh(3_500) }],
+  ])('AE7: a change of %s is refused, and nothing changes', async (_what, change) => {
+    const error = refused(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, customerName: 'Jane W. Kamau', ...change }), 409);
+
+    expect(error).toMatch(/both/);
+    expect(recorded().line).toMatchObject({ halfDays: 6, rateCents: 200_000, standardRateCents: null, amountCents: 600_000 });
+    expect(recorded().job).toMatchObject({ clientName: 'Jane Wanjiru', incomeCents: ksh(11_000), discountCents: ksh(500) });
+  });
+
+  it('KTD10: a rate below the hire rate is kept as typed, with the machine\'s hire rate stored as the usual rate', async () => {
+    const edited = answered(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, halfDays: 6, rateCents: ksh(3_000) }));
+
+    expect(recorded().line).toMatchObject({ halfDays: 6, rateCents: 300_000, standardRateCents: 350_000, amountCents: 900_000 });
+    expect(recorded().job).toMatchObject({ incomeCents: ksh(9_000), discountCents: 0 });
+    expect(edited.lines[0]).toMatchObject({ rateCents: 300_000, standardRateCents: 350_000 });
+  });
+
+  it('KTD10: a machine with no hire rate stored gives its project rate as the usual rate', async () => {
+    setHireRate('scrubber', null);
+
+    answered(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, halfDays: 6, rateCents: ksh(3_500) }));
+
+    expect(recorded().line).toMatchObject({ rateCents: 350_000, standardRateCents: 200_000, amountCents: 1_050_000 });
+  });
+
+  it('when another machine has days on its job, its days and rate stay as recorded and its client details still change', async () => {
+    // One day of the steamer on the old hire's job, which the KSh 10,500 charged may cover.
+    t.machineLines.push(line('sl1', 'steamer', 'oldHire', 2, 1_000));
+
+    const error = refused(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, halfDays: 6, rateCents: ksh(3_500) }), 409);
+
+    expect(error).toContain('Jobs & costs');
+    expect(recorded().line).toMatchObject({ halfDays: 6, rateCents: 200_000, standardRateCents: null, amountCents: 600_000 });
+    expect(recorded().job).toMatchObject({ incomeCents: ksh(11_000), discountCents: ksh(500) });
+
+    answered(await as('owner', 'PATCH', hireUrl('ohl'), { ...CLIENT, customerName: 'Jane W. Kamau' }));
+    expect(recorded().job).toMatchObject({ clientName: 'Jane W. Kamau', incomeCents: ksh(11_000), discountCents: ksh(500) });
+  });
+});
+
+describe('PUT and DELETE /admin/machines/hires/:lineId/paid: a hire\'s paid mark', () => {
+  beforeEach(() => {
+    // The scrubber has earned KSh 50,000 on the mall job, so its investor is owed something.
+    t.machineLines.push(line('ml1', 'scrubber', 'mallJob', 50, 2_000));
+  });
+
+  it('AE9: marking a hire paid stores the date and the reference and changes no figure; undoing clears both', async () => {
+    const lineId = hireLineId(await logHire());
+    const before = await figuresOf('scrubber');
+
+    const paid = answered(await as('owner', 'PUT', hirePaidUrl(lineId), { paidOn: '2026-11-14', reference: ' QK7XYZ12 ' }));
+
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ hirePaidOn: day('2026-11-14'), hirePaymentRef: 'QK7XYZ12' });
+    expect(paid.lines.find((l) => l.id === lineId)).toMatchObject({ paidOn: '2026-11-14', paymentRef: 'QK7XYZ12' });
+    expect(await figuresOf('scrubber')).toEqual(before);
+    expect(hireJobs()[0]).toMatchObject({ incomeCents: ksh(6_000), discountCents: 0 });
+
+    const undone = answered(await as('owner', 'DELETE', hirePaidUrl(lineId)));
+
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ hirePaidOn: null, hirePaymentRef: null });
+    expect(undone.lines.find((l) => l.id === lineId)).toMatchObject({ paidOn: null, paymentRef: null });
+    expect(await figuresOf('scrubber')).toEqual(before);
+  });
+
+  it('a mark with no reference stores none, and a second mark replaces the first', async () => {
+    const lineId = hireLineId(await logHire());
+    answered(await as('owner', 'PUT', hirePaidUrl(lineId), { paidOn: '2026-11-14', reference: 'QK7XYZ12' }));
+
+    answered(await as('owner', 'PUT', hirePaidUrl(lineId), { paidOn: '2026-11-15' }));
+
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ hirePaidOn: day('2026-11-15'), hirePaymentRef: null });
+  });
+
+  it('refuses a paid date that is not a date', async () => {
+    const lineId = hireLineId(await logHire());
+
+    refused(await as('owner', 'PUT', hirePaidUrl(lineId), { paidOn: '14 Nov' }), 400);
+
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ hirePaidOn: null });
+  });
+
+  it.each<['PUT' | 'DELETE', object?]>([['PUT', { paidOn: '2026-11-14' }], ['DELETE']])(
+    '%s refuses days on a job, which are not a hire, and a line that does not exist',
+    async (method, body) => {
+      for (const lineId of ['pl1', 'nope']) {
+        const res = await as('owner', method, hirePaidUrl(lineId), body);
+
+        expect(res.statusCode).toBe(404);
+        expect(res.json()).toEqual({ error: 'hire not found' });
+      }
+      expect(t.machineLines[0]).toMatchObject({ id: 'pl1', hirePaidOn: null, hirePaymentRef: null });
+    },
+  );
+
+  it('answers 401 without a sign-in', async () => {
+    const lineId = hireLineId(await logHire());
+    const { machinesRoutes } = await import('./machines.js');
+    const server = Fastify();
+    await server.register(machinesRoutes, { prefix: MACHINES });
+
+    const res = await server.inject({ method: 'PUT', url: hirePaidUrl(lineId), payload: { paidOn: '2026-11-14' } });
+
+    expect(res.statusCode).toBe(401);
+    expect(t.machineLines.find((l) => l.id === lineId)).toMatchObject({ hirePaidOn: null });
   });
 });
 
@@ -745,8 +1117,8 @@ describe('DELETE /admin/machines/hires/:lineId: remove a hire', () => {
 
   it('R11: the owner\'s hire names the other machine with days on its job, and removing the hire removes those days from that machine too', async () => {
     const lineId = hireLineId(await logHire());
-    // One day of the steamer on the hire's job: KSh 1,000 into the steamer's pot.
-    answered(await as('owner', 'POST', linesUrl('steamer'), { jobId: hireJobs()[0]!.id, halfDays: 2 }), 201);
+    // One day of the steamer on the hire's job, from before such days were refused: KSh 1,000 into the steamer's pot.
+    t.machineLines.push(line('sl1', 'steamer', hireJobs()[0]!.id, 2, 1_000));
     expect(await machine('steamer')).toMatchObject({ earnedCents: ksh(1_000), potCents: ksh(1_000) });
 
     // What the Remove hire question lists before anything is removed.
@@ -948,17 +1320,22 @@ describe.each(['coo', 'admin'])('R22: %s, who sees the register and is not the o
   beforeEach(() => {
     // A hire and a payment already there, to be left alone.
     t.jobs.push(job('hireJob', 'Hire: Floor scrubber', '2026-11-03', 10_500, { clientName: 'Jane Wanjiru' }));
-    t.machineLines.push(line('hl1', 'scrubber', 'hireJob', 6, 2_000, { isHire: true }));
+    // Marked paid, so undoing the mark would change something.
+    t.machineLines.push(line('hl1', 'scrubber', 'hireJob', 6, 2_000, {
+      isHire: true, hirePaidOn: day('2026-11-12'), hirePaymentRef: 'QK7XYZ12',
+    }));
     t.machinePayouts = [payment('p1', 'inv1', '2026-11-10', 1_000)];
   });
 
-  it.each<[string, 'POST' | 'PATCH' | 'DELETE', string, object?]>([
+  it.each<[string, 'POST' | 'PUT' | 'PATCH' | 'DELETE', string, object?]>([
     ['log days', 'POST', linesUrl('scrubber'), { jobId: 'mallJob', halfDays: 2 }],
     ['correct days', 'PATCH', lineUrl('pl1'), { halfDays: 4 }],
     ['remove days', 'DELETE', lineUrl('pl1')],
     ['log a hire', 'POST', hiresUrl('scrubber'), { ...JANE_HIRE, startDate: '2026-11-11' }],
     ['correct a hire', 'PATCH', hireUrl('hl1'), { ...JANE_HIRE, halfDays: 2 }],
     ['remove a hire', 'DELETE', hireUrl('hl1')],
+    ['mark a hire paid', 'PUT', hirePaidUrl('hl1'), { paidOn: '2026-11-14', reference: 'QK7XYZ12' }],
+    ['undo a hire\'s paid mark', 'DELETE', hirePaidUrl('hl1')],
     ['pay an investor', 'POST', payoutsUrl('scrubber'), { investorId: 'inv1', date: '2026-11-12', amountCents: ksh(100) }],
     ['delete a payment', 'DELETE', payoutUrl('p1')],
   ])('cannot %s', async (_what, method, url, body) => {

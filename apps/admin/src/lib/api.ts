@@ -80,6 +80,7 @@ import type {
   EditMachineDaysInput,
   LogMachineHireInput,
   EditMachineHireInput,
+  MarkHirePaidInput,
   PayMachineInvestorInput,
   AssetCategory,
 } from '@onyxhawk/types';
@@ -678,6 +679,18 @@ export const api = {
   /** Removes the hire's one-off job with it, and any costs logged on that job. */
   deleteMachineHire: (lineId: string) =>
     request<{ machine: MachineDetailDto }>(`/admin/machines/hires/${encodeURIComponent(lineId)}`, {
+      method: 'DELETE', auth: true,
+    }),
+
+  /** The hire's paid date and optional reference. Marking it again replaces both; no figure changes. */
+  markMachineHirePaid: (lineId: string, input: MarkHirePaidInput) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/hires/${encodeURIComponent(lineId)}/paid`, {
+      method: 'PUT', auth: true, body: JSON.stringify(input),
+    }),
+
+  /** The hire is awaiting payment again. */
+  unmarkMachineHirePaid: (lineId: string) =>
+    request<{ machine: MachineDetailDto }>(`/admin/machines/hires/${encodeURIComponent(lineId)}/paid`, {
       method: 'DELETE', auth: true,
     }),
 

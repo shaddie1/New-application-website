@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, ownedBy, potText, priceText,
-  removeHireMessage, stillOwedText,
+  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, oldHireNotice, ownedBy,
+  paidUndoMessage, potText, priceText, removeHireMessage, stillOwedText,
 } from './wording';
 
 describe('earnBackLine', () => {
@@ -120,19 +120,49 @@ describe('daysText', () => {
 });
 
 describe('hireChargeText', () => {
-  it('says what the customer was charged', () => {
-    expect(hireChargeText({ chargedCents: 1_050_000, amountCents: 600_000 })).toBe('Charged KSh 10,500');
-    expect(hireChargeText({ chargedCents: 600_000, amountCents: 600_000 })).toBe('Charged KSh 6,000');
+  it('is null for a hire charged its amount: the amount already says it', () => {
+    expect(hireChargeText({ chargedCents: 700_000, amountCents: 700_000 })).toBeNull();
   });
 
-  it('says how far under the rate a hire was charged', () => {
+  it('says what an older hire was charged when that differs from the machine’s amount', () => {
+    expect(hireChargeText({ chargedCents: 1_050_000, amountCents: 600_000 })).toBe('Charged KSh 10,500');
+  });
+
+  it('says how far below the machine’s amount an older hire was charged', () => {
     expect(hireChargeText({ chargedCents: 500_000, amountCents: 600_000 })).toBe(
-      'Charged KSh 5,000, KSh 1,000 under the rate',
+      'Charged KSh 5,000, KSh 1,000 less than the machine’s amount',
     );
   });
 
   it('is null for days on a job, which have no charge of their own', () => {
     expect(hireChargeText({ chargedCents: null, amountCents: 600_000 })).toBeNull();
+  });
+});
+
+describe('oldHireNotice (R10)', () => {
+  it('AE7: gives the amount charged, the machine’s amount and the job’s profit, before and after', () => {
+    expect(oldHireNotice({
+      before: { chargedCents: 1_050_000, machineCents: 600_000, profitCents: 450_000 },
+      after: { chargedCents: 1_050_000, machineCents: 1_050_000, profitCents: 0 },
+    })).toEqual([
+      'Amount charged: KSh 10,500 → KSh 10,500',
+      'Machine’s amount: KSh 6,000 → KSh 10,500',
+      'Job’s profit on the hire: KSh 4,500 → KSh 0',
+    ]);
+  });
+});
+
+describe('paidUndoMessage (R14)', () => {
+  it('names the date and the reference that are cleared, and that no figure changes', () => {
+    expect(paidUndoMessage({ paidOn: '2026-11-14', paymentRef: 'QK7XYZ12' })).toBe(
+      'The paid date, 14 Nov 2026, and the reference QK7XYZ12 are cleared, and the hire shows “Awaiting payment” again. No figure changes.',
+    );
+  });
+
+  it('leaves out a reference the hire does not have', () => {
+    expect(paidUndoMessage({ paidOn: '2026-11-14', paymentRef: null })).toBe(
+      'The paid date, 14 Nov 2026, is cleared, and the hire shows “Awaiting payment” again. No figure changes.',
+    );
   });
 });
 
@@ -147,10 +177,17 @@ describe('hireLabel', () => {
 });
 
 describe('removeHireMessage', () => {
-  // AE2: three days at KSh 2,000, charged KSh 10,500.
+  it('for a hire charged its amount, says that amount leaves the income and the pot together', () => {
+    expect(removeHireMessage({ chargedCents: 700_000, amountCents: 700_000 })).toBe(
+      'The hire’s one-off job in Jobs & costs is deleted with it, and any costs logged on that job. ' +
+      'Its KSh 7,000 leaves the income and the pot alike. This cannot be undone.',
+    );
+  });
+
+  // An older hire: three days at KSh 2,000, charged KSh 10,500.
   const hire = { chargedCents: 1_050_000, amountCents: 600_000 };
 
-  it('says the hire\'s job goes with its income and costs, and what leaves the pot', () => {
+  it('for an older hire, says the hire\'s job goes with its income and costs, and what leaves the pot', () => {
     expect(removeHireMessage(hire)).toBe(
       'The hire’s one-off job in Jobs & costs is deleted with it: its income of KSh 10,500 and any costs logged ' +
       'on that job. KSh 6,000 leaves the pot. This cannot be undone.',

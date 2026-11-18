@@ -126,6 +126,9 @@ const ReplaceStakesSchema = z.object({
 
 const STAKES_CHANGED = 'The stakes changed since you opened this form. Reload and try again.';
 
+const HIRE_CHARGE_LOCKED =
+  'This job is a machine hire: its income is the hire\'s days times its daily rate. Change the hire\'s days or rate on the Machines page.';
+
 // A job's machine days with each machine's name, oldest first. Every query
 // that feeds toJobDto includes them: its row type requires them.
 const jobMachineLines = { include: { asset: { select: { name: true } } }, orderBy: { createdAt: 'asc' } } as const;
@@ -293,6 +296,21 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'job not found' });
+
+    // KTD11 (R20): a hire charged at days x rate has its income equal to its
+    // machine amount, so a new income or discount here would move profit while
+    // the pot stays. The form resends the values it shows, so only a change is
+    // refused. A hire recorded before that rule has no usual rate stored and
+    // stays editable.
+    const changesCharge =
+      (parsed.data.incomeCents !== undefined && parsed.data.incomeCents !== existing.incomeCents) ||
+      (parsed.data.discountCents !== undefined && parsed.data.discountCents !== existing.discountCents);
+    if (changesCharge) {
+      const pricedHires = await prisma.machineLine.count({
+        where: { jobId: existing.id, isHire: true, standardRateCents: { not: null } },
+      });
+      if (pricedHires > 0) return reply.code(409).send({ error: HIRE_CHARGE_LOCKED });
+    }
 
     const place = parsed.data.place && (await resolvePlace(parsed.data.place));
     if (place === null) return reply.code(400).send({ error: 'project not found' });

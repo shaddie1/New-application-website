@@ -131,7 +131,11 @@ export interface MachineLineDto {
   /** Half days x rate / 2: a cost of the job, and what the machine earned. */
   amountCents: number;
   isHire: boolean;
-  /** For a hire, what the customer was charged: the hire job's income. Null for days on a job. */
+  /**
+   * For a hire, what the customer was charged: the hire job's income less its
+   * discount. The same as `amountCents` for a hire logged at days x rate; it
+   * may differ on a hire recorded before then. Null for days on a job.
+   */
   chargedCents: number | null;
   /** For a hire, the day it was paid, YYYY-MM-DD. Null while it awaits payment, and for days on a job. */
   paidOn: string | null;
@@ -276,29 +280,77 @@ export interface AddMachineRepairInput {
   receiptRef?: string;
 }
 
-/** Log the days a machine worked on a job. One line per machine per job. */
+/**
+ * Log the days a machine worked on a job. One line per machine per job. The
+ * line stores the machine's project rate as its usual rate, and uses it unless
+ * `rateCents` is sent.
+ */
 export interface LogMachineDaysInput {
   jobId: string;
   /** Above zero. 5 is two and a half days. */
   halfDays: number;
+  /** A different daily rate for this line alone. Whole shillings: a multiple of 100 cents, above zero. */
+  rateCents?: number;
 }
 
-/** Correct the days on a line. The line keeps the rate it was logged at. */
+/**
+ * Correct a line's days, its rate, or both: at least one is sent. A rate left
+ * out keeps the line's own rate, and the usual rate stored with the line never
+ * changes.
+ */
 export interface EditMachineDaysInput {
-  halfDays: number;
+  halfDays?: number;
+  /** Whole shillings: a multiple of 100 cents, above zero. */
+  rateCents?: number;
 }
 
-/** Log a hire to an outside customer. It becomes a one-off job with the amount charged as its income. */
+/**
+ * Log a hire to an outside customer. It becomes a one-off job. The client is
+ * charged days x the rate, and that same amount is the machine's line: the
+ * job's income is the line's amount, with no discount. The line stores the
+ * machine's hire rate as its usual rate, and uses it unless `rateCents` is
+ * sent. A request that still carries the old `chargedCents` is refused: the
+ * page is out of date.
+ */
 export interface LogMachineHireInput {
   customerName: string;
+  /** Kept in the hire job's client phone. Sent to the owner only. */
+  customerPhone?: string;
+  /** Kept in the hire job's notes. Sent to the owner only. */
+  notes?: string;
   startDate: string;
+  /** Above zero. 5 is two and a half days. */
   halfDays: number;
-  /** May be less than days x rate: the machine still gets its full rate and the hire job shows the loss. */
-  chargedCents: number;
+  /** A different daily rate for this hire alone. Whole shillings: a multiple of 100 cents, above zero. */
+  rateCents?: number;
 }
 
-/** Correct a hire. The job and its line are written together; the line keeps the rate it was logged at. */
-export type EditMachineHireInput = LogMachineHireInput;
+/**
+ * Correct a hire. The client's details and the start date are always sent; a
+ * phone or notes left out stay as they are, and sent blank are cleared. With
+ * neither `halfDays` nor `rateCents` no figure changes. With either, the line
+ * is repriced (a rate left out keeps the hire's own rate) and the job's income
+ * becomes the new amount with no discount. A hire recorded before hires were
+ * charged at days x rate (its `standardRateCents` is null) needs both, and
+ * becomes an ordinary hire with the machine's hire rate as its usual rate.
+ * Refused, as logging is, when it carries `chargedCents`.
+ */
+export interface EditMachineHireInput {
+  customerName: string;
+  customerPhone?: string;
+  notes?: string;
+  startDate: string;
+  halfDays?: number;
+  rateCents?: number;
+}
+
+/** Mark a hire paid. Only the paid date and the reference change: no figure does. */
+export interface MarkHirePaidInput {
+  /** YYYY-MM-DD. */
+  paidOn: string;
+  /** M-Pesa code or bank reference. Sent back to the owner only. */
+  reference?: string;
+}
 
 /** Record a payment to an investor. Never more than they are still owed. */
 export interface PayMachineInvestorInput {

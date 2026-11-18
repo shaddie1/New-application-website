@@ -30,7 +30,7 @@ import {
   requireMachinesView,
 } from '../machines/guards.js';
 import { countsFromStartDay, isoDay, sum, type InvestorFigures } from '../machines/pot.js';
-import { isOnRegister, loadMachineDetail, machineRowSelect, potOf, toMachineRow } from '../machines/read.js';
+import { hireRateOf, isOnRegister, loadMachineDetail, machineRowSelect, potOf, toMachineRow } from '../machines/read.js';
 import {
   dayText,
   kshText,
@@ -44,10 +44,12 @@ import {
   AddMachineSchema,
   AddRepairSchema,
   EditDaysSchema,
+  EditHireSchema,
   EditMachineSchema,
   GiveMachineRateSchema,
-  HireSchema,
   LogDaysSchema,
+  LogHireSchema,
+  MarkHirePaidSchema,
   PayInvestorSchema,
   ReplaceInvestorsSchema,
   firstProblem,
@@ -72,6 +74,26 @@ const lineAmountCents = (halfDays: number, rateCents: number) => (halfDays * rat
  * project money, so the customer is kept in the job's client name only.
  */
 const hireTitle = (machineName: string) => `Hire: ${machineName}`;
+
+/** KTD10: a hire recorded before hires were charged at days x rate changes its figures only through both. */
+const OLD_HIRE_NEEDS_BOTH: Refusal = {
+  status: 409,
+  error:
+    'This hire was recorded before hires were charged at days times the daily rate, so its days and its rate change together. Give both.',
+};
+// A hire is one machine hired out on its own (owner's choice, 2026-11-18).
+const HIRE_JOB: Refusal = {
+  status: 409,
+  error: 'This job is a machine hire. To hire this machine out as well, log a hire for it on its own page.',
+};
+const SHARED_HIRE: Refusal = {
+  status: 409,
+  error:
+    'Other machines also have days on this hire\'s job, so its days and rate stay as recorded. Change what the client was charged on Jobs & costs instead.',
+};
+
+/** A phone or notes sent blank are cleared; left out, they stay as they are. */
+const blankAsNull = (text: string | undefined) => (text === undefined ? undefined : text || null);
 
 /** R32: why a hire of a machine whose start day is `startDay` cannot start earlier. */
 const hireBeforeStartDay = (startDay: Date): Refusal => ({
@@ -404,7 +426,8 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
               status: { in: COUNTED_STATUSES },
               date: { gte: machine.countsFrom },
               // A machine has one line per job, so a job that has it is corrected, not picked again.
-              machineLines: { none: { assetId: id } },
+              // A hire is one machine hired out on its own: another machine is hired with a hire of its own.
+              machineLines: { none: { OR: [{ assetId: id }, { isHire: true }] } },
               ...(search && { title: { contains: search, mode: 'insensitive' as const } }),
             },
             select: { id: true, date: true, title: true, project: { select: { title: true } } },
@@ -435,7 +458,9 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
     );
 
     // The rate and the amount are taken now and stored on the line (R3), and
-    // the line takes its job's date (R8).
+    // the line takes its job's date (R8). R6 and KTD3: days use the project
+    // rate unless the owner sent another, and the line keeps the project rate
+    // of the moment as its usual rate beside the rate it used.
     guarded.post<{ Params: { id: string } }>('/:id/lines', { preHandler: requireMachinesEdit }, async (req, reply) => {
       const parsed = LogDaysSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: firstProblem(parsed.error) });
@@ -464,14 +489,20 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
       if (logged) {
         return reply.code(409).send({ error: 'This machine\'s days on this job are already logged. Edit that line instead.' });
       }
+      // A hire's income is its own machine's amount and cannot be typed over, so
+      // another machine's days there would come straight off profit (R9, R20).
+      const hire = await prisma.machineLine.findFirst({ where: { jobId, isHire: true }, select: { id: true } });
+      if (hire) return sendRefusal(reply, HIRE_JOB);
 
+      const rateCents = parsed.data.rateCents ?? machine.projectRateCents;
       await prisma.machineLine.create({
         data: {
           assetId: id,
           jobId,
           halfDays,
-          rateCents: machine.projectRateCents,
-          amountCents: lineAmountCents(halfDays, machine.projectRateCents),
+          rateCents,
+          standardRateCents: machine.projectRateCents,
+          amountCents: lineAmountCents(halfDays, rateCents),
           isHire: false,
           createdById: req.machinesActor!.id,
         },
@@ -479,28 +510,31 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
       return sendMachine(reply, id, 201);
     });
 
-    // Only the days change: the line keeps the rate it was logged at (R3).
-    // What is already logged on a retired machine can still be corrected.
+    // KTD9: the days, the rate or both change. A rate left out keeps the
+    // line's own, whatever the machine's rate is now, and the usual rate stored
+    // with the line is never rewritten. What is already logged on a retired
+    // machine can still be corrected.
     guarded.patch<{ Params: { lineId: string } }>('/lines/:lineId', { preHandler: requireMachinesEdit }, async (req, reply) => {
       const parsed = EditDaysSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: firstProblem(parsed.error) });
-      const { halfDays } = parsed.data;
 
       const { lineId } = req.params;
       const line = await prisma.machineLine.findUnique({
         where: { id: lineId },
-        select: { assetId: true, isHire: true, rateCents: true },
+        select: { assetId: true, isHire: true, halfDays: true, rateCents: true },
       });
       if (!line) return sendRefusal(reply, NO_DAYS);
       if (line.isHire) {
         return reply.code(409).send({
-          error: 'These days belong to a hire. Edit the hire instead: its days are changed with its customer, date and charge.',
+          error: 'These days belong to a hire. Edit the hire instead: its days and rate are changed with its client and date.',
         });
       }
 
+      const halfDays = parsed.data.halfDays ?? line.halfDays;
+      const rateCents = parsed.data.rateCents ?? line.rateCents;
       await prisma.machineLine.update({
         where: { id: lineId },
-        data: { halfDays, amountCents: lineAmountCents(halfDays, line.rateCents) },
+        data: { halfDays, rateCents, amountCents: lineAmountCents(halfDays, rateCents) },
       });
       return sendMachine(reply, line.assetId);
     });
@@ -522,13 +556,17 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
 
     // ── Hires ───────────────────────────────────────────────────────────────
     //
-    // KTD6: a hire is a one-off job the owner entered, with one line marked as
-    // a hire. The job's income is the only copy of the amount charged.
+    // A hire is a one-off job the owner entered, with one line marked as a
+    // hire. KTD4: the client is charged days x the rate, and all of it goes to
+    // the machine's pot, so the job's income is the line's amount with no
+    // discount, written with the line. A hire therefore adds as much income as
+    // machine cost and leaves profit where it was (R9). A hire recorded before
+    // this has no usual rate stored and keeps its own income (R10).
 
     guarded.post<{ Params: { id: string } }>('/:id/hires', { preHandler: requireMachinesEdit }, async (req, reply) => {
-      const parsed = HireSchema.safeParse(req.body);
+      const parsed = LogHireSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: firstProblem(parsed.error) });
-      const { customerName, halfDays, chargedCents } = parsed.data;
+      const { customerName, halfDays } = parsed.data;
       const date = new Date(parsed.data.startDate);
 
       const { id } = req.params;
@@ -537,7 +575,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
       const refused = await prisma.$transaction(async (tx): Promise<Refusal | null> => {
         const machine = await tx.asset.findUnique({
           where: { id },
-          select: { name: true, projectRateCents: true, countsFrom: true, retiredAt: true },
+          select: { name: true, projectRateCents: true, hireRateCents: true, countsFrom: true, retiredAt: true },
         });
         if (!machine || !isOnRegister(machine)) return NO_MACHINE;
         if (machine.retiredAt) return RETIRED;
@@ -555,16 +593,24 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
           };
         }
 
+        // R8 and KTD3: the machine's hire rate unless the owner sent another, kept as the usual rate beside it.
+        const usualRateCents = hireRateOf(machine);
+        const rateCents = parsed.data.rateCents ?? usualRateCents;
+        const amountCents = lineAmountCents(halfDays, rateCents);
+
         // One-off with no project, which the Job_placement_project_check constraint requires.
         const job = await tx.job.create({
           data: {
             title: hireTitle(machine.name),
             date,
-            incomeCents: chargedCents,
+            incomeCents: amountCents,
+            discountCents: 0,
             status: 'OWNER_ENTRY',
             placement: 'STANDALONE',
             projectId: null,
             clientName: customerName,
+            clientPhone: parsed.data.customerPhone || null,
+            notes: parsed.data.notes || null,
             createdById,
           },
           select: { id: true },
@@ -574,9 +620,9 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
             assetId: id,
             jobId: job.id,
             halfDays,
-            // Priced as before the hire rate came in, until the hire form sends a rate (U3).
-            rateCents: machine.projectRateCents,
-            amountCents: lineAmountCents(halfDays, machine.projectRateCents),
+            rateCents,
+            standardRateCents: usualRateCents,
+            amountCents,
             isHire: true,
             createdById,
           },
@@ -587,21 +633,40 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
       return sendMachine(reply, id, 201);
     });
 
-    // The job and the line are written together. The line keeps the rate it
-    // was logged at, and a hire on a retired machine can still be corrected.
+    // The job and the line are written together, and a hire on a retired
+    // machine can still be corrected. KTD10: with neither days nor a rate sent
+    // only the client and the start date change. With either, the line is
+    // repriced (a rate left out keeps the hire's own, KTD9) and the job's
+    // income becomes the new amount with no discount (KTD4).
     guarded.patch<{ Params: { lineId: string } }>('/hires/:lineId', { preHandler: requireMachinesEdit }, async (req, reply) => {
-      const parsed = HireSchema.safeParse(req.body);
+      const parsed = EditHireSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: firstProblem(parsed.error) });
-      const { customerName, halfDays, chargedCents } = parsed.data;
+      const { customerName } = parsed.data;
       const date = new Date(parsed.data.startDate);
+      const changesFigures = parsed.data.halfDays !== undefined || parsed.data.rateCents !== undefined;
 
       const { lineId } = req.params;
       const result = await prisma.$transaction(async (tx): Promise<Refusal | { machineId: string }> => {
         const line = await tx.machineLine.findUnique({
           where: { id: lineId },
-          select: { assetId: true, jobId: true, isHire: true, rateCents: true, asset: { select: { name: true } } },
+          select: {
+            assetId: true,
+            jobId: true,
+            isHire: true,
+            halfDays: true,
+            rateCents: true,
+            standardRateCents: true,
+            asset: { select: { name: true, projectRateCents: true, hireRateCents: true } },
+          },
         });
         if (!line || !line.isHire) return NO_HIRE;
+        // R10: a hire with no usual rate stored keeps its recorded charge until
+        // the owner gives it both days and a rate; one alone would mix its old
+        // charge with the new rule.
+        const isOldHire = line.standardRateCents === null;
+        if (changesFigures && isOldHire && (parsed.data.halfDays === undefined || parsed.data.rateCents === undefined)) {
+          return OLD_HIRE_NEEDS_BOTH;
+        }
 
         // R32: the new date moves the job, so it is checked against the start
         // day of every machine with days on that job, the hired one among them.
@@ -617,6 +682,15 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
             error: `${asset.name} also has days logged on this hire's job, and its start day is ${dayText(asset.countsFrom)}, so the hire cannot start before that.`,
           };
         }
+        // An older hire's charge may cover the other machines' days too; under R8
+        // the income would drop to this machine's amount and their share leave profit.
+        if (changesFigures && onJob.some((l) => l.assetId !== line.assetId)) return SHARED_HIRE;
+
+        const halfDays = parsed.data.halfDays ?? line.halfDays;
+        const rateCents = parsed.data.rateCents ?? line.rateCents;
+        const amountCents = lineAmountCents(halfDays, rateCents);
+        const clientPhone = blankAsNull(parsed.data.customerPhone);
+        const notes = blankAsNull(parsed.data.notes);
 
         await tx.job.update({
           where: { id: line.jobId },
@@ -624,15 +698,27 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
             title: hireTitle(line.asset.name),
             clientName: customerName,
             date,
-            // What the customer was charged is income less discount, so the amount typed is stored with nothing off.
-            incomeCents: chargedCents,
-            discountCents: 0,
+            ...(clientPhone !== undefined && { clientPhone }),
+            ...(notes !== undefined && { notes }),
+            // What the client was charged is income less discount, so the amount is stored with nothing off.
+            ...(changesFigures && { incomeCents: amountCents, discountCents: 0 }),
           },
         });
-        await tx.machineLine.update({
-          where: { id: lineId },
-          data: { halfDays, amountCents: lineAmountCents(halfDays, line.rateCents) },
-        });
+        if (changesFigures) {
+          await tx.machineLine.update({
+            where: { id: lineId },
+            data: {
+              halfDays,
+              rateCents,
+              amountCents,
+              // KTD10: an older hire becomes an ordinary one, with the machine's hire rate as its usual
+              // rate: hireRateOf, spelled out because a line's asset may in principle have no project rate.
+              ...(isOldHire && {
+                standardRateCents: line.asset.hireRateCents ?? line.asset.projectRateCents ?? rateCents,
+              }),
+            },
+          });
+        }
         return { machineId: line.assetId };
       });
       if ('status' in result) return sendRefusal(reply, result);
@@ -651,6 +737,36 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
       if (!line || !line.isHire) return sendRefusal(reply, NO_HIRE);
 
       await prisma.job.delete({ where: { id: line.jobId } });
+      return sendMachine(reply, line.assetId);
+    });
+
+    // R14 and R15: a hire's paid mark, a date and an optional reference.
+    // Only those two columns are written: no income, amount or pot moves, and
+    // a hire counts from the day it was recorded whether paid or not. Marking
+    // it again replaces the date and the reference.
+    guarded.put<{ Params: { lineId: string } }>('/hires/:lineId/paid', { preHandler: requireMachinesEdit }, async (req, reply) => {
+      const parsed = MarkHirePaidSchema.safeParse(req.body);
+      if (!parsed.success) return reply.code(400).send({ error: firstProblem(parsed.error) });
+
+      const { lineId } = req.params;
+      const line = await prisma.machineLine.findUnique({ where: { id: lineId }, select: { assetId: true, isHire: true } });
+      // Days on a job are paid for by the job, not marked here.
+      if (!line || !line.isHire) return sendRefusal(reply, NO_HIRE);
+
+      await prisma.machineLine.update({
+        where: { id: lineId },
+        data: { hirePaidOn: new Date(parsed.data.paidOn), hirePaymentRef: parsed.data.reference || null },
+      });
+      return sendMachine(reply, line.assetId);
+    });
+
+    // Undoing the mark: the hire is awaiting payment again.
+    guarded.delete<{ Params: { lineId: string } }>('/hires/:lineId/paid', { preHandler: requireMachinesEdit }, async (req, reply) => {
+      const { lineId } = req.params;
+      const line = await prisma.machineLine.findUnique({ where: { id: lineId }, select: { assetId: true, isHire: true } });
+      if (!line || !line.isHire) return sendRefusal(reply, NO_HIRE);
+
+      await prisma.machineLine.update({ where: { id: lineId }, data: { hirePaidOn: null, hirePaymentRef: null } });
       return sendMachine(reply, line.assetId);
     });
 

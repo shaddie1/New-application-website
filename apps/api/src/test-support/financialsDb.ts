@@ -60,10 +60,11 @@ const containsText = (value: unknown, { contains, mode }: Row) =>
   typeof value === 'string' &&
   (mode === 'insensitive' ? value.toLowerCase().includes(contains.toLowerCase()) : value.includes(contains));
 
-/** The subset of Prisma's `where` the routes use: equality (dates by their instant), null, `not`, `in`, `contains` and ranges. */
-const matches = (row: Row, where: Row = {}) =>
+/** The subset of Prisma's `where` the routes use: equality (dates by their instant), null, `not`, `in`, `contains`, ranges and `OR`. */
+const matches = (row: Row, where: Row = {}): boolean =>
   Object.entries(where).every(([k, v]) =>
-    v === null ? row[k] == null
+    k === 'OR' ? (v as Row[]).some((w) => matches(row, w))
+    : v === null ? row[k] == null
     : v instanceof Date ? row[k] instanceof Date && row[k].getTime() === v.getTime()
     : typeof v === 'object' && 'not' in v ? row[k] !== v.not
     : typeof v === 'object' && 'in' in v ? (v.in as unknown[]).includes(row[k])

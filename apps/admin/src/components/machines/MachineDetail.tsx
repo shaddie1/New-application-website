@@ -15,6 +15,7 @@ import { Button } from '../ui/button';
 import { useConfirm, type ConfirmOptions } from '../ui/confirm-dialog';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { HireForm } from './HireForm';
+import { HirePaidForm } from './HirePaidForm';
 import { InvestorsForm } from './InvestorsForm';
 import { EditDaysForm, LogDaysForm } from './LogDaysForm';
 import { EditMachineForm } from './MachineForm';
@@ -22,14 +23,14 @@ import { Figure, HEADINGS, LoadFailed, NAME_CELL, Pot, ROW, RetiredMark } from '
 import { PayoutForm } from './PayoutForm';
 import { RepairForm } from './RepairForm';
 import {
-  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, ownedBy, priceText,
+  companyPartLine, daysText, earnBackLine, entitledText, hireChargeText, hireLabel, ownedBy, paidUndoMessage, priceText,
   removeHireMessage, stillOwedText,
 } from './wording';
 
 /** The owner's form that is open over the machine's view. */
 type OwnerForm =
   | { kind: 'machine' | 'investors' | 'repair' | 'days' | 'hire' }
-  | { kind: 'edit-days' | 'edit-hire'; line: MachineLineDto }
+  | { kind: 'edit-days' | 'edit-hire' | 'hire-paid'; line: MachineLineDto }
   | { kind: 'pay'; investor: MachineInvestorDto };
 
 const LINE_COLS = 'xl:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]';
@@ -308,6 +309,17 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
     'Could not remove the hire. Try again.',
   );
 
+  // R14: the hire awaits payment again. Nothing is lost that cannot be typed back.
+  const undoPaid = (l: MachineLineDto) => change(
+    {
+      title: l.customerName ? `Mark the hire to ${l.customerName} as not paid?` : 'Mark this hire as not paid?',
+      description: paidUndoMessage(l),
+      confirmLabel: 'Mark not paid',
+    },
+    async () => (await api.unmarkMachineHirePaid(l.id)).machine,
+    'Could not undo the paid mark. Try again.',
+  );
+
   const deleteRepair = (r: MachineRepairDto) => change(
     {
       title: 'Delete this repair?',
@@ -475,6 +487,11 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
                   actions={canEdit && (l.isHire ? (
                     <>
                       <Button {...small} onClick={() => openForm({ kind: 'edit-hire', line: l })}>Edit hire</Button>
+                      {l.paidOn ? (
+                        <Button {...small} onClick={() => void undoPaid(l)}>Undo paid</Button>
+                      ) : (
+                        <Button {...small} onClick={() => openForm({ kind: 'hire-paid', line: l })}>Mark paid</Button>
+                      )}
                       <Button {...small} onClick={() => void removeHire(l)}>Remove hire</Button>
                     </>
                   ) : (
@@ -554,6 +571,9 @@ export function MachineDetail({ machineId, onBack, canEdit }: MachineDetailProps
             {form?.kind === 'hire' && <HireForm key={opening} machine={m} onSaved={setMachine} onClose={closeForm} />}
             {form?.kind === 'edit-hire' && (
               <HireForm key={opening} machine={m} line={form.line} onSaved={setMachine} onClose={closeForm} />
+            )}
+            {form?.kind === 'hire-paid' && (
+              <HirePaidForm key={opening} line={form.line} onSaved={setMachine} onClose={closeForm} />
             )}
             {form?.kind === 'pay' && (
               <PayoutForm key={opening} machine={m} investor={form.investor} onSaved={setMachine} onClose={closeForm} />
