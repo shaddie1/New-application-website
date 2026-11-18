@@ -12,7 +12,6 @@ import {
   FolderLock,
   Globe,
   Landmark,
-  LayoutDashboard,
   Menu,
   Receipt,
   Tags,
@@ -26,11 +25,11 @@ import { useEffect, useState } from 'react';
 import { api } from '../../src/lib/api';
 import { useAuth, useRequireAdmin } from '../../src/lib/auth';
 import { cn } from '../../src/lib/cn';
+import { canSeeInsights } from '../../src/lib/landing';
 import { isActivePath, menuSections } from '../../src/lib/nav';
 
 /** One small icon per menu item, by address. */
 const ICONS: Record<string, LucideIcon> = {
-  '/': LayoutDashboard,
   '/projects': Briefcase,
   '/calendar': CalendarDays,
   '/bookings': ClipboardList,
@@ -87,7 +86,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const { role, isOwner } = session.user;
   const canPublishWebsite = isOwner === true || role === 'ADMIN' || role === 'MARKETING';
-  const sections = menuSections({ isOwner: isOwner === true, canPublishWebsite, canViewMachines });
+  const sections = menuSections({
+    isOwner: isOwner === true, canPublishWebsite, canViewMachines, canSeeInsights: canSeeInsights(session.user),
+  });
 
   const menuLinks = (
     <nav aria-label="Main menu" className="space-y-6">

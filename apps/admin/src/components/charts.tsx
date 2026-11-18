@@ -711,7 +711,7 @@ const SURFACE = 'var(--chart-surface)';
 
 /**
  * A donut slice. `color` fixes the slice's colour, for an entity that keeps
- * one colour wherever it appears (a shareholder, on Dashboard and Ownership).
+ * one colour wherever it appears (a shareholder, on Ownership).
  * A slice with none takes the colour of its position, largest first.
  */
 export type DonutSlice = Slice & { color?: string };

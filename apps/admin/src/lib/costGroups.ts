@@ -5,7 +5,7 @@ import type { CostsByGroup, ExpenseCategory } from '@onyxhawk/types';
  * person can type in, and the machines' days, which the Machines page logs.
  *
  * The back-office has two sets of names for the five. A project's Money tab
- * says "Crew pay" and "Other"; the Dashboard and Insights say "Employee pay"
+ * says "Crew pay" and "Other"; Insights says "Employee pay"
  * and "Miscellaneous". Each screen keeps the names it has always shown, so
  * every caller says which set it wants.
  */

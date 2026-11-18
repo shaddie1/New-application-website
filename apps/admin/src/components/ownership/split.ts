@@ -5,7 +5,7 @@ import { BASIS_POINTS_TOTAL } from './stakes';
 
 /**
  * How many holders get a colour of their own. A holder's colour is their
- * position in the cap table, the rule the Dashboard's profit-share chart
+ * position in the cap table, the rule every profit-share chart
  * follows too; those past the fifth share the neutral colour and are still
  * named wherever they appear.
  */

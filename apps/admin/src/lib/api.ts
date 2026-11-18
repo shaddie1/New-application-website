@@ -1,6 +1,5 @@
 import type {
   Session,
-  AdminStats,
   AdminBookingDto,
   AdminQuoteRequestDto,
   CrewUserDto,
@@ -177,7 +176,6 @@ export const api = {
     }),
 
   // ── Admin ──────────────────────────────────────────────────────────────
-  stats: () => request<{ stats: AdminStats }>('/admin/stats', { method: 'GET', auth: true }),
 
   bookings: (status?: string) =>
     request<{ bookings: AdminBookingDto[] }>(
@@ -799,12 +797,5 @@ export const api = {
     request<{ ok: true }>(
       `/admin/job-reports/${encodeURIComponent(reportId)}/expenses/${encodeURIComponent(expenseId)}`,
       { method: 'DELETE', auth: true },
-    ),
-
-  // ── Dev sign-in-code viewer (owner only; the server answers 404 outside development) ─────────────────
-  recentOtps: () =>
-    request<{ codes: { phone: string; email: string | null; purpose: string; codePlain: string; createdAt: string; expiresAt: string }[] }>(
-      '/admin/otps/recent',
-      { method: 'GET', auth: true },
     ),
 };
