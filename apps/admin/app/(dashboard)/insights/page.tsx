@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import type {
   DashboardOverview,
@@ -14,10 +13,8 @@ import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { changeLabel, overviewChanges } from '../../../src/lib/change';
 import { costGroupRows } from '../../../src/lib/costGroups';
-import { canSeeInsights, landingPath, maySetTargets } from '../../../src/lib/landing';
 import { DonutChart, StatTile, TargetMeter, TrendChart, moneyShort } from '../../../src/components/charts';
 import { money as formatMoney } from '../../../src/lib/money';
-import { hasOwnerAccess } from '../../../src/lib/roles';
 
 const money = (cents: number) => formatMoney(cents, { whole: true });
 
@@ -41,24 +38,8 @@ function monthRange(year: number, month: number) {
 
 const input = 'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm';
 
-/**
- * The month's targets, figures and where the money came from and went.
- *
- *   owner                              everything
- *   admin, financial manager,          targets, the month's figures and the two
- *   shareholder                        revenue charts: what the server gives them
- *   admin, financial manager           also set the targets
- *
- * The trend, the expense split and the profit share are the owner's alone, as
- * the server's answers are; they are not asked for on anyone else's behalf.
- */
 export default function InsightsPage() {
   const session = useRequireAdmin();
-  const router = useRouter();
-  const user = session?.user;
-  const isOwner = !!user && hasOwnerAccess(user);
-  const allowed = !!user && canSeeInsights(user);
-  const canSetTargets = !!user && maySetTargets(user);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -85,20 +66,19 @@ export default function InsightsPage() {
     : [];
 
   const load = useCallback(async () => {
-    if (!allowed) return;
     setLoading(true);
     setError(null);
     try {
       const [ov, tr, br, eq, sm] = await Promise.all([
         api.overview(year, month),
-        isOwner ? api.financialTrends(12) : null,
+        api.financialTrends(12),
         api.revenueBreakdown(from, to),
-        isOwner ? api.equity(from, to).catch(() => null) : null,
-        isOwner ? api.financialSummary(from, to).catch(() => null) : null, // expense split by category
+        api.equity(from, to).catch(() => null), // equity is cap-table-holders only
+        api.financialSummary(from, to).catch(() => null), // expense split by category
       ]);
       setOverview(ov.overview);
       setSummary(sm?.summary ?? null);
-      setTrends(tr?.trends ?? []);
+      setTrends(tr.trends);
       setBreakdown(br.breakdown);
       setEquity(eq?.overview ?? null);
       setTargetForm({
@@ -111,14 +91,9 @@ export default function InsightsPage() {
     } finally {
       setLoading(false);
     }
-  }, [allowed, isOwner, year, month, from, to]);
+  }, [year, month, from, to]);
 
   useEffect(() => { void load(); }, [load]);
-
-  // Anyone else goes to their own first page rather than to figures the server would refuse.
-  useEffect(() => {
-    if (user && !allowed) router.replace(landingPath(user));
-  }, [user, allowed, router]);
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear((y) => y - 1); } else setMonth((m) => m - 1);
@@ -148,7 +123,7 @@ export default function InsightsPage() {
   };
 
   if (session === undefined) return <div className="text-charcoal-muted">Loading…</div>;
-  if (!session || !allowed) return null;
+  if (!session) return null;
 
   const trendData = trends.map((t) => ({
     label: t.label.replace(/ \d{4}$/, ''),
@@ -161,28 +136,24 @@ export default function InsightsPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-serif text-3xl">Insights</h1>
-          <p className="mt-1 text-sm text-charcoal-muted">
-            {isOwner ? 'Targets, trends and where the money comes from.' : 'Targets, the month’s figures and where the money comes from.'}
-          </p>
+          <p className="mt-1 text-sm text-charcoal-muted">Targets, trends and where the money comes from.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-mist">←</button>
           <span className="w-36 text-center text-sm font-medium">{overview?.monthLabel ?? '…'}</span>
           <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-mist">→</button>
-          {canSetTargets && (
-            <button
-              onClick={() => setShowTargets((v) => !v)}
-              className="rounded-lg bg-navy px-4 py-2 text-sm text-white hover:opacity-90"
-            >
-              {showTargets ? 'Cancel' : 'Set targets'}
-            </button>
-          )}
+          <button
+            onClick={() => setShowTargets((v) => !v)}
+            className="rounded-lg bg-navy px-4 py-2 text-sm text-white hover:opacity-90"
+          >
+            {showTargets ? 'Cancel' : 'Set targets'}
+          </button>
         </div>
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
-      {canSetTargets && showTargets && (
+      {showTargets && (
         <form onSubmit={(e) => void saveTargets(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/45 bg-white p-5 sm:grid-cols-4">
           <div>
             <label className="mb-1 block text-xs text-charcoal-muted">Revenue target (KSh)</label>
@@ -235,12 +206,10 @@ export default function InsightsPage() {
               deltaLabel={changeLabel(overviewChanges(overview).mode, String(overview?.previousJobCount ?? 0))} />
           </div>
 
-          {/* Trend: the owner's alone */}
-          {isOwner && (
-            <div className="mt-6">
-              <TrendChart data={trendData} />
-            </div>
-          )}
+          {/* Trend */}
+          <div className="mt-6">
+            <TrendChart data={trendData} />
+          </div>
 
           {/* Part-to-whole breakdowns */}
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
@@ -264,18 +233,16 @@ export default function InsightsPage() {
               />
             </ChartCard>
 
-            {isOwner && (
-              <ChartCard title={`Where the money went — ${overview?.monthLabel ?? ''}`}>
-                <DonutChart
-                  slices={expenseSlices}
-                  // Every group keeps a slice of its own: with Machines there are six, and
-                  // folding the smallest into "Other" would take a named group off the chart.
-                  maxSlices={expenseSlices.length}
-                  centreLabel="total expenses"
-                  emptyLabel="No expenses recorded this month."
-                />
-              </ChartCard>
-            )}
+            <ChartCard title={`Where the money went — ${overview?.monthLabel ?? ''}`}>
+              <DonutChart
+                slices={expenseSlices}
+                // Every group keeps a slice of its own: with Machines there are six, and
+                // folding the smallest into "Other" would take a named group off the chart.
+                maxSlices={expenseSlices.length}
+                centreLabel="total expenses"
+                emptyLabel="No expenses recorded this month."
+              />
+            </ChartCard>
 
             {equity && (
               <ChartCard title={`Profit share — ${overview?.monthLabel ?? ''}`}>

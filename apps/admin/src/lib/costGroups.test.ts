@@ -17,7 +17,7 @@ describe('costGroupLabel', () => {
     expect(costGroupLabel('MISCELLANEOUS', 'money-tab')).toBe('Other');
   });
 
-  it("keeps Insights' names for the five groups", () => {
+  it("keeps the Dashboard's and Insights' names for the five groups", () => {
     expect(costGroupLabel('MATERIALS', 'charts')).toBe('Materials');
     expect(costGroupLabel('TRANSPORT', 'charts')).toBe('Transport');
     expect(costGroupLabel('EMPLOYEE_PAY', 'charts')).toBe('Employee pay');

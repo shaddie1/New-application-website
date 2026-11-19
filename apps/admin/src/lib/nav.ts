@@ -5,8 +5,8 @@
 export type NavItem = { href: string; label: string };
 export type NavSection = { title: string; items: NavItem[] };
 
-// There is no Dashboard: each account lands on its own first page (src/lib/landing.ts).
 export const OPERATIONS: NavItem[] = [
+  { href: '/', label: 'Dashboard' },
   { href: '/projects', label: 'Projects' },
   { href: '/calendar', label: 'Calendar' },
   { href: '/bookings', label: 'Bookings' },
@@ -16,15 +16,8 @@ export const OPERATIONS: NavItem[] = [
 /** Shown under Operations to everyone but the owner. */
 export const JOB_REPORTS: NavItem = { href: '/job-reports', label: 'Job reports' };
 
-/**
- * The month's targets, figures and where the money came from. The owner sees
- * all of it; an admin, the financial manager and a shareholder see the parts
- * the server gives them.
- */
-export const INSIGHTS: NavItem = { href: '/insights', label: 'Insights' };
-
 export const OWNER_FINANCE: NavItem[] = [
-  INSIGHTS,
+  { href: '/insights', label: 'Insights' },
   // Per-job income and expenses. The address keeps its old name.
   { href: '/financials', label: 'Jobs & costs' },
   // Marketing, assets, investments and payouts.
@@ -52,20 +45,16 @@ export const WEBSITE: NavItem[] = [{ href: '/website-jobs', label: 'Website jobs
  * The menu for one signed-in account, grouped so it reads as sections rather
  * than one long list. `canViewMachines` is the server's answer: pass false
  * until it has answered, and when it could not be asked, so the item never
- * shows to someone the page would refuse. `canSeeInsights` comes from
- * src/lib/landing.ts.
+ * shows to someone the page would refuse.
  */
 export function menuSections({
-  isOwner, canPublishWebsite, canViewMachines, canSeeInsights,
+  isOwner, canPublishWebsite, canViewMachines,
 }: {
   isOwner: boolean;
   canPublishWebsite: boolean;
   canViewMachines: boolean;
-  canSeeInsights: boolean;
 }): NavSection[] {
   const machines = canViewMachines ? [MACHINES] : [];
-  // The rest of Finance is the owner's, so anyone else gets Insights and Machines at most.
-  const staffFinance = [...(canSeeInsights ? [INSIGHTS] : []), ...machines];
   return [
     ...(isOwner
       ? [
@@ -75,7 +64,8 @@ export function menuSections({
         ]
       : [
           { title: 'Operations', items: [...OPERATIONS, JOB_REPORTS] },
-          ...(staffFinance.length > 0 ? [{ title: 'Finance', items: staffFinance }] : []),
+          // The rest of Finance is the owner's, so for anyone else the section holds Machines alone.
+          ...(canViewMachines ? [{ title: 'Finance', items: machines }] : []),
         ]),
     ...(canPublishWebsite ? [{ title: 'Website', items: WEBSITE }] : []),
   ];

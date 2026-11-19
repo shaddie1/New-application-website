@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/lib/auth';
-import { landingPath } from '../../src/lib/landing';
 
 // Keep in step with the staffRoles allowlist in src/lib/auth.tsx.
 const STAFF_ROLES = ['ADMIN', 'SUPPORT', 'FINANCIAL_MANAGER', 'MARKETING', 'CLEANING_SUPERVISOR', 'SHAREHOLDER', 'COO'];
@@ -20,10 +19,10 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Already signed in as staff → go to that account's first page.
+  // Already signed in as staff → go to dashboard.
   useEffect(() => {
     if (session && STAFF_ROLES.includes(session.user.role)) {
-      router.replace(landingPath(session.user));
+      router.replace('/');
     }
   }, [session, router]);
 
@@ -69,7 +68,7 @@ export default function LoginPage() {
         return;
       }
       setSession(res.session);
-      router.replace(landingPath(res.session.user));
+      router.replace('/');
     } catch (err) {
       setError(messageFrom(err, 'Could not verify the code.'));
     } finally {
