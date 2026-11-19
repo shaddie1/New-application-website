@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { isBackOfficeAccount, machinesAccess } from './access.js';
 
-// Who may see the machine register and who may change it. The owner sees and
-// changes. The admin, the financial manager and the COO see. Any other
+// Who may see the machine register and who may change it. The owner and the
+// admins see and change. The financial manager and the COO see. Any other
 // back-office account sees only while it is linked to a current shareholder
-// record. Nobody but the owner changes anything.
+// record. Nobody else changes anything.
 
 const account = (role: UserRole, over: { isOwner?: boolean; isHolder?: boolean } = {}) => ({
   role, isOwner: false, isHolder: false, ...over,
@@ -20,7 +20,8 @@ describe('machinesAccess', () => {
   it.each([
     ['the owner', account(UserRole.ADMIN, { isOwner: true }), SEES_AND_CHANGES],
     ['the owner, also a shareholder', account(UserRole.ADMIN, { isOwner: true, isHolder: true }), SEES_AND_CHANGES],
-    ['an admin', account(UserRole.ADMIN), SEES],
+    ['an admin', account(UserRole.ADMIN), SEES_AND_CHANGES],
+    ['an admin, also a shareholder', account(UserRole.ADMIN, { isHolder: true }), SEES_AND_CHANGES],
     ['the financial manager', account(UserRole.FINANCIAL_MANAGER), SEES],
     ['the COO', account(UserRole.COO), SEES],
     ['the COO, also a shareholder', account(UserRole.COO, { isHolder: true }), SEES],

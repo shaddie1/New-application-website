@@ -63,6 +63,6 @@ export async function requireMachinesView(req: FastifyRequest, reply: FastifyRep
 /** preHandler for every route that changes the register, and for the owner's job picker. Run after attachMachinesActor. */
 export async function requireMachinesEdit(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.machinesActor || !machinesAccess(req.machinesActor).canEdit) {
-    return reply.code(403).send({ error: 'only the owner can change the machine register' });
+    return reply.code(403).send({ error: 'only the owner or an admin can change the machine register' });
   }
 }

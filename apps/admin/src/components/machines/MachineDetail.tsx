@@ -170,7 +170,7 @@ export type MachineDetailProps = {
   /** Back to the table of every machine. */
   onBack: () => void;
   /**
-   * The owner only, from the server's access answer. Everyone sees the same
+   * The owner and admins, from the server's access answer. Everyone sees the same
    * figures; this says whether the owner's controls belong on the view.
    */
   canEdit: boolean;

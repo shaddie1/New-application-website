@@ -5,6 +5,7 @@ import type { AdminStaffDto, StaffRole } from '@onyxhawk/types';
 
 import { api, ApiError } from '../../../src/lib/api';
 import { useAuth } from '../../../src/lib/auth';
+import { hasOwnerAccess } from '../../../src/lib/roles';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Admin',
@@ -26,7 +27,7 @@ const e164 = (input: string): string => {
 
 export default function TeamPage() {
   const { session } = useAuth();
-  const isOwner = !!session?.user.isOwner;
+  const isOwner = !!session && hasOwnerAccess(session.user);
 
   const [staff, setStaff] = useState<AdminStaffDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export default function TeamPage() {
   if (!isOwner) {
     return (
       <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">
-        Only the account owner can manage the team.
+        Only the owner and admins can manage the team.
       </div>
     );
   }
@@ -125,7 +126,7 @@ export default function TeamPage() {
         <h1 className="font-serif text-3xl">
           Team
         </h1>
-        <p className="text-text-muted text-sm mt-1">Add or remove admins and support staff. Only you (owner) can do this.</p>
+        <p className="text-text-muted text-sm mt-1">Add or remove team members. Only the owner and admins can do this, and nobody can remove the owner.</p>
       </div>
 
       {error && <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">{error}</div>}

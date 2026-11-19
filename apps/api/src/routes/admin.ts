@@ -28,7 +28,7 @@ import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { devToolsEnabled } from '../auth/otp.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
-import { STAFF_ROLES, staffRoleLabel } from '../auth/staff.js';
+import { hasOwnerAccess, STAFF_ROLES, staffRoleLabel } from '../auth/staff.js';
 import { trySendEmail } from '../email/service.js';
 import { signInEmailChangedEmail, staffWelcomeEmail } from '../email/templates.js';
 import { notifyCrewAssigned, notifyQuoteResponded } from '../notifications/service.js';
@@ -240,7 +240,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ quoteRequest: toAdminQuoteDto(row, !!actor && canViewEstimate(actor)) });
   });
 
-  // ── Team / staff management (OWNER only) ──────────────────────────────────
+  // ── Team / staff management (the owner and admins) ──────────────────────────────────
 
   // List every staff member (all staff roles, not just admin/support) and the owner.
   app.get('/staff', { preHandler: requireOwner }, async (_req, reply) => {
@@ -264,6 +264,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send({ error: 'That email is already on another account.' });
     }
     // A new account or a promoted customer is welcomed; re-adding an existing member just updates them.
+    // Admins share the owner's team powers, but an owner's own record (role,
+    // name, email) is changed only by that owner.
+    if (existing?.isOwner && existing.id !== req.auth!.sub) {
+      return reply.code(403).send({ error: 'You can’t change an owner’s details.' });
+    }
     const joiningTeam = !existing || !(existing.isOwner || STAFF_ROLES.has(existing.role));
     // A member's email changes only through PATCH, which guards owners, signs
     // them out everywhere and tells both addresses.
@@ -389,11 +394,11 @@ async function requireAdminRole(req: FastifyRequest, reply: FastifyReply): Promi
   }
 }
 
-// Owner gate for staff management — checked against the DB (not the JWT).
+// Owner gate for staff management (the owner and admins) — checked against the DB (not the JWT).
 async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
-  const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
-  if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+  const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true, role: true } });
+  if (!u || !hasOwnerAccess(u)) return reply.code(403).send({ error: 'owner access required' });
 }
 
 /**

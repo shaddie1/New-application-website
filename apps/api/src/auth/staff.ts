@@ -27,6 +27,15 @@ export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   COO: 'COO',
 };
 
+/**
+ * The owner's view and powers: the owner, and every account with the Admin
+ * role, by the owner's choice. Read the role from the database, not the token.
+ * Routes that protect the owner's own account check the target's isOwner, not this.
+ */
+export function hasOwnerAccess(user: { role: string; isOwner: boolean }): boolean {
+  return user.isOwner || user.role === UserRole.ADMIN;
+}
+
 /** The role to show for a staff account. The owner is an ADMIN with isOwner set, shown as "Owner" as on the Team page. */
 export function staffRoleLabel(user: { role: string; isOwner: boolean }): string {
   if (user.isOwner) return 'Owner';

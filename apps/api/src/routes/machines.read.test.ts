@@ -237,7 +237,7 @@ describe.each([REGISTER, machineUrl('polisher')])('who may open %s', (url) => {
 describe('GET /admin/machines/access', () => {
   it.each([
     ['owner', { canView: true, canEdit: true }],
-    ['admin', { canView: true, canEdit: false }],
+    ['admin', { canView: true, canEdit: true }],
     ['finance', { canView: true, canEdit: false }],
     ['coo', { canView: true, canEdit: false }],
     ['linkedSupervisor', { canView: true, canEdit: false }],
@@ -349,7 +349,7 @@ describe('GET /admin/machines/:id', () => {
     expect(lines[0]).not.toHaveProperty('customerName');
   });
 
-  it.each(['admin', 'finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
+  it.each(['finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
     'R31: the hire customer is nowhere in what %s is sent',
     async (userId) => {
       const res = await as(userId, 'GET', machineUrl('polisher'));
@@ -371,7 +371,7 @@ describe('GET /admin/machines/:id', () => {
       t.machineLines.push(line('ml4', 'scrubber', 'hireJob', 2, 1_500));
     });
 
-    it.each(['admin', 'finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
+    it.each(['finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
       'R31: %s opens the second machine and is sent that job as "Hire", with the customer nowhere',
       async (userId) => {
         const res = await as(userId, 'GET', machineUrl('scrubber'));
@@ -520,7 +520,7 @@ describe('what each record carries', () => {
       });
     });
 
-    it.each(['admin', 'finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
+    it.each(['finance', 'coo', 'linkedSupervisor', 'linkedShareholder'])(
       'R16: %s is sent the hire as paid with its date, and none of the four',
       async (userId) => {
         const res = await as(userId, 'GET', machineUrl('polisher'));

@@ -27,7 +27,7 @@ const investorsUrl = (id: string) => `${MACHINES}/${id}/investors`;
 const repairsUrl = (id: string) => `${MACHINES}/${id}/repairs`;
 const repairUrl = (id: string, repairId: string) => `${MACHINES}/${id}/repairs/${repairId}`;
 
-const NOT_THE_OWNER = { error: 'only the owner can change the machine register' };
+const NOT_THE_OWNER = { error: 'only the owner or an admin can change the machine register' };
 const NO_MACHINE = { error: 'machine not found' };
 // KTD6: what a page still sending the one daily rate is told.
 const OUT_OF_DATE = { error: 'This page is out of date. Reload it and try again.' };
@@ -759,7 +759,7 @@ describe('DELETE /admin/machines/:id', () => {
   });
 });
 
-describe.each(['coo', 'admin'])('R22: %s, who sees the register and is not the owner', (userId) => {
+describe.each(['coo'])('R22: %s, who sees the register and is not the owner or an admin', (userId) => {
   it.each<[string, 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string, object?]>([
     ['list the assets to put on the register', 'GET', `${MACHINES}/assets`],
     ['add a machine', 'POST', MACHINES, {

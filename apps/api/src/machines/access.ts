@@ -10,7 +10,7 @@
 import { UserRole } from '@prisma/client';
 import type { MachinesAccessDto } from '@onyxhawk/types';
 
-import { STAFF_ROLES } from '../auth/staff.js';
+import { hasOwnerAccess, STAFF_ROLES } from '../auth/staff.js';
 
 export interface MachinesAccount {
   role: UserRole;
@@ -32,7 +32,7 @@ export function isBackOfficeAccount(account: Pick<MachinesAccount, 'role' | 'isO
 const VIEWER_ROLES = new Set<UserRole>([UserRole.ADMIN, UserRole.FINANCIAL_MANAGER, UserRole.COO]);
 
 function canView(account: MachinesAccount): boolean {
-  if (account.isOwner) return true;
+  if (hasOwnerAccess(account)) return true;
   // Removing a staff member resets the role to customer and leaves any
   // shareholder link in place, so the link alone must not open the page.
   if (!isBackOfficeAccount(account)) return false;
@@ -42,7 +42,7 @@ function canView(account: MachinesAccount): boolean {
 export function machinesAccess(account: MachinesAccount): MachinesAccessDto {
   return {
     canView: canView(account),
-    // Every entry here changes profit and payouts, so only the owner makes one.
-    canEdit: account.isOwner,
+    // Every entry here changes profit and payouts, so only the owner and admins make one.
+    canEdit: hasOwnerAccess(account),
   };
 }

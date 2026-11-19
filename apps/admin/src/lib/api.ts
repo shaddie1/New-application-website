@@ -288,7 +288,7 @@ export const api = {
       { method: 'GET', auth: true },
     ),
 
-  // ── Team / staff (owner only) ────────────────────────────────────────────
+  // ── Team / staff (owner and admins) ──────────────────────────────────────────
   staff: () => request<{ staff: AdminStaffDto[] }>('/admin/staff', { method: 'GET', auth: true }),
 
   addStaff: (input: CreateStaffInput) =>
@@ -300,7 +300,7 @@ export const api = {
   removeStaff: (id: string) =>
     request<{ ok: true }>(`/admin/staff/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
 
-  // ── Financials (owner only) ──────────────────────────────────────────────
+  // ── Financials (owner and admins) ────────────────────────────────────────────
   financialSummary: (from: string, to: string) =>
     request<{ summary: FinancialSummary }>(
       `/admin/financials/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
@@ -356,18 +356,18 @@ export const api = {
       { method: 'DELETE', auth: true },
     ),
 
-  // ── Monthly trends (owner only) ──────────────────────────────────────────
+  // ── Monthly trends (owner and admins) ────────────────────────────────────────
   financialTrends: (months = 6) =>
     request<{ trends: MonthlyTrendItem[] }>(
       `/admin/financials/trends?months=${months}`,
       { method: 'GET', auth: true },
     ),
 
-  // ── All-time totals (owner only) ─────────────────────────────────────────
+  // ── All-time totals (owner and admins) ───────────────────────────────────────
   financialTotals: () =>
     request<{ totals: AllTimeTotals }>('/admin/financials/totals', { method: 'GET', auth: true }),
 
-  // ── Ownership / cap table (owner only) ───────────────────────────────────
+  // ── Ownership / cap table (owner and admins) ─────────────────────────────────
   equity: (from: string, to: string) =>
     request<{ overview: EquityOverview }>(
       `/admin/financials/equity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
@@ -759,7 +759,7 @@ export const api = {
       auth: true,
     }),
 
-  // ── Pending report submissions (owner only) ──────────────────────────────
+  // ── Pending report submissions (owner and admins) ────────────────────────────
   pendingReports: () =>
     request<{ reports: JobDto[] }>('/admin/financials/reports', { method: 'GET', auth: true }),
 

@@ -27,6 +27,7 @@ import { useAuth, useRequireAdmin } from '../../src/lib/auth';
 import { cn } from '../../src/lib/cn';
 import { canSeeInsights } from '../../src/lib/landing';
 import { isActivePath, menuSections } from '../../src/lib/nav';
+import { hasOwnerAccess } from '../../src/lib/roles';
 
 /** One small icon per menu item, by address. */
 const ICONS: Record<string, LucideIcon> = {
@@ -87,7 +88,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { role, isOwner } = session.user;
   const canPublishWebsite = isOwner === true || role === 'ADMIN' || role === 'MARKETING';
   const sections = menuSections({
-    isOwner: isOwner === true, canPublishWebsite, canViewMachines, canSeeInsights: canSeeInsights(session.user),
+    isOwner: hasOwnerAccess(session.user), canPublishWebsite, canViewMachines, canSeeInsights: canSeeInsights(session.user),
   });
 
   const menuLinks = (

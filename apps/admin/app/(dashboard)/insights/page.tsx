@@ -17,6 +17,7 @@ import { costGroupRows } from '../../../src/lib/costGroups';
 import { canSeeInsights, landingPath, maySetTargets } from '../../../src/lib/landing';
 import { DonutChart, StatTile, TargetMeter, TrendChart, moneyShort } from '../../../src/components/charts';
 import { money as formatMoney } from '../../../src/lib/money';
+import { hasOwnerAccess } from '../../../src/lib/roles';
 
 const money = (cents: number) => formatMoney(cents, { whole: true });
 
@@ -55,7 +56,7 @@ export default function InsightsPage() {
   const session = useRequireAdmin();
   const router = useRouter();
   const user = session?.user;
-  const isOwner = user?.isOwner === true;
+  const isOwner = !!user && hasOwnerAccess(user);
   const allowed = !!user && canSeeInsights(user);
   const canSetTargets = !!user && maySetTargets(user);
   const now = new Date();

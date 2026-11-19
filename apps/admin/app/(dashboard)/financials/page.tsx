@@ -19,6 +19,7 @@ import { SortJobs } from '../../../src/components/project-money/SortJobs';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { deleteJobMessage } from '../../../src/lib/jobMachines';
 import { money as fmt } from '../../../src/lib/money';
+import { hasOwnerAccess } from '../../../src/lib/roles';
 
 // How many months of history the Monthly trends tab can show at once.
 const TREND_RANGES = [6, 12, 24];
@@ -360,8 +361,8 @@ export default function FinancialsPage() {
 
   if (session === undefined) return <div className="text-text-muted">Loading…</div>;
   if (!session) return null;
-  if (!session.user.isOwner) {
-    return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Owner access required.</div>;
+  if (!hasOwnerAccess(session.user)) {
+    return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Only the owner and admins can open this page.</div>;
   }
 
   return (

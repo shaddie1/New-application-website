@@ -16,7 +16,7 @@ import { MoneyTable } from '../../../src/components/project-money/MoneyTable';
 import { refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
-import { canViewProjectMoney } from '../../../src/lib/roles';
+import { canViewProjectMoney, hasOwnerAccess } from '../../../src/lib/roles';
 import { money as formatMoney } from '../../../src/lib/money';
 
 const STAGE_LABELS: Record<ProjectStage, string> = {
@@ -332,7 +332,7 @@ export default function ProjectsPage() {
 
       {/* Mounted once the projects are in, so it loads again after one is created or deleted. */}
       {showMoney && !loading && (
-        <MoneyTable projects={projects} isOwner={session.user.isOwner === true} onOpenProject={openMoney} />
+        <MoneyTable projects={projects} isOwner={hasOwnerAccess(session.user)} onOpenProject={openMoney} />
       )}
 
       <div className="mb-4 flex gap-1 border-b border-line">
