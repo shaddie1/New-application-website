@@ -364,13 +364,13 @@ describe('PUT /admin/financials/shareholders/stakes', () => {
     expect(db.$transaction.mock.calls[0]![1]).toMatchObject({ isolationLevel: 'Serializable' });
   });
 
-  it('refuses anyone but the owner and writes nothing', async () => {
+  it('refuses anyone but the owner or an admin and writes nothing', async () => {
     const before = snapshot();
 
     const res = await save(
       [{ id: 'h1', basisPoints: 5000 }, { id: 'h2', basisPoints: 2500 }, { id: 'h3', basisPoints: 2500 }],
       OPENED,
-      'admin',
+      'amina',
     );
 
     expect(res.statusCode).toBe(403);

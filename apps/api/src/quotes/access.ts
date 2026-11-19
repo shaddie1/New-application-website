@@ -6,7 +6,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { UserRole } from '@prisma/client';
 
-import { STAFF_ROLES } from '../auth/staff.js';
+import { hasOwnerAccess, STAFF_ROLES } from '../auth/staff.js';
 import { prisma } from '../db.js';
 
 export interface Actor {
@@ -23,9 +23,9 @@ export function canViewEstimate(u: Pick<Actor, 'role' | 'isOwner'>): boolean {
   return u.isOwner || ESTIMATE_ROLES.has(u.role);
 }
 
-/** Approval is the COO's call, or the owner's. */
+/** Approval is the COO's call, or the owner's (and so an admin's). */
 export function canApprove(u: Pick<Actor, 'role' | 'isOwner'>): boolean {
-  return u.isOwner || u.role === UserRole.COO;
+  return hasOwnerAccess(u) || u.role === UserRole.COO;
 }
 
 export async function loadActor(req: FastifyRequest): Promise<Actor | null> {

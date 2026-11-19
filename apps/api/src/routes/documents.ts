@@ -9,6 +9,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { hasOwnerAccess } from '../auth/staff.js';
 import { isConfigured, presignUpload } from '../storage/r2.js';
 
 const CATEGORIES = [
@@ -132,18 +133,17 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
 };
 
 /**
- * Shareholders only: the owner, or a user actually linked to a cap-table entry.
- * A role alone never grants this — an admin who is not a shareholder is refused,
- * which is the whole point of the tab.
+ * Shareholders only: the owner and admins, or a user actually linked to a
+ * cap-table entry. No other role grants this.
  */
 async function requireShareholder(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const user = await prisma.user.findUnique({
     where: { id: req.auth.sub },
-    select: { isOwner: true, shareholder: { select: { id: true } } },
+    select: { isOwner: true, role: true, shareholder: { select: { id: true } } },
   });
   if (!user) return reply.code(401).send({ error: 'unauthorized' });
-  if (!user.isOwner && !user.shareholder) {
+  if (!hasOwnerAccess(user) && !user.shareholder) {
     return reply.code(403).send({ error: 'shareholder access required' });
   }
 }

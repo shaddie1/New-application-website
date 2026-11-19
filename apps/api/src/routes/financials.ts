@@ -28,6 +28,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { hasOwnerAccess } from '../auth/staff.js';
 import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
 import { machineAmountCents } from '../machines/amounts.js';
 import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
@@ -842,10 +843,11 @@ async function allTimeTotals(): Promise<AllTimeTotals> {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/** The owner and admins (see hasOwnerAccess). */
 async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
-  const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true } });
-  if (!u?.isOwner) return reply.code(403).send({ error: 'owner access required' });
+  const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true, role: true } });
+  if (!u || !hasOwnerAccess(u)) return reply.code(403).send({ error: 'owner access required' });
 }
 
 function refusal(error: z.ZodError) {

@@ -20,6 +20,7 @@ const { adminRoutes } = await import('./admin.js');
 const users: Record<string, { role: string; isOwner: boolean }> = {
   owner: { role: 'ADMIN', isOwner: true },
   admin: { role: 'ADMIN', isOwner: false },
+  support: { role: 'SUPPORT', isOwner: false },
 };
 userFindUnique.mockImplementation(async ({ where }: { where: { id: string } }) => users[where.id] ?? null);
 
@@ -114,11 +115,11 @@ describe('GET /admin/otps/recent', () => {
     });
   });
 
-  it('refuses a staff member who is not the owner in development', async () => {
+  it('refuses a staff member who is not the owner or an admin in development', async () => {
     env.NODE_ENV = 'development';
     storeCodes([otpRow()]);
 
-    const res = await getCodes('admin');
+    const res = await getCodes('support');
 
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'owner access required' });

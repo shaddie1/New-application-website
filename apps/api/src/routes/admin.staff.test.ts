@@ -66,7 +66,11 @@ const owner = () =>
   row({ id: 'owner', phone: '+254115247988', fullName: 'Shadrack Amihanda', email: 'amihanda@onyxhawkcleaningservice.com', role: 'ADMIN', isOwner: true });
 
 async function asOwner(method: 'POST' | 'PATCH', url: string, payload: object) {
-  const { token } = await signAccessToken('owner', 'ADMIN');
+  return asUser('owner', method, url, payload);
+}
+
+async function asUser(id: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) {
+  const { token } = await signAccessToken(id, 'ADMIN');
   const server = Fastify();
   await server.register(adminRoutes, { prefix: '/admin' });
   return server.inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });
@@ -132,7 +136,7 @@ describe('POST /admin/staff', () => {
     expect(trySendEmail).not.toHaveBeenCalled();
   });
 
-  it("will not change a current member's email, so another owner's cannot be changed this way", async () => {
+  it("will not change another owner's details by adding them again", async () => {
     users.push(
       row({ id: 'co-owner', phone: '+254712000555', fullName: 'Amina Hassan', email: 'amina@onyxhawkcleaningservice.com', role: 'ADMIN', isOwner: true }),
     );
@@ -144,7 +148,8 @@ describe('POST /admin/staff', () => {
       role: 'ADMIN',
     });
 
-    expect(res.statusCode).toBe(409);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'You can’t change an owner’s details.' });
     expect(users.find((u) => u.id === 'co-owner')!.email).toBe('amina@onyxhawkcleaningservice.com');
     expect(update).not.toHaveBeenCalled();
     expect(revokeRefreshTokens).not.toHaveBeenCalled();
@@ -261,5 +266,54 @@ describe('PATCH /admin/staff/:id', () => {
     expect(res.statusCode).toBe(409);
     expect(update).not.toHaveBeenCalled();
     expect(trySendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('an admin, who shares the owner\'s team powers', () => {
+  const admin = () =>
+    row({ id: 'adm', phone: '+254712000222', fullName: 'Grace Admin', email: 'grace@example.com', role: 'ADMIN' });
+  const support = () =>
+    row({ id: 'sup', phone: '+254712000333', fullName: 'Sam Support', email: 'sam@example.com', role: 'SUPPORT' });
+
+  beforeEach(() => {
+    users.push(admin(), support());
+  });
+
+  it('adds a member, named as the one who added them', async () => {
+    const res = await asUser('adm', 'POST', '/admin/staff', {
+      phone: '+254712000111', fullName: 'Wanjiku Kamau', email: 'wanjiku@example.com', role: 'MARKETING',
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(sent()[0]!.text).toContain('Grace Admin has added you to the OnyxHawk platform as Marketing Personnel.');
+  });
+
+  it("changes another member's email", async () => {
+    const res = await asUser('adm', 'PATCH', '/admin/staff/sup', { email: 'sam.support@example.com' });
+
+    expect(res.statusCode).toBe(200);
+    expect(users.find((u) => u.id === 'sup')!.email).toBe('sam.support@example.com');
+  });
+
+  it("cannot change the owner's email, re-add the owner or remove the owner", async () => {
+    const email = await asUser('adm', 'PATCH', '/admin/staff/owner', { email: 'mine@example.com' });
+    const readd = await asUser('adm', 'POST', '/admin/staff', {
+      phone: '+254115247988', fullName: 'Shadrack Amihanda', email: 'amihanda@onyxhawkcleaningservice.com', role: 'SUPPORT',
+    });
+    const removal = await asUser('adm', 'DELETE', '/admin/staff/owner');
+
+    expect([email.statusCode, readd.statusCode, removal.statusCode]).toEqual([403, 403, 403]);
+    expect(users.find((u) => u.id === 'owner')).toMatchObject({ email: 'amihanda@onyxhawkcleaningservice.com', role: 'ADMIN' });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('removes another member, and a support account may not', async () => {
+    const refused = await asUser('sup', 'DELETE', '/admin/staff/adm');
+    const removed = await asUser('adm', 'DELETE', '/admin/staff/sup');
+
+    expect(refused.statusCode).toBe(403);
+    expect(removed.statusCode).toBe(200);
+    expect(users.find((u) => u.id === 'sup')!.role).toBe('CUSTOMER');
+    expect(users.find((u) => u.id === 'adm')!.role).toBe('ADMIN');
   });
 });

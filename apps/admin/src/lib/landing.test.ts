@@ -6,12 +6,13 @@ const owner = { isOwner: true, role: 'ADMIN' };
 const as = (role: string) => ({ isOwner: false, role });
 
 describe('landingPath', () => {
-  it('sends the owner to Insights', () => {
+  it('sends the owner and every admin to Insights', () => {
     expect(landingPath(owner)).toBe('/insights');
+    expect(landingPath(as('ADMIN'))).toBe('/insights');
   });
 
-  it('sends every other staff role to Projects, an admin who is not the owner included', () => {
-    for (const role of ['ADMIN', 'FINANCIAL_MANAGER', 'SHAREHOLDER', 'COO', 'SUPPORT', 'MARKETING', 'CLEANING_SUPERVISOR']) {
+  it('sends every other staff role to Projects', () => {
+    for (const role of ['FINANCIAL_MANAGER', 'SHAREHOLDER', 'COO', 'SUPPORT', 'MARKETING', 'CLEANING_SUPERVISOR']) {
       expect(landingPath(as(role))).toBe('/projects');
     }
   });

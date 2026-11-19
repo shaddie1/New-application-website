@@ -216,7 +216,7 @@ describe('a project that no longer exists', () => {
   });
 });
 
-describe.each(['admin', 'fm', 'coo'])('%s, who is not the owner', (userId) => {
+describe.each(['fm', 'coo'])('%s, who is not the owner or an admin', (userId) => {
   it.each([
     ['save a job', 'POST', '/admin/financials/jobs', newJob({ place: underA })],
     ['move a job', 'PATCH', '/admin/financials/jobs/j1', { place: underB }],
@@ -284,8 +284,12 @@ describe('GET /admin/financials/unsorted', () => {
     expect(res.json().jobs.map((j: { jobId: string }) => j.jobId)).toEqual(['counted']);
   });
 
-  it('refuses an admin', async () => {
-    const res = await as('admin', 'GET', '/admin/financials/unsorted');
+  it("lets an admin, who has the owner's powers, see them", async () => {
+    expect((await as('admin', 'GET', '/admin/financials/unsorted')).statusCode).toBe(200);
+  });
+
+  it('refuses the financial manager', async () => {
+    const res = await as('fm', 'GET', '/admin/financials/unsorted');
 
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'owner access required' });

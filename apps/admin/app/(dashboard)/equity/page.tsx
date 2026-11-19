@@ -26,6 +26,7 @@ import { Button } from '../../../src/components/ui/button';
 import { Card } from '../../../src/components/ui/card';
 import { Segmented, type SegmentedOption } from '../../../src/components/ui/segmented';
 import { enoughToDraw } from '../../../src/components/stacked-bars';
+import { hasOwnerAccess } from '../../../src/lib/roles';
 
 const SCOPES: SegmentedOption<OwnershipScope>[] = [
   { value: 'all-time', label: 'All time' },
@@ -58,8 +59,8 @@ export default function EquityPage() {
 
   if (session === undefined) return <div className="text-text-muted">Loading…</div>;
   if (!session) return null;
-  if (!session.user.isOwner) {
-    return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Owner access required.</div>;
+  if (!hasOwnerAccess(session.user)) {
+    return <div className="rounded-lg bg-danger/10 px-4 py-3 text-danger text-sm">Only the owner and admins can open this page.</div>;
   }
 
   // A holder's name and every stake appear in both requests.

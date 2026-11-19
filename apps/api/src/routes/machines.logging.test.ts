@@ -34,7 +34,7 @@ const payoutUrl = (payoutId: string) => `${MACHINES}/payouts/${payoutId}`;
 const OCTOBER = 'from=2026-10-01&to=2026-10-31';
 const NOVEMBER = 'from=2026-11-01&to=2026-11-30';
 
-const NOT_THE_OWNER = { error: 'only the owner can change the machine register' };
+const NOT_THE_OWNER = { error: 'only the owner or an admin can change the machine register' };
 const NO_MACHINE = { error: 'machine not found' };
 
 // What the jobs hold that the picker never serves.
@@ -304,11 +304,15 @@ describe('GET /admin/machines/:id/jobs: the owner\'s job picker', () => {
     expect(res.json()).toEqual(NO_MACHINE);
   });
 
-  it.each(['coo', 'admin', 'linkedSupervisor'])('answers 403 for %s, who sees the register and is not the owner', async (userId) => {
+  it.each(['coo', 'linkedSupervisor'])('answers 403 for %s, who sees the register and is not the owner or an admin', async (userId) => {
     const res = await as(userId, 'GET', pickerUrl('scrubber'));
 
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual(NOT_THE_OWNER);
+  });
+
+  it("lets an admin, who has the owner's powers, open the picker", async () => {
+    expect((await as('admin', 'GET', pickerUrl('scrubber'))).statusCode).toBe(200);
   });
 });
 
@@ -1316,7 +1320,7 @@ describe('the register and the lines agree', () => {
   });
 });
 
-describe.each(['coo', 'admin'])('R22: %s, who sees the register and is not the owner', (userId) => {
+describe.each(['coo'])('R22: %s, who sees the register and is not the owner or an admin', (userId) => {
   beforeEach(() => {
     // A hire and a payment already there, to be left alone.
     t.jobs.push(job('hireJob', 'Hire: Floor scrubber', '2026-11-03', 10_500, { clientName: 'Jane Wanjiru' }));

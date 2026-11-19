@@ -185,8 +185,11 @@ describe('GET /admin/financials/equity/history', () => {
     expect(november.unallocatedCents).toBe(overview.unallocatedPeriodCents);
   });
 
+  it("lets an admin, who has the owner's powers, read it", async () => {
+    expect((await as('admin', 'GET', HISTORY)).statusCode).toBe(200);
+  });
+
   it.each([
-    ['an admin who is not the owner', 'admin'],
     ['a shareholder on the cap table', 'amina'],
   ])('refuses %s', async (_who, userId) => {
     const res = await as(userId, 'GET', HISTORY);

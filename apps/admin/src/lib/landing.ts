@@ -1,10 +1,13 @@
 /**
  * Where a staff account lands when it signs in, and who reads Insights.
  *
- * There is no Dashboard page (owner's choice, 2026-11-18). The owner lands on
- * Insights, which has the full figures; everyone else lands on Projects. The
- * roles that saw the month's figures on the Dashboard read them on Insights.
+ * There is no Dashboard page (owner's choice, 2026-11-18). The owner and the
+ * admins land on Insights, which has the full figures; everyone else lands on
+ * Projects. The roles that saw the month's figures on the Dashboard read them
+ * on Insights.
  */
+import { hasOwnerAccess } from './roles';
+
 type Viewer = { isOwner?: boolean; role: string };
 
 /** Besides the owner, the roles the server gives the month's figures and revenue split to. */
@@ -22,5 +25,5 @@ export function maySetTargets(viewer: Viewer): boolean {
 }
 
 export function landingPath(viewer: Viewer): '/insights' | '/projects' {
-  return viewer.isOwner === true ? '/insights' : '/projects';
+  return hasOwnerAccess(viewer) ? '/insights' : '/projects';
 }

@@ -32,6 +32,7 @@ import type {
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { hasOwnerAccess } from '../auth/staff.js';
 import {
   comparisonWindow,
   monthDays,
@@ -646,18 +647,18 @@ async function requireFinanceAccess(req: FastifyRequest, reply: FastifyReply): P
 }
 
 /**
- * Equity data (who is owed what). Access follows the person: the owner, or
- * anyone actually on the cap table — a role alone never grants it, so a future
- * non-shareholder ops hire cannot see the ledger.
+ * Equity data (who is owed what): the owner and admins, or anyone actually on
+ * the cap table. No other role grants it, so a future non-shareholder ops hire
+ * cannot see the ledger.
  */
 async function requireEquityAccess(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const user = await prisma.user.findUnique({
     where: { id: req.auth.sub },
-    select: { isOwner: true, shareholder: { select: { id: true } } },
+    select: { isOwner: true, role: true, shareholder: { select: { id: true } } },
   });
   if (!user) return reply.code(401).send({ error: 'unauthorized' });
-  if (!user.isOwner && !user.shareholder) {
+  if (!hasOwnerAccess(user) && !user.shareholder) {
     return reply.code(403).send({ error: 'shareholder access required' });
   }
 }
@@ -665,15 +666,15 @@ async function requireEquityAccess(req: FastifyRequest, reply: FastifyReply): Pr
 /**
  * An asset with a project rate is a machine on the register. Its price, repairs
  * and deletion change a pot and what investors are owed, so here, as on the
- * Machines page, only the owner changes it. An asset with no project rate stays
+ * Machines page, only the owner and admins change it. An asset with no project rate stays
  * open to every finance role.
  */
-const REGISTER_MACHINE_OWNER_ONLY = 'This machine is on the register, so only the owner can change it.';
+const REGISTER_MACHINE_OWNER_ONLY = 'This machine is on the register, so only the owner or an admin can change it.';
 
-/** Whether the signed-in account is the owner, read from the database: the token does not say. */
+/** Whether the signed-in account has the owner's powers (the owner or an admin), read from the database. */
 async function isOwnerAccount(client: Prisma.TransactionClient, req: FastifyRequest): Promise<boolean> {
-  const user = await client.user.findUnique({ where: { id: req.auth!.sub }, select: { isOwner: true } });
-  return user?.isOwner === true;
+  const user = await client.user.findUnique({ where: { id: req.auth!.sub }, select: { isOwner: true, role: true } });
+  return user !== null && hasOwnerAccess(user);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

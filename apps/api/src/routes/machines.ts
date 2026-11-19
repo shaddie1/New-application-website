@@ -21,6 +21,7 @@ import type { DeclaredPeriodDto, MachineJobPickerDto, MachineRegisterDto } from 
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { hasOwnerAccess } from '../auth/staff.js';
 import { nairobiToday } from '../finance/comparison.js';
 import { machinesAccess } from '../machines/access.js';
 import {
@@ -180,7 +181,7 @@ export const machinesRoutes: FastifyPluginAsync = async (app) => {
     });
 
     guarded.get<{ Params: { id: string } }>('/:id', async (req, reply) => {
-      const machine = await loadMachineDetail(req.params.id, req.machinesActor!.isOwner);
+      const machine = await loadMachineDetail(req.params.id, hasOwnerAccess(req.machinesActor!));
       if (!machine) return reply.code(404).send({ error: 'machine not found' });
       return reply.send({ machine });
     });

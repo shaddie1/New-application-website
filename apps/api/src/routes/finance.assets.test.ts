@@ -19,13 +19,13 @@ const ASSETS = '/admin/finance/assets';
 const assetUrl = (id: string) => `${ASSETS}/${id}`;
 const repairsUrl = (id: string) => `${ASSETS}/${id}/maintenance`;
 
-const OWNER_ONLY = { error: 'This machine is on the register, so only the owner can change it.' };
+const OWNER_ONLY = { error: 'This machine is on the register, so only the owner or an admin can change it.' };
 const NO_FINANCE = { error: 'finance access required' };
 
 /** The roles the asset list is open to, the owner first. */
 const FINANCE_USERS = ['owner', 'admin', 'finance', 'shareholderRole'];
 /** The same, without the owner. */
-const NOT_THE_OWNER = ['admin', 'finance', 'shareholderRole'];
+const NOT_THE_OWNER = ['finance', 'shareholderRole'];
 
 const asset = (id: string, name: string, priceShillings: number, over: object = {}) => ({
   id, name, category: 'MACHINE', purchaseDate: day('2026-05-20'), costCents: ksh(priceShillings),
@@ -257,9 +257,14 @@ describe('a machine on the register, through the asset list', () => {
     expect(t.assetMaintenance).toHaveLength(1);
   });
 
-  it('the same admin still edits an asset with no rate', async () => {
-    expect((await as('admin', 'PATCH', assetUrl('polisher'), { name: 'Mine now' })).statusCode).toBe(403);
-    expect((await as('admin', 'PATCH', assetUrl('laptop'), { name: 'Front desk laptop' })).statusCode).toBe(200);
+  it('the same financial manager still edits an asset with no rate', async () => {
+    expect((await as('finance', 'PATCH', assetUrl('polisher'), { name: 'Mine now' })).statusCode).toBe(403);
+    expect((await as('finance', 'PATCH', assetUrl('laptop'), { name: 'Front desk laptop' })).statusCode).toBe(200);
+  });
+
+  it("lets an admin, who has the owner's powers, rename it", async () => {
+    expect((await as('admin', 'PATCH', assetUrl('polisher'), { name: 'Big floor polisher' })).statusCode).toBe(200);
+    expect(stored('polisher')).toMatchObject({ name: 'Big floor polisher' });
   });
 
   it('still lets every finance role see it in the list', async () => {
