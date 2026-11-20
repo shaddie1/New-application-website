@@ -141,3 +141,18 @@ describe('POST /auth/admin/verify-otp', () => {
     expect(verifyAdminSignInOtp).not.toHaveBeenCalled();
   });
 });
+
+describe('sign-in requests from one connection', () => {
+  it('are refused with 429 after 60 in ten minutes, before any account is looked up', async () => {
+    findFirst.mockResolvedValue(null);
+    const server = await app();
+    const send = () => server.inject({ method: 'POST', url: '/auth/admin/verify-otp', payload: { email: 'a@b.co', code: '123456' } });
+
+    for (let i = 0; i < 60; i++) expect((await send()).statusCode).toBe(404);
+    const res = await send();
+
+    expect(res.statusCode).toBe(429);
+    expect(res.json().code).toBe('RATE_LIMITED');
+    expect(findFirst).toHaveBeenCalledTimes(60);
+  });
+});
