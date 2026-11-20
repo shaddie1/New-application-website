@@ -13,6 +13,8 @@ import type {
 
 import { ContractMoney } from '../../../src/components/project-money/ContractMoney';
 import { MoneyTable } from '../../../src/components/project-money/MoneyTable';
+import { TitleCombobox } from '../../../src/components/projects/TitleCombobox';
+import { pickService } from '../../../src/lib/projectTitle';
 import { refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { api, ApiError } from '../../../src/lib/api';
 import { useRequireAdmin } from '../../../src/lib/auth';
@@ -257,8 +259,11 @@ export default function ProjectsPage() {
         <form onSubmit={(e) => void create(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs text-charcoal-muted">Project title</label>
-            <input required className={input} value={form.title} placeholder="e.g. Post-construction clean — Riverside Block C"
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+            <TitleCombobox className={input} value={form.title} services={serviceLines}
+              placeholder="Pick a service, or type a title"
+              onChange={(title) => setForm((f) => ({ ...f, title }))}
+              onPick={(service) => setForm((f) => pickService(f, service))} />
+            <p className="mt-1 text-xs text-charcoal-muted">Then add the site after it, e.g. “Post-construction – Riverside Block C”.</p>
           </div>
           <div>
             <label className="mb-1 block text-xs text-charcoal-muted">Service line</label>
