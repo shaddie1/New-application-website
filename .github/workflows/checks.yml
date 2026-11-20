@@ -1,0 +1,39 @@
+# Runs the type checks and the automated tests on every pull request and on
+# every change to main, so a change that breaks them shows a red cross on
+# GitHub before anyone merges it.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Prisma reads this when it generates its client; no database is used,
+      # because the tests replace the database with stand-ins.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      TURBO_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+      - name: Tests
+        run: pnpm turbo run test
