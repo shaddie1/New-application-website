@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dayLabel, emptyLine, formTotalCents, invoiceChip, lineFormOf, linesFromForm } from './invoices';
+import { dayLabel, daysOf, emptyLine, formTotalCents, halfDaysOf, invoiceChip, lineFormOf, linesFromForm } from './invoices';
 
 describe('invoiceChip', () => {
   it('says overdue before anything else', () => {
@@ -45,5 +45,19 @@ describe('the draft form', () => {
 describe('dayLabel', () => {
   it('writes a date the way the invoice shows it', () => {
     expect(dayLabel('2027-02-12')).toBe('12 Feb 2027');
+  });
+});
+
+describe('machine days on the payment form', () => {
+  it('reads whole and half days, and an empty box as none', () => {
+    expect(['3', '2.5', ' 0 ', ''].map(halfDaysOf)).toEqual([6, 5, 0, 0]);
+  });
+
+  it('refuses anything that is not a whole or half day', () => {
+    expect(['1.25', '-1', 'two'].map(halfDaysOf)).toEqual([null, null, null]);
+  });
+
+  it('shows half days as days', () => {
+    expect([6, 5, 0].map(daysOf)).toEqual(['3', '2.5', '0']);
   });
 });

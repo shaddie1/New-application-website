@@ -8,12 +8,14 @@ const projectFindUnique = vi.fn();
 const projectDelete = vi.fn();
 const jobCount = vi.fn();
 const invoiceCount = vi.fn();
+const payInCount = vi.fn();
 vi.mock('../db.js', () => ({
   prisma: {
     user: { findUnique: userFindUnique },
     project: { findUnique: projectFindUnique, delete: projectDelete },
     job: { count: jobCount },
     invoice: { count: invoiceCount },
+    projectPayIn: { count: payInCount },
   },
 }));
 
@@ -36,6 +38,7 @@ beforeEach(() => {
   userFindUnique.mockResolvedValue({ role: 'SUPPORT', isOwner: false });
   projectDelete.mockResolvedValue({});
   invoiceCount.mockResolvedValue(0);
+  payInCount.mockResolvedValue(0);
 });
 
 describe('DELETE /admin/projects/:id', () => {
@@ -75,6 +78,18 @@ describe('DELETE /admin/projects/:id', () => {
     expect(res.json().error).toBe(
       'This project has invoices, which are kept for the record. Set its stage to Cancelled instead.',
     );
+    expect(projectDelete).not.toHaveBeenCalled();
+  });
+
+  it("refuses a project shareholders paid in towards, which is kept as their investment", async () => {
+    projectFindUnique.mockResolvedValue({ id: 'p4' });
+    jobCount.mockResolvedValue(0);
+    payInCount.mockResolvedValue(1);
+
+    const res = await del('p4');
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/kept as their investment/);
     expect(projectDelete).not.toHaveBeenCalled();
   });
 

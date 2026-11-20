@@ -7,7 +7,8 @@
  *
  * Money roles (owner, admin, financial manager, COO) make, send and cancel
  * invoices. Marking paid, and undoing that, adds or removes income, so it is
- * kept to the owner and admins, who also own Jobs & costs.
+ * kept to the owner and admins, who also own Jobs & costs. The payment can
+ * also add the project's machine days for the period (invoices/machineDays.ts).
  */
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -35,6 +36,7 @@ import {
   shillings,
   toInvoiceDto,
 } from '../invoices/invoices.js';
+import { daysText, machineDaysFor, machineDaysRefusal } from '../invoices/machineDays.js';
 import { PAYMENT_TERMS_DAYS, invoiceablePeriods } from '../invoices/periods.js';
 
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
@@ -62,6 +64,11 @@ const SendSchema = z.object({ sentOn: DateStr.optional() }) satisfies z.ZodType<
 const PaySchema = z.object({
   paidOn: DateStr,
   paymentRef: z.string().trim().max(100).nullable().optional(),
+  // Half days: 2 is one day. A machine left at 0 gets no line.
+  machineDays: z
+    .array(z.object({ assetId: z.string().min(1), halfDays: z.number().int().min(0).max(2_000) }))
+    .max(20)
+    .optional(),
 }) satisfies z.ZodType<PayInvoiceInput>;
 
 const projectForBilling = {
@@ -140,6 +147,16 @@ export const invoiceRoutes: FastifyPluginAsync = async (app) => {
     const row = await load(req.params.id);
     if (!row) return reply.code(404).send({ error: 'invoice not found' });
     return reply.send({ invoice: toInvoiceDto(row) });
+  });
+
+  /** The machine days to offer when its payment is recorded: the period's done visits times each machine's half days per visit. */
+  app.get<{ Params: { id: string } }>('/:id/machine-days', async (req, reply) => {
+    const row = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      select: { projectId: true, periodStart: true, periodEnd: true },
+    });
+    if (!row) return reply.code(404).send({ error: 'invoice not found' });
+    return reply.send(await machineDaysFor(row.projectId, row.periodStart, row.periodEnd));
   });
 
   /** Make a draft for one period, with the lines the project's setting gives. */
@@ -282,6 +299,22 @@ export const invoiceRoutes: FastifyPluginAsync = async (app) => {
     const paymentRef = parsed.data.paymentRef || null;
     if (paidOn > nairobiToday()) return reply.code(400).send({ error: 'The day it was paid can’t be in the future.' });
 
+    const machineDays = (parsed.data.machineDays ?? []).filter((d) => d.halfDays > 0);
+    const machines = machineDays.length
+      ? await prisma.asset.findMany({
+          where: { id: { in: machineDays.map((d) => d.assetId) } },
+          select: { id: true, name: true, projectRateCents: true, countsFrom: true, retiredAt: true },
+        })
+      : [];
+    const refusal = machineDaysRefusal(machineDays, machines, new Date(paidOn));
+    if (refusal) return reply.code(400).send({ error: refusal });
+    // The rate is the machine's project rate now, kept on the line as on the Machines page.
+    const lines = machineDays.map((d) => {
+      const m = machines.find((x) => x.id === d.assetId)!;
+      const rateCents = m.projectRateCents!;
+      return { ...d, name: m.name, rateCents, amountCents: (d.halfDays * rateCents) / 2 };
+    });
+
     const project = await prisma.project.findUniqueOrThrow({ where: { id: row.projectId }, select: projectForBilling });
     try {
       await prisma.$transaction(async (tx) => {
@@ -302,6 +335,20 @@ export const invoiceRoutes: FastifyPluginAsync = async (app) => {
             createdById: req.actor!.id,
           },
         });
+        if (lines.length) {
+          await tx.machineLine.createMany({
+            data: lines.map((l) => ({
+              assetId: l.assetId,
+              jobId: job.id,
+              halfDays: l.halfDays,
+              rateCents: l.rateCents,
+              standardRateCents: l.rateCents,
+              amountCents: l.amountCents,
+              isHire: false,
+              createdById: req.actor!.id,
+            })),
+          });
+        }
         const { count } = await tx.invoice.updateMany({
           where: { id: row.id, status: 'SENT' },
           data: { status: 'PAID', paidOn: new Date(paidOn), paymentRef, jobId: job.id },
@@ -313,14 +360,17 @@ export const invoiceRoutes: FastifyPluginAsync = async (app) => {
       throw err;
     }
 
+    const machineNote = lines.length
+      ? `; machine days: ${lines.map((l) => `${l.name} ${daysText(l.halfDays)}, ${shillings(l.amountCents)}`).join('; ')}`
+      : '';
     await logInvoiceEvent(
       req, row.projectId, `Invoice ${row.number} paid`,
-      `${shillings(row.totalCents)} on ${paidOn}${paymentRef ? `, ref ${paymentRef}` : ''}; added to Jobs & costs`,
+      `${shillings(row.totalCents)} on ${paidOn}${paymentRef ? `, ref ${paymentRef}` : ''}; added to Jobs & costs${machineNote}`,
     );
     return reply.send({ invoice: toInvoiceDto((await load(row.id))!) });
   });
 
-  /** Undo a payment recorded by mistake: the income it added is taken off again. */
+  /** Undo a payment recorded by mistake: the income it added, and the machine days on it, are taken off again. */
   app.post<{ Params: { id: string } }>('/:id/unpaid', { preHandler: requireOwnerAccess }, async (req, reply) => {
     const row = await load(req.params.id);
     if (!row) return reply.code(404).send({ error: 'invoice not found' });
@@ -329,9 +379,10 @@ export const invoiceRoutes: FastifyPluginAsync = async (app) => {
     if (row.jobId) {
       const job = await prisma.job.findUnique({
         where: { id: row.jobId },
-        select: { _count: { select: { expenses: true, machineLines: true } } },
+        select: { _count: { select: { expenses: true } } },
       });
-      if (job && job._count.expenses + job._count.machineLines > 0) {
+      // Machine days go with the job; costs typed in Jobs & costs are left for staff to move or remove.
+      if (job && job._count.expenses > 0) {
         return reply.code(409).send({
           error: 'Its income job in Jobs & costs now has costs on it. Move or remove those costs first.',
         });

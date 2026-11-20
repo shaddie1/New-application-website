@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { InvoiceDto, PaymentFrequency, ProjectDto, ProjectInvoicesDto } from '@onyxhawk/types';
+import type { InvoiceDto, InvoiceMachineDaysDto, PaymentFrequency, ProjectDto, ProjectInvoicesDto } from '@onyxhawk/types';
 
 import { api } from '../../lib/api';
 import {
   dayLabel,
+  daysOf,
   emptyLine,
+  halfDaysOf,
   formTotalCents,
   invoiceChip,
   lineFormOf,
@@ -190,6 +192,45 @@ function InvoicePanel({
   const [paymentRef, setPaymentRef] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The project's machines and the days the period's done visits suggest, as typed days per machine.
+  const [machineDays, setMachineDays] = useState<InvoiceMachineDaysDto | null>(null);
+  const [daysTyped, setDaysTyped] = useState<Record<string, string>>({});
+  const payable = inv.status === 'SENT' && canRecordPayment;
+
+  useEffect(() => {
+    if (!payable) return;
+    let live = true;
+    api
+      .invoiceMachineDays(inv.id)
+      .then((d) => {
+        if (!live) return;
+        setMachineDays(d);
+        setDaysTyped(Object.fromEntries(d.suggestions.map((m) => [m.assetId, daysOf(m.halfDays)])));
+      })
+      .catch(() => {
+        // Without the suggestion the payment can still be recorded; machine days can be logged on the Machines page.
+        if (live) setMachineDays(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [inv.id, payable]);
+
+  const recordPayment = () => {
+    const days: { assetId: string; halfDays: number }[] = [];
+    for (const m of machineDays?.suggestions ?? []) {
+      const halfDays = halfDaysOf(daysTyped[m.assetId] ?? '');
+      if (halfDays === null) {
+        setError(`Give ${m.name}'s days as a whole or half number, such as 2 or 2.5.`);
+        return;
+      }
+      if (halfDays > 0) days.push({ assetId: m.assetId, halfDays });
+    }
+    void act(
+      () => api.payInvoice(inv.id, { paidOn, paymentRef: paymentRef.trim() || null, machineDays: days }),
+      'Could not record the payment.',
+    );
+  };
 
   const draft = inv.status === 'DRAFT';
   const dirty =
@@ -274,6 +315,40 @@ function InvoicePanel({
         </p>
       )}
 
+      {payable && machineDays && machineDays.suggestions.length > 0 && (
+        <div className="rounded-lg border border-line bg-white px-3 py-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-charcoal-muted">Machine days to add with the payment</p>
+          <p className="mt-1 text-xs text-charcoal-muted">
+            From the {machineDays.doneVisits} visit{machineDays.doneVisits === 1 ? '' : 's'} marked done in this period. Change them if
+            needed; 0 adds none. They count as a cost and go to each machine&apos;s pot.
+          </p>
+          <ul className="mt-2 divide-y divide-line">
+            {machineDays.suggestions.map((m) => {
+              const halfDays = halfDaysOf(daysTyped[m.assetId] ?? '');
+              return (
+                <li key={m.assetId} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-medium">{m.name}</span>
+                    <span className="ml-2 text-xs text-charcoal-muted">{money(m.rateCents)} a day</span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <input
+                      aria-label={`Days for ${m.name}`}
+                      className={`${input} w-20 text-right`}
+                      inputMode="decimal"
+                      value={daysTyped[m.assetId] ?? ''}
+                      onChange={(e) => setDaysTyped((prev) => ({ ...prev, [m.assetId]: e.target.value }))}
+                    />
+                    <span className="text-xs text-charcoal-muted">days</span>
+                    <span className="w-24 text-right tabular-nums">{halfDays === null ? '—' : money((halfDays * m.rateCents) / 2)}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -324,7 +399,7 @@ function InvoicePanel({
                   type="button"
                   className={btn}
                   disabled={busy}
-                  onClick={() => void act(() => api.payInvoice(inv.id, { paidOn, paymentRef: paymentRef.trim() || null }), 'Could not record the payment.')}
+                  onClick={recordPayment}
                 >
                   Record payment
                 </button>
@@ -337,7 +412,7 @@ function InvoicePanel({
 
         {inv.status === 'PAID' && canRecordPayment && (
           <button type="button" className={btnGhost} disabled={busy} onClick={() => void act(() => api.unpayInvoice(inv.id), 'Could not undo the payment.')}>
-            Mark not paid (takes it off Jobs &amp; costs)
+            Mark not paid (takes it and its machine days off Jobs &amp; costs)
           </button>
         )}
       </div>

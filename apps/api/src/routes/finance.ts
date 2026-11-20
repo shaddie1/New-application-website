@@ -19,6 +19,7 @@ import type {
   DeclareDistributionInput,
   InvestmentDto,
   MarkDistributionPaidInput,
+  MarketingFundDto,
   MarketingSpendDto,
   ProfitDistributionDto,
   RevenueBreakdown,
@@ -41,11 +42,11 @@ import {
   utcBounds,
   type DayRange,
 } from '../finance/comparison.js';
+import { marketingFundOf, marketingSetAsideCents, splitByStake } from '../finance/split.js';
 import { machineAmountCents } from '../machines/amounts.js';
 import { loadMachineRules, machineDeleteRefusal, priceChangeRefusal } from '../machines/rules.js';
 
 const COUNTED_STATUSES: JobStatus[] = ['OWNER_ENTRY', 'APPROVED'];
-const BASIS_POINTS_TOTAL = 10_000;
 
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 const DateRangeSchema = z.object({ from: DateStr, to: DateStr });
@@ -154,6 +155,22 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
       include: { createdBy: { select: { fullName: true } } },
     });
     return reply.code(201).send({ spend: toMarketingDto(row) });
+  });
+
+  // The 5% of each declared Profit sharing period, less what marketing has spent since.
+  app.get('/marketing-fund', async (_req, reply) => {
+    const [declared, spends] = await Promise.all([
+      prisma.profitDistribution.findMany({
+        where: { marketingCents: { gt: 0 } },
+        select: { label: true, periodStart: true, periodEnd: true, marketingCents: true, status: true },
+      }),
+      prisma.marketingSpend.findMany({ select: { date: true, amountCents: true } }),
+    ]);
+    const fund: MarketingFundDto = marketingFundOf(
+      declared.map((d) => ({ ...d, periodStart: isoDate(d.periodStart), periodEnd: isoDate(d.periodEnd) })),
+      spends.map((s) => ({ date: isoDate(s.date), amountCents: s.amountCents })),
+    );
+    return reply.send({ fund });
   });
 
   app.delete<{ Params: { id: string } }>('/marketing/:id', async (req, reply) => {
@@ -290,10 +307,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/investments', async (_req, reply) => {
     const rows = await prisma.investment.findMany({
-      include: {
-        createdBy: { select: { fullName: true } },
-        shareholder: { select: { name: true } },
-      },
+      include: investmentInclude,
       orderBy: { date: 'desc' },
     });
     return reply.send({ investments: rows.map(toInvestmentDto) });
@@ -311,10 +325,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
         date: new Date(parsed.data.date),
         createdById: req.auth!.sub,
       },
-      include: {
-        createdBy: { select: { fullName: true } },
-        shareholder: { select: { name: true } },
-      },
+      include: investmentInclude,
     });
     return reply.code(201).send({ investment: toInvestmentDto(row) });
   });
@@ -322,6 +333,12 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>('/investments/:id', async (req, reply) => {
     const existing = await prisma.investment.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'investment not found' });
+    // One shareholder's part of a project's pay-in goes with the whole pay-in, or the split would no longer add up.
+    if (existing.payInId) {
+      return reply.code(409).send({
+        error: "This is one shareholder's part of a project's costs paid in. Remove the whole pay-in from the project's Money tab instead.",
+      });
+    }
     await prisma.investment.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
   });
@@ -563,7 +580,9 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const netProfitCents = netProfitCentsOverride ?? (await netProfitForPeriod(periodStart, periodEnd));
-    const shares = allocate(netProfitCents, shareholders.map((s) => s.basisPoints));
+    // The owner's rule: 5% of a profit goes to marketing first; the stakes split the rest.
+    const marketingCents = marketingSetAsideCents(netProfitCents);
+    const shares = allocate(netProfitCents - marketingCents, shareholders.map((s) => s.basisPoints));
 
     await prisma.profitDistribution.createMany({
       data: shareholders.map((s, i) => ({
@@ -572,6 +591,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
         periodEnd: new Date(periodEnd),
         shareholderId: s.id,
         netProfitCents,
+        marketingCents,
         basisPoints: s.basisPoints,
         amountCents: shares[i]!,
         createdById: req.auth!.sub,
@@ -778,26 +798,9 @@ async function netProfitForPeriod(from: string, to: string): Promise<number> {
   return income - (expenses._sum.amountCents ?? 0) - machineCents;
 }
 
-/**
- * Split `netCents` across stakes in whole cents, giving leftover cents to the
- * largest fractional parts so the shares reconcile to the whole exactly.
- * Mirrors the allocation used by the equity overview.
- */
+/** Split `netCents` across stakes in whole cents; stakes under 100% leave the rest unsplit. */
 function allocate(netCents: number, stakes: number[]): number[] {
-  const total = stakes.reduce((acc, bp) => acc + bp, 0);
-  if (stakes.length === 0 || total === 0) return stakes.map(() => 0);
-
-  const distributable = Math.round((netCents * total) / BASIS_POINTS_TOTAL);
-  const exact = stakes.map((bp) => (netCents * bp) / BASIS_POINTS_TOTAL);
-  const shares = exact.map((v) => Math.floor(v));
-
-  const leftover = distributable - shares.reduce((acc, v) => acc + v, 0);
-  const byFraction = exact.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac);
-  for (let k = 0; k < leftover; k += 1) {
-    const target = byFraction[k % byFraction.length]!;
-    shares[target.i] = shares[target.i]! + 1;
-  }
-  return shares;
+  return splitByStake(netCents, stakes).shares;
 }
 
 // ── DTO mappers ─────────────────────────────────────────────────────────────
@@ -889,9 +892,13 @@ function monthsBetween(from: Date, to: Date): number {
   return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
 }
 
-type InvestmentRow = Prisma.InvestmentGetPayload<{
-  include: { createdBy: { select: { fullName: true } }; shareholder: { select: { name: true } } };
-}>;
+const investmentInclude = {
+  createdBy: { select: { fullName: true } },
+  shareholder: { select: { name: true } },
+  payIn: { select: { project: { select: { id: true, title: true } } } },
+} satisfies Prisma.InvestmentInclude;
+
+type InvestmentRow = Prisma.InvestmentGetPayload<{ include: typeof investmentInclude }>;
 
 function toInvestmentDto(row: InvestmentRow): InvestmentDto {
   return {
@@ -905,6 +912,8 @@ function toInvestmentDto(row: InvestmentRow): InvestmentDto {
     shareholderName: row.shareholder?.name ?? null,
     reference: row.reference,
     documentUrl: row.documentUrl,
+    projectId: row.payIn?.project.id ?? null,
+    projectTitle: row.payIn?.project.title ?? null,
     ...provenance(row),
   };
 }
@@ -922,6 +931,7 @@ function toDistributionDto(row: DistributionRow): ProfitDistributionDto {
     shareholderId: row.shareholderId,
     shareholderName: row.shareholder.name,
     netProfitCents: row.netProfitCents,
+    marketingCents: row.marketingCents,
     basisPoints: row.basisPoints,
     amountCents: row.amountCents,
     status: row.status,

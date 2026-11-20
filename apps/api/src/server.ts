@@ -23,6 +23,7 @@ import { documentRoutes } from './routes/documents.js';
 import { projectRoutes } from './routes/projects.js';
 import { projectMoneyRoutes } from './routes/projectMoney.js';
 import { invoiceRoutes } from './routes/invoices.js';
+import { projectSplitRoutes } from './routes/projectSplit.js';
 import { machinesRoutes } from './routes/machines.js';
 import { jobReportsRoutes } from './routes/jobReports.js';
 import { notificationRoutes } from './routes/notifications.js';
@@ -66,6 +67,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(projectRoutes, { prefix: '/admin/projects' });
   await app.register(projectMoneyRoutes, { prefix: '/admin/project-money' });
   await app.register(invoiceRoutes, { prefix: '/admin/invoices' });
+  await app.register(projectSplitRoutes, { prefix: '/admin/projects' });
   await app.register(machinesRoutes, { prefix: '/admin/machines' });
   await app.register(jobReportsRoutes, { prefix: '/admin/job-reports' });
   await app.register(websiteJobRoutes, { prefix: '/admin/website-jobs' });

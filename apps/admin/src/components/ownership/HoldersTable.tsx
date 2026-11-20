@@ -153,7 +153,9 @@ export function HoldersTable({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-border bg-mist/70">
-              <th scope="row" className={cn(nameCell, 'text-left font-medium text-charcoal')}>Net profit to split</th>
+              <th scope="row" className={cn(nameCell, 'text-left font-medium text-charcoal')}>
+                {figures.marketingCents > 0 ? 'Profit to split, after 5% for marketing' : 'Net profit to split'}
+              </th>
               <td className={cn(stakeCell, number, 'font-medium', balanced ? 'text-charcoal' : 'text-warning')}>{pct(totalBasisPoints)}</td>
               <td className={cn(amountCell, number)}>
                 <span className={cn('font-semibold', signed(figures.footerNetCents))}>{money(figures.footerNetCents)}</span>

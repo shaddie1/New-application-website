@@ -72,3 +72,16 @@ export function dayLabel(date: string): string {
     day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
   });
 }
+
+/** Days as typed, "2" or "2.5", in half days; empty is 0; null when it is not a whole or half number of days. */
+export function halfDaysOf(text: string): number | null {
+  const t = text.trim();
+  if (t === '') return 0;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const half = n * 2;
+  return Number.isInteger(half) ? half : null;
+}
+
+/** Half days as the days a form shows: 5 is "2.5". */
+export const daysOf = (halfDays: number) => String(halfDays / 2);

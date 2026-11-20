@@ -79,6 +79,14 @@ export function Hero({
             expenses.
           </p>
         )}
+        {/* The owner's rule of 20 November 2026: 5% of a profit goes to marketing before the split. */}
+        {figures && figures.marketingCents > 0 && (
+          <p className="figure mt-2 text-sm text-charcoal-muted">
+            Set aside for marketing (5% of the profit):{' '}
+            <span className="font-medium text-charcoal">{money(figures.marketingCents)}</span>. The shareholders split
+            the rest by stake.
+          </p>
+        )}
       </div>
     </Card>
   );

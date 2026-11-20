@@ -396,6 +396,9 @@ export interface InvestmentDto extends Provenance {
   shareholderName: string | null;
   reference: string | null;
   documentUrl: string | null;
+  /** Set when this is a shareholder's part of a project's costs paid in. */
+  projectId: string | null;
+  projectTitle: string | null;
 }
 
 export interface CreateInvestmentInput {
@@ -420,6 +423,8 @@ export interface ProfitDistributionDto extends Provenance {
   shareholderName: string;
   /** Snapshots taken when declared — a later cap-table edit must not rewrite history. */
   netProfitCents: number;
+  /** The period's 5% for marketing, taken off before the split; 0 for periods declared before the rule. */
+  marketingCents: number;
   basisPoints: number;
   amountCents: number;
   status: DistributionStatus;
@@ -691,6 +696,101 @@ export interface PayInvoiceInput {
   paidOn: string;
   /** M-Pesa code, cheque or bank reference. */
   paymentRef?: string | null;
+  /** Machine days to add to the income job, at each machine's project rate. */
+  machineDays?: { assetId: string; halfDays: number }[];
+}
+
+/** A machine's days suggested for an invoice's payment: the period's done visits times its half days per visit. */
+export interface InvoiceMachineDaysSuggestion {
+  assetId: string;
+  name: string;
+  /** The machine's project rate now, per day. */
+  rateCents: number;
+  halfDaysPerVisit: number;
+  halfDays: number;
+}
+
+export interface InvoiceMachineDaysDto {
+  /** Visits marked done in the invoice's period. */
+  doneVisits: number;
+  suggestions: InvoiceMachineDaysSuggestion[];
+}
+
+/** A machine a project uses. */
+export interface ProjectMachineDto {
+  assetId: string;
+  name: string;
+  /** Half days on each visit: 2 is one day. */
+  halfDaysPerVisit: number;
+  projectRateCents: number;
+  retired: boolean;
+}
+
+export interface ProjectMachinesDto {
+  machines: ProjectMachineDto[];
+  /** Machines on the register, not retired, that can be added. */
+  available: { assetId: string; name: string; projectRateCents: number }[];
+}
+
+export interface SetProjectMachinesInput {
+  machines: { assetId: string; halfDaysPerVisit: number }[];
+}
+
+/** One shareholder's part of a pay-in. */
+export interface PayInShareDto {
+  shareholderId: string;
+  shareholderName: string;
+  amountCents: number;
+}
+
+/** A project's costs paid in by the shareholders, split by stake. */
+export interface ProjectPayInDto {
+  id: string;
+  date: string;
+  totalCents: number;
+  note: string | null;
+  shares: PayInShareDto[];
+  /** What the stakes did not cover when they add up to less than 100%: the company's own part. */
+  companyCents: number;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface CreateProjectPayInInput {
+  totalCents: number;
+  date: string;
+  note?: string | null;
+}
+
+/** One shareholder on a project: what they paid in and their part of its profit at today's stake. */
+export interface ProjectHolderDto {
+  shareholderId: string;
+  name: string;
+  basisPoints: number;
+  paidInCents: number;
+  profitShareCents: number;
+}
+
+/** How a project's profit so far splits: 5% for marketing, the rest by stake. */
+export interface ProjectSplitDto {
+  profitCents: number;
+  marketingCents: number;
+  sharedCents: number;
+  holders: ProjectHolderDto[];
+  /** Profit the stakes do not cover (stakes under 100%): kept by the company. */
+  unallocatedCents: number;
+  paidInCents: number;
+  payIns: ProjectPayInDto[];
+}
+
+/** Marketing's 5% from declared Profit sharing periods, less marketing spend since the first of them. */
+export interface MarketingFundDto {
+  setAsideCents: number;
+  spentCents: number;
+  balanceCents: number;
+  /** Start of the first period that set money aside; null when none has. */
+  sinceDate: string | null;
+  periods: { label: string; periodStart: string; periodEnd: string; marketingCents: number }[];
 }
 
 /** Invoices sent and not paid yet, for the Dashboard. */
@@ -950,9 +1050,9 @@ export interface ReplaceStakesResult {
 // One shareholder's cut of the profit, for a period and for all time.
 export interface ShareholderAllocation {
   shareholder: ShareholderDto;
-  // Share of net profit (income − expenses) for the requested period.
+  // Share of net profit (income − expenses), after 5% for marketing, for the requested period.
   periodShareCents: number;
-  // Share of net profit across every job ever recorded.
+  // Share of net profit across every job ever recorded, after 5% for marketing.
   allTimeShareCents: number;
 }
 
@@ -976,8 +1076,11 @@ export interface EquityOverview {
   // table does not add up to 100%. Retained by the business.
   unallocatedPeriodCents: number;
   unallocatedAllTimeCents: number;
-  // Net profit being split, for the requested period.
+  // Net profit for the requested period. 5% of it (when above zero) goes to
+  // marketing first; the stakes split the rest.
   periodNetCents: number;
+  periodMarketingCents: number;
+  allTimeMarketingCents: number;
   // What periodNetCents is made of: income less expenses, and the number of
   // counted jobs dated in the period (the period's "Total projects"). A server
   // older than these fields leaves them out, so the admin reads them as optional.
@@ -1007,9 +1110,11 @@ export interface EquityHistoryMonth {
   label: string; // e.g. "Jun"
   // Net profit of the whole calendar month, as the equity overview gives it for that month.
   netCents: number;
+  // 5% of netCents for marketing when netCents is above zero, otherwise 0.
+  marketingCents: number;
   // Every current holder, in table order, the same holders in every month. A removed holder is in none.
   shares: EquityHistoryShare[];
-  // Net profit the stakes do not cover; the shares and this add up to netCents.
+  // What the stakes do not cover; marketingCents, the shares and this add up to netCents.
   unallocatedCents: number;
   // True for the last month only: it is the current month in Nairobi and still running.
   partial: boolean;

@@ -30,6 +30,7 @@ import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { hasOwnerAccess } from '../auth/staff.js';
 import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
+import { marketingSetAsideCents, splitByStake } from '../finance/split.js';
 import { machineAmountCents } from '../machines/amounts.js';
 import { COUNTED_STATUSES, allTimeTotalsOf, moneyJobSelect } from '../projectMoney/figures.js';
 import { suggester } from '../projectMoney/suggest.js';
@@ -611,7 +612,8 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
   // ── Equity overview ────────────────────────────────────────────────────────
   // Each shareholder's cut of net profit (income − expenses), for the requested
-  // period and for all time, alongside the all-time company totals.
+  // period and for all time, alongside the all-time company totals. As in
+  // Profit sharing, 5% of a profit goes to marketing before the stakes split it.
 
   app.get('/equity', async (req, reply) => {
     const parsed = DateRangeSchema.safeParse(req.query);
@@ -623,8 +625,10 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       allTimeTotals(),
     ]);
 
-    const period = allocate(figures.netCents, shareholders);
-    const lifetime = allocate(allTime.totalNetCents, shareholders);
+    const periodMarketingCents = marketingSetAsideCents(figures.netCents);
+    const allTimeMarketingCents = marketingSetAsideCents(allTime.totalNetCents);
+    const period = allocate(figures.netCents - periodMarketingCents, shareholders);
+    const lifetime = allocate(allTime.totalNetCents - allTimeMarketingCents, shareholders);
 
     const allocations: ShareholderAllocation[] = shareholders.map((s, i) => ({
       shareholder: s,
@@ -638,6 +642,8 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       unallocatedPeriodCents: period.unallocatedCents,
       unallocatedAllTimeCents: lifetime.unallocatedCents,
       periodNetCents: figures.netCents,
+      periodMarketingCents,
+      allTimeMarketingCents,
       periodIncomeCents: figures.incomeCents,
       periodExpensesCents: figures.expensesCents,
       ...(figures.machineCents > 0 && { periodMachineCents: figures.machineCents }),
@@ -675,10 +681,12 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const months: EquityHistoryMonth[] = slots.map((slot, i) => {
       const { netCents } = figures[i]!;
-      const split = allocate(netCents, shareholders);
+      const marketingCents = marketingSetAsideCents(netCents);
+      const split = allocate(netCents - marketingCents, shareholders);
       return {
         ...slot,
         netCents,
+        marketingCents,
         shares: shareholders.map((s, k) => ({
           shareholderId: s.id,
           shareholderName: s.name,
@@ -813,36 +821,14 @@ function stakesRefusal(
   return null;
 }
 
-// Split `netCents` across the stakes. Whole cents only: the leftover cents from
-// rounding go to the largest fractional parts first (largest-remainder), so the
-// shares add back up to the whole exactly rather than drifting a cent or two.
-// Works for a loss (negative net) too — everyone shares it in proportion.
+// Split `netCents` across the stakes in whole cents (finance/split.ts). Works
+// for a loss too: everyone shares it in proportion. What stakes under 100% do
+// not cover is retained by the business rather than silently spread.
 function allocate(
   netCents: number,
   shareholders: ShareholderDto[],
 ): { shares: number[]; unallocatedCents: number } {
-  const totalBasisPoints = shareholders.reduce((acc, s) => acc + s.basisPoints, 0);
-  if (shareholders.length === 0 || totalBasisPoints === 0) {
-    return { shares: shareholders.map(() => 0), unallocatedCents: netCents };
-  }
-
-  // What the stakes actually cover. Equals netCents when they sum to 100%;
-  // anything left over is retained by the business rather than silently spread.
-  const distributableCents = Math.round((netCents * totalBasisPoints) / BASIS_POINTS_TOTAL);
-
-  const exact = shareholders.map((s) => (netCents * s.basisPoints) / BASIS_POINTS_TOTAL);
-  const shares = exact.map((v) => Math.floor(v));
-
-  const leftover = distributableCents - shares.reduce((acc, v) => acc + v, 0);
-  const byFraction = exact
-    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
-    .sort((a, b) => b.frac - a.frac);
-  for (let k = 0; k < leftover; k += 1) {
-    const target = byFraction[k % byFraction.length]!;
-    shares[target.i] = shares[target.i]! + 1;
-  }
-
-  return { shares, unallocatedCents: netCents - distributableCents };
+  return splitByStake(netCents, shareholders.map((s) => s.basisPoints));
 }
 
 // Adds up in the project-money module, so the contracts table's totals line

@@ -27,6 +27,7 @@ export const t = {
   machineLines: [] as Row[],
   machineInvestors: [] as Row[],
   machinePayouts: [] as Row[],
+  marketingSpends: [] as Row[],
 };
 
 export function resetDb() {
@@ -42,6 +43,7 @@ export function resetDb() {
   t.machineLines = [];
   t.machineInvestors = [];
   t.machinePayouts = [];
+  t.marketingSpends = [];
   seq = 0;
 }
 
@@ -435,6 +437,9 @@ export const db = {
       return withUser(holder);
     }),
     update: vi.fn(async ({ where, data }: Where & Data) => withUser(Object.assign(t.shareholders.find((s) => matches(s, where))!, data))),
+  },
+  marketingSpend: {
+    findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.marketingSpends.filter((m) => matches(m, where))),
   },
   profitDistribution: {
     findFirst: vi.fn(async ({ where }: Partial<Where> = {}) => {

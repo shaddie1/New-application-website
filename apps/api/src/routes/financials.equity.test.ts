@@ -65,18 +65,20 @@ describe('GET /admin/financials/equity', () => {
     expect(overview.periodProjects).toBe(2);
   });
 
-  it("keeps the period's net profit as income less expenses, and the shares split from it", async () => {
+  it("keeps the period's net profit as income less expenses, and splits it after 5% for marketing", async () => {
     const { overview } = (await as('owner', 'GET', NOVEMBER)).json();
 
     expect(overview.periodNetCents).toBe(1_150_000);
     expect(overview.periodIncomeCents - overview.periodExpensesCents).toBe(overview.periodNetCents);
+    // 5% of 11,500 is 575 for marketing; 10,925 is split 40/30/30.
+    expect(overview.periodMarketingCents).toBe(57_500);
     expect(
       overview.allocations.map((a: { shareholder: { id: string }; periodShareCents: number }) =>
         [a.shareholder.id, a.periodShareCents]),
     ).toEqual([
-      ['h1', 460_000],
-      ['h2', 345_000],
-      ['h3', 345_000],
+      ['h1', 437_000],
+      ['h2', 327_750],
+      ['h3', 327_750],
     ]);
     expect(overview.unallocatedPeriodCents).toBe(0);
   });
@@ -96,10 +98,12 @@ describe('GET /admin/financials/equity', () => {
       overview.allocations.map((a: { shareholder: { id: string }; allTimeShareCents: number }) =>
         [a.shareholder.id, a.allTimeShareCents]),
     ).toEqual([
-      ['h1', 580_000],
-      ['h2', 435_000],
-      ['h3', 435_000],
+      // 14,500 all time, less 725 for marketing.
+      ['h1', 551_000],
+      ['h2', 413_250],
+      ['h3', 413_250],
     ]);
+    expect(overview.allTimeMarketingCents).toBe(72_500);
   });
 
   it('gives zeros for a period with no jobs', async () => {

@@ -22,6 +22,8 @@ const overview: EquityOverview = {
   unallocatedPeriodCents: 345_000,
   unallocatedAllTimeCents: 2_700_000,
   periodNetCents: 1_150_000,
+  periodMarketingCents: 57_500,
+  allTimeMarketingCents: 450_000,
   periodIncomeCents: 1_400_000,
   periodExpensesCents: 250_000,
   periodProjects: 2,
@@ -47,7 +49,9 @@ const ALL_TIME = {
     { shareholder: amina, shareCents: 2_700_000 },
   ],
   unallocatedCents: 2_700_000,
-  footerNetCents: 9_000_000,
+  // 5% of 90,000 goes to marketing first.
+  marketingCents: 450_000,
+  footerNetCents: 8_550_000,
 };
 
 describe('scopeFigures', () => {
@@ -71,8 +75,15 @@ describe('scopeFigures', () => {
         { shareholder: amina, shareCents: 345_000 },
       ],
       unallocatedCents: 345_000,
-      footerNetCents: 1_150_000,
+      marketingCents: 57_500,
+      footerNetCents: 1_092_500,
     });
+  });
+
+  it('sets nothing aside for marketing when an older server does not send it', () => {
+    const { periodMarketingCents: _m, allTimeMarketingCents: _a, ...older } = overview;
+
+    expect(scopeFigures(older, 'all-time')).toMatchObject({ marketingCents: 0, footerNetCents: 9_000_000 });
   });
 
   it("has no income, expenses or count for the month when an older server does not send them", () => {

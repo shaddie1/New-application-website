@@ -7,7 +7,12 @@ export type OwnershipScope = 'all-time' | 'this-month';
 
 export const DEFAULT_SCOPE: OwnershipScope = 'all-time';
 
-type PeriodBreakdown = 'periodIncomeCents' | 'periodExpensesCents' | 'periodProjects';
+type PeriodBreakdown =
+  | 'periodIncomeCents'
+  | 'periodExpensesCents'
+  | 'periodProjects'
+  | 'periodMarketingCents'
+  | 'allTimeMarketingCents';
 
 /** An equity overview as it arrives: a server older than the period's breakdown leaves it out. */
 export type ReceivedEquityOverview = Omit<EquityOverview, PeriodBreakdown> & Partial<Pick<EquityOverview, PeriodBreakdown>>;
@@ -24,7 +29,9 @@ export type ScopeFigures = {
   holders: { shareholder: ShareholderDto; shareCents: number }[];
   /** Net profit the stakes do not cover; zero when they total 100%. */
   unallocatedCents: number;
-  /** The table footer's "net profit to split". */
+  /** 5% of a profit, set aside for marketing before the split; 0 for a loss, and from a server older than the rule. */
+  marketingCents: number;
+  /** The table footer's "profit to split": the net profit less the marketing set-aside. */
   footerNetCents: number;
   /**
    * What was set aside for machines: the machine days inside the expenses.
@@ -53,7 +60,8 @@ export function scopeFigures(overview: ReceivedEquityOverview, scope: OwnershipS
       projects: overview.periodProjects ?? null,
       holders: overview.allocations.map((a) => ({ shareholder: a.shareholder, shareCents: a.periodShareCents })),
       unallocatedCents: overview.unallocatedPeriodCents,
-      footerNetCents: overview.periodNetCents,
+      marketingCents: overview.periodMarketingCents ?? 0,
+      footerNetCents: overview.periodNetCents - (overview.periodMarketingCents ?? 0),
       ...setAside(overview.periodMachineCents),
     };
   }
@@ -65,7 +73,8 @@ export function scopeFigures(overview: ReceivedEquityOverview, scope: OwnershipS
     projects: allTime.totalProjects,
     holders: overview.allocations.map((a) => ({ shareholder: a.shareholder, shareCents: a.allTimeShareCents })),
     unallocatedCents: overview.unallocatedAllTimeCents,
-    footerNetCents: allTime.totalNetCents,
+    marketingCents: overview.allTimeMarketingCents ?? 0,
+    footerNetCents: allTime.totalNetCents - (overview.allTimeMarketingCents ?? 0),
     ...setAside(allTime.totalMachineCents),
   };
 }
