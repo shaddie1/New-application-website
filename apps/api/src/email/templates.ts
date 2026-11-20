@@ -1,7 +1,7 @@
 import { html, maskEmail } from './format.js';
 import { ADMIN_LOGIN_URL, button, codeBlock, finePrint, link, paragraph, renderLayout, strong } from './layout.js';
 
-export type EmailTemplate = 'admin-sign-in-code' | 'staff-welcome' | 'sign-in-email-changed';
+export type EmailTemplate = 'admin-sign-in-code' | 'staff-welcome' | 'sign-in-email-changed' | 'services-due-today';
 
 export interface EmailMessage {
   /** Names the email in logs, which never include the subject or body (the body carries sign-in codes). */
@@ -95,4 +95,38 @@ ${paragraph(contactOwner)}`,
     reason: 'You received this because this address was the sign-in email for an OnyxHawk account.',
   });
   return { template: 'sign-in-email-changed', subject: 'Your OnyxHawk sign-in email was changed', html: page, text };
+}
+
+const CALENDAR_URL = ADMIN_LOGIN_URL.replace(/\/login$/, '/calendar');
+
+/** One project service due on the day, as the morning reminder lists it. */
+export interface DueService {
+  projectTitle: string;
+  clientName: string | null;
+  siteLocation: string | null;
+  isDeepClean: boolean;
+}
+
+/** The morning reminder to staff: every project service due today. */
+export function servicesDueTodayEmail({ dateLabel, services }: { dateLabel: string; services: DueService[] }): EmailMessage {
+  const count = `${services.length} ${services.length === 1 ? 'service' : 'services'}`;
+  const lineText = (s: DueService) =>
+    [s.isDeepClean ? `${s.projectTitle} (deep clean)` : s.projectTitle, s.clientName, s.siteLocation].filter(Boolean).join(' · ');
+  const items = services.map(
+    (s) => html`<li style="margin:0 0 8px">${strong(s.isDeepClean ? `${s.projectTitle} (deep clean)` : s.projectTitle)}${
+      [s.clientName, s.siteLocation].filter(Boolean).length ? ` · ${[s.clientName, s.siteLocation].filter(Boolean).join(' · ')}` : ''
+    }</li>`,
+  );
+  const markThem = 'Mark each one done or skipped on the Dashboard or the project’s Visits tab.';
+  const { html: page, text } = renderLayout({
+    preheader: `${count} due today, ${dateLabel}.`,
+    heading: 'Services due today',
+    body: html`${paragraph(`${count} due today, ${dateLabel}:`)}
+<ul style="margin:0 0 16px;padding-left:20px">${items}</ul>
+${paragraph(markThem)}
+${button('Open the calendar', CALENDAR_URL)}`,
+    bodyText: [`${count} due today, ${dateLabel}:`, '', ...services.map((s) => `- ${lineText(s)}`), '', markThem, '', `Calendar: ${CALENDAR_URL}`].join('\n'),
+    reason: 'You received this because you are on the OnyxHawk team as owner, admin, COO or cleaning supervisor.',
+  });
+  return { template: 'services-due-today', subject: `Today: ${count} due (${dateLabel})`, html: page, text };
 }

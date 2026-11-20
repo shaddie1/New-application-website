@@ -125,6 +125,8 @@ function project(id: string, over: Row = {}) {
     id, title: `Contract ${id}`, clientName: PRIVATE.projectClient, clientPhone: PRIVATE.projectPhone,
     siteLocation: PRIVATE.projectSite, serviceLineCode: null, clientSegment: null, stage: 'IN_PROGRESS',
     startDate: null, targetEndDate: null, completedAt: null, valueCents: 5_000_000, paymentFrequency: 'ONE_OFF',
+    kind: 'ONCE', repeatEvery: null, repeatUnit: null, serviceDays: [], weekOfMonth: null,
+    deepCleanEveryMonths: null, deepCleanPriceCents: null,
     notes: PRIVATE.projectNotes, checklist: [], _count: { events: 0 }, createdBy: { fullName: 'Olive Owner' },
     createdAt: new Date('2026-01-05T08:00:00.000Z'), updatedAt: new Date('2026-01-05T08:00:00.000Z'), ...over,
   });
@@ -206,7 +208,8 @@ describe('GET /admin/projects, as support', () => {
     expect(Object.keys(projects[0])).toEqual([
       'id', 'title', 'clientName', 'clientPhone', 'siteLocation', 'serviceLineCode', 'clientSegment', 'stage',
       'startDate', 'targetEndDate', 'completedAt', 'valueCents', 'paymentFrequency', 'billingPeriods',
-      'estimatedTotalCents', 'notes', 'checklist', 'progressPercent', 'answeredCount', 'checklistCount',
+      'estimatedTotalCents', 'kind', 'repeatEvery', 'repeatUnit', 'serviceDays', 'weekOfMonth',
+      'deepCleanEveryMonths', 'deepCleanPriceCents', 'scheduleSummary', 'nextVisits', 'notes', 'checklist', 'progressPercent', 'answeredCount', 'checklistCount',
       'blockerCount', 'eventCount', 'createdByName', 'createdAt', 'updatedAt',
     ]);
     expect(res.body).not.toMatch(/charged|spent|profit/i);

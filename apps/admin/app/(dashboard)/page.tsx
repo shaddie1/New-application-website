@@ -10,6 +10,7 @@ import { ActionCard } from '../../src/components/dashboard/ActionCard';
 import { ExpensesChart, ProfitShareChart, RevenueCharts } from '../../src/components/dashboard/Breakdowns';
 import { MonthFigures } from '../../src/components/dashboard/MonthFigures';
 import { MonthSelector } from '../../src/components/dashboard/MonthSelector';
+import { ServicesDue } from '../../src/components/dashboard/ServicesDue';
 import { StatusStrip } from '../../src/components/dashboard/StatusStrip';
 import { TextLink } from '../../src/components/dashboard/TextLink';
 import { isSameMonth, monthLabel, nairobiYearMonth, type YearMonth } from '../../src/components/dashboard/month';
@@ -31,7 +32,7 @@ type OtpRow = { phone: string; email: string | null; purpose: string; codePlain:
  * money came from and went. Every block loads by itself (see `useBlock`), and
  * a block the signed-in role may not see is absent, not empty:
  *
- *   everyone signed in      status strip, action cards
+ *   everyone signed in      status strip, action cards, services due
  *   owner and finance roles the month's tiles, targets and revenue charts
  *   owner and admins        "Where the money went" and "Profit share"
  */
@@ -107,6 +108,11 @@ export default function DashboardPage() {
             countLoading={stats.status === 'loading'}
             countLabel="pending quotes"
           />
+        </div>
+
+        {/* Every staff member can see projects, so every one sees what is due. */}
+        <div className="mt-4">
+          <ServicesDue />
         </div>
       </section>
 

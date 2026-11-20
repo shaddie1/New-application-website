@@ -8,12 +8,17 @@ import type {
   ProjectDto,
   ProjectEventDto,
   ProjectEventKind,
+  ProjectKind,
   ProjectStage,
 } from '@onyxhawk/types';
 
 import { ContractMoney } from '../../../src/components/project-money/ContractMoney';
 import { MoneyTable } from '../../../src/components/project-money/MoneyTable';
+import { ScheduleFields } from '../../../src/components/projects/ScheduleFields';
 import { TitleCombobox } from '../../../src/components/projects/TitleCombobox';
+import { VisitsTab } from '../../../src/components/projects/VisitsTab';
+import { Segmented } from '../../../src/components/ui/segmented';
+import { emptySchedule, scheduleInput, visitDateLabel, type ScheduleForm } from '../../../src/lib/projectSchedule';
 import { pickService } from '../../../src/lib/projectTitle';
 import { refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { api, ApiError } from '../../../src/lib/api';
@@ -77,6 +82,7 @@ const EVENT_TONE: Record<ProjectEventKind, string> = {
   QUESTION_REMOVED: 'var(--chart-negative)',
   DETAILS_CHANGED: 'var(--chart-muted)',
   NOTE_CHANGED: 'var(--chart-muted)',
+  VISIT_MARKED: 'var(--chart-positive)',
 };
 
 /** "3 minutes ago" for recent events, an absolute date once it stops mattering. */
@@ -136,7 +142,20 @@ export default function ProjectsPage() {
     serviceLineCode: '', clientSegment: '' as '' | ClientSegment,
     startDate: todayIso(), targetEndDate: '', valueKes: '', notes: '',
     paymentFrequency: 'ONE_OFF' as PaymentFrequency,
+    kind: 'ONCE' as ProjectKind,
   });
+  const [schedule, setSchedule] = useState<ScheduleForm>(emptySchedule);
+
+  /** Switching kind also suggests the usual way of billing it. The owner can still change it. */
+  const setKind = (kind: ProjectKind) =>
+    setForm((f) => ({
+      ...f,
+      kind,
+      paymentFrequency:
+        kind === 'REPEATING' && f.paymentFrequency === 'ONE_OFF' ? 'MONTHLY'
+        : kind === 'ONCE' ? 'ONE_OFF'
+        : f.paymentFrequency,
+    }));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -180,14 +199,21 @@ export default function ProjectsPage() {
         targetEndDate: form.targetEndDate || null,
         valueCents: form.valueKes ? Math.round(parseFloat(form.valueKes) * 100) : undefined,
         paymentFrequency: form.paymentFrequency,
+        ...scheduleInput(form.kind, schedule),
         notes: form.notes.trim() || undefined,
       });
       setForm({ ...form, title: '', clientName: '', clientPhone: '', siteLocation: '', valueKes: '', notes: '' });
+      setSchedule(emptySchedule());
       setShowForm(false);
       setExpanded(res.project.id);
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? `Could not create project (${err.status}).` : 'Could not create project.');
+      // A schedule the server refuses comes back with words for the form.
+      setError(
+        err instanceof ApiError && err.status === 400
+          ? refusalMessage(err, 'Could not create project.')
+          : err instanceof ApiError ? `Could not create project (${err.status}).` : 'Could not create project.',
+      );
     } finally {
       setSaving(false);
     }
@@ -257,6 +283,16 @@ export default function ProjectsPage() {
 
       {showForm && (
         <form onSubmit={(e) => void create(e)} className="mb-6 grid gap-3 rounded-xl border border-aqua/40 bg-white p-5 sm:grid-cols-3">
+          <div className="sm:col-span-3">
+            <span className="mb-1 block text-xs text-charcoal-muted">This project is</span>
+            <Segmented
+              legend="One-off or repeating"
+              name="new-project-kind"
+              options={[{ value: 'ONCE', label: 'One-off' }, { value: 'REPEATING', label: 'Repeating' }]}
+              value={form.kind}
+              onChange={setKind}
+            />
+          </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs text-charcoal-muted">Project title</label>
             <TitleCombobox className={input} value={form.title} services={serviceLines}
@@ -311,23 +347,33 @@ export default function ProjectsPage() {
               onChange={(e) => setForm((f) => ({ ...f, valueKes: e.target.value }))} />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-charcoal-muted">Start date</label>
+            <label className="mb-1 block text-xs text-charcoal-muted">
+              {form.kind === 'REPEATING' ? 'Contract starts' : 'Service date'}
+            </label>
             <input type="date" className={input} value={form.startDate}
               onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-charcoal-muted">Target completion</label>
+            <label className="mb-1 block text-xs text-charcoal-muted">
+              {form.kind === 'REPEATING' ? 'Contract ends (blank: until stopped)' : 'Target completion'}
+            </label>
             <input type="date" className={input} value={form.targetEndDate}
               onChange={(e) => setForm((f) => ({ ...f, targetEndDate: e.target.value }))} />
           </div>
+          {form.kind === 'REPEATING' && (
+            <div className="sm:col-span-3">
+              <ScheduleFields value={schedule} onChange={setSchedule} startDate={form.startDate} endDate={form.targetEndDate} />
+            </div>
+          )}
           <div className="sm:col-span-3">
             <label className="mb-1 block text-xs text-charcoal-muted">Notes</label>
             <input className={input} value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
           </div>
           <p className="text-xs text-charcoal-muted sm:col-span-2">
-            A standard 14-question checklist is added automatically — survey, quote, resourcing, on site, handover and
-            closing. You can add your own questions to any project afterwards.
+            {form.kind === 'REPEATING'
+              ? 'A 13-question checklist for contracts is added automatically: setup, resourcing, running and review. You can add your own questions to any project afterwards.'
+              : 'A standard 14-question checklist is added automatically: survey, quote, resourcing, on site, handover and closing. You can add your own questions to any project afterwards.'}
           </p>
           <div className="flex items-end justify-end sm:col-span-1">
             <button type="submit" disabled={saving} className={btn}>{saving ? 'Creating…' : 'Create project'}</button>
@@ -401,6 +447,7 @@ export default function ProjectsPage() {
               showMoney={showMoney}
               focusMoney={moneyFocus === p.id}
               onMoneyFocused={() => setMoneyFocus(null)}
+              onProjectChanged={patchProject}
             />
           ))}
         </div>
@@ -455,8 +502,9 @@ function ActivityLog({ projectId, reloadKey }: { projectId: string; reloadKey: n
 
 function ProjectCard({
   project: p, expanded, onToggle, onStage, onAnswer, saveState, onAddQuestion, newQuestion, setNewQuestion, onDelete,
-  showMoney, focusMoney, onMoneyFocused,
+  showMoney, focusMoney, onMoneyFocused, onProjectChanged,
 }: {
+  onProjectChanged: (p: ProjectDto) => void;
   project: ProjectDto;
   expanded: boolean;
   onToggle: () => void;
@@ -471,7 +519,7 @@ function ProjectCard({
   focusMoney: boolean;
   onMoneyFocused: () => void;
 }) {
-  const [tab, setTab] = useState<'questions' | 'log' | 'money'>('questions');
+  const [tab, setTab] = useState<'questions' | 'visits' | 'log' | 'money'>('questions');
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -500,7 +548,21 @@ function ProjectCard({
                 {p.blockerCount} unresolved
               </span>
             )}
+            {p.kind === 'REPEATING' && (
+              <span className="rounded-full bg-aqua-soft px-2 py-0.5 text-xs text-aqua-deep">Repeating</span>
+            )}
           </div>
+          {p.kind === 'REPEATING' && (
+            <p className="mt-1 text-xs text-charcoal">
+              {p.scheduleSummary}
+              {p.nextVisits[0] && (
+                <span className="text-charcoal-muted">
+                  {' '}· next visit {visitDateLabel(p.nextVisits[0].date)}
+                  {p.nextVisits[0].isDeepClean ? ' (deep clean)' : ''}
+                </span>
+              )}
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-charcoal-muted">
             {p.clientName && <span>{p.clientName}</span>}
             {p.siteLocation && <span>· {p.siteLocation}</span>}
@@ -576,6 +638,12 @@ function ProjectCard({
               Questions ({p.checklistCount})
             </button>
             <button
+              onClick={() => setTab('visits')}
+              className={`border-b-2 px-3 py-2 text-sm ${tab === 'visits' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+            >
+              Visits
+            </button>
+            <button
               onClick={() => setTab('log')}
               className={`border-b-2 px-3 py-2 text-sm ${tab === 'log' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
             >
@@ -593,6 +661,8 @@ function ProjectCard({
 
           {tab === 'money' ? (
             <ContractMoney projectId={p.id} />
+          ) : tab === 'visits' ? (
+            <VisitsTab project={p} onProjectChanged={onProjectChanged} />
           ) : tab === 'log' ? (
             <ActivityLog projectId={p.id} reloadKey={p.eventCount} />
           ) : (

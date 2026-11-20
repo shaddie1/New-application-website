@@ -95,6 +95,7 @@ model User {
   projectsCreated      Project[]            @relation("ProjectCreatedBy")
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
+  projectVisitsMarked  ProjectVisit[]       @relation("ProjectVisitMarkedBy")
   quoteSurveysUpdated  QuoteSurvey[]        @relation("QuoteSurveyUpdatedBy")
   quoteCostingsUpdated QuoteCosting[]       @relation("QuoteCostingUpdatedBy")
   quoteEstimatesComputed  QuoteEstimate[]   @relation("QuoteEstimateComputedBy")
@@ -1132,6 +1133,27 @@ enum PaymentFrequency {
 }
 
 /**
+ * Whether the client wants the service once or on a schedule. Named apart from
+ * PaymentFrequency.ONE_OFF (how the client is billed) and JobPlacement.STANDALONE
+ * (a job outside any project), which mean different things.
+ */
+enum ProjectKind {
+  ONCE
+  REPEATING
+}
+
+enum RepeatUnit {
+  WEEK
+  MONTH
+}
+
+/** What happened on a planned visit. A visit with no mark is still planned. */
+enum VisitStatus {
+  DONE
+  SKIPPED
+}
+
+/**
  * A project groups the work for one client engagement — a post-construction
  * handover, a recurring office contract, a multi-room deep clean. Distinct from
  * Job, which is the money record for a single completed piece of work.
@@ -1154,10 +1176,27 @@ model Project {
    */
   valueCents      Int?
   paymentFrequency PaymentFrequency @default(ONE_OFF)
+  /**
+   * The service schedule. A ONCE project is serviced on startDate. A REPEATING
+   * one every repeatEvery weeks or months from startDate until targetEndDate
+   * (or until stopped), on serviceDays; visits are worked out from these
+   * fields, not stored (apps/api/src/projects/schedule.ts).
+   */
+  kind             ProjectKind @default(ONCE)
+  repeatEvery      Int?
+  repeatUnit       RepeatUnit?
+  /** ISO weekdays: 1 = Monday … 7 = Sunday. */
+  serviceDays      Int[]       @default([])
+  /** Monthly repeats only: 1–4 = that week of the month, 5 = the last. */
+  weekOfMonth      Int?
+  /** A deep clean every this many months after the start month, at its own price. */
+  deepCleanEveryMonths Int?
+  deepCleanPriceCents  Int?
   notes           String?
   checklist       ProjectCheck[]
   events          ProjectEvent[]
   jobs            Job[]
+  visits          ProjectVisit[]
   createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   createdById     String
   createdAt       DateTime      @default(now())
@@ -1176,6 +1215,39 @@ enum ProjectEventKind {
   QUESTION_ADDED
   QUESTION_REMOVED
   NOTE_CHANGED
+  VISIT_MARKED
+}
+
+/**
+ * A planned visit that has been marked done or skipped. Only marked visits are
+ * stored; the plan itself comes from the project's schedule. Kept by date, so a
+ * mark stays with its day if the schedule later changes.
+ */
+model ProjectVisit {
+  id          String      @id @default(cuid())
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  date        DateTime    @db.Date
+  status      VisitStatus
+  /** Whether the plan made this visit the deep clean when it was marked. */
+  isDeepClean Boolean     @default(false)
+  note        String?
+  markedBy    User?       @relation("ProjectVisitMarkedBy", fields: [markedById], references: [id])
+  markedById  String?
+  markedAt    DateTime    @default(now())
+
+  @@unique([projectId, date])
+  @@index([date])
+}
+
+/**
+ * One row per Nairobi day on which the morning "services due today" email was
+ * handled, so it goes once even if the server restarts.
+ */
+model ReminderRun {
+  day        DateTime @id @db.Date
+  visitCount Int
+  sentAt     DateTime @default(now())
 }
 
 /**
