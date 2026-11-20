@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 
 import { Section, SectionHeading } from '../../../src/components/layout';
-import { Photo } from '../../../src/components/Photo';
 import { FinalCta } from '../../../src/components/marketing/FinalCta';
-import { SITE_PHOTOS } from '../../../src/content/site';
+import { PortfolioGallery } from '../../../src/components/marketing/PortfolioGallery';
+import { getPublishedJobs } from '../../../src/lib/websiteJobs';
 
 export const metadata: Metadata = {
   title: 'Our work — real cleans across Nairobi',
@@ -12,19 +12,9 @@ export const metadata: Metadata = {
   alternates: { canonical: '/portfolio' },
 };
 
-const GALLERY: { slot: keyof typeof SITE_PHOTOS; caption: string }[] = [
-  { slot: 'crewOnJob', caption: 'On site in Nairobi — fumigation equipment set up and ready to go.' },
-  { slot: 'aboutTeam', caption: 'A crew member deep-cleaning armchairs in a Nairobi office.' },
-  { slot: 'proofResult', caption: 'The finished armchair, back in place and ready to use.' },
-  { slot: 'workstation', caption: 'Workstation partitions wiped down, top to bottom, gloves on.' },
-  { slot: 'carpetScrub', caption: 'Office carpet shampooed with a rotary scrubber.' },
-  { slot: 'officeShelves', caption: 'Shelving and display units dusted in an executive office.' },
-  { slot: 'chairWash', caption: 'Office chairs washed by hand, one at a time.' },
-  { slot: 'chairCourtyard', caption: 'A courtyard full of office chairs, cleaned on site.' },
-  { slot: 'armchairsResult', caption: 'A white armchair after an upholstery clean.' },
-];
+export default async function PortfolioPage() {
+  const jobs = await getPublishedJobs();
 
-export default function PortfolioPage() {
   return (
     <>
       <Section className="pb-0">
@@ -36,14 +26,7 @@ export default function PortfolioPage() {
       </Section>
 
       <Section tone="raised">
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {GALLERY.map((item) => (
-            <figure key={item.slot}>
-              <Photo slot={SITE_PHOTOS[item.slot]} className="aspect-[4/5]" />
-              <figcaption className="mt-3 text-sm text-charcoal-muted">{item.caption}</figcaption>
-            </figure>
-          ))}
-        </div>
+        <PortfolioGallery jobs={jobs} />
       </Section>
 
       <FinalCta />
