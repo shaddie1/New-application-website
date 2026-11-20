@@ -1,6 +1,7 @@
 import { env } from './env.js';
 import { buildServer } from './server.js';
 import { prisma } from './db.js';
+import { startReminderLoop } from './projects/reminders.js';
 
 async function main() {
   const app = await buildServer();
@@ -17,6 +18,8 @@ async function main() {
 
   try {
     await app.listen({ port: env.PORT, host: env.HOST });
+    // The morning "services due today" email (src/projects/reminders.ts).
+    startReminderLoop(app.log);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

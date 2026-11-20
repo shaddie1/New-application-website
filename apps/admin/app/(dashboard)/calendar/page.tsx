@@ -1,9 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { AdminBookingDto, BookingStatus } from '@onyxhawk/types';
+import type { AdminBookingDto, BookingStatus, ProjectVisitDto } from '@onyxhawk/types';
 
+import { VisitRow } from '../../../src/components/projects/VisitRow';
 import { api, ApiError } from '../../../src/lib/api';
+
+/** Project visits are drawn as small diamonds, so they read apart from booking dots. */
+const VISIT_TONE: Record<ProjectVisitDto['status'], string> = {
+  PLANNED: 'bg-aqua-deep',
+  DONE: 'bg-success',
+  SKIPPED: 'bg-warning',
+};
 
 const TZ = 'Africa/Nairobi';
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -52,6 +60,7 @@ export default function CalendarPage() {
   const today = useMemo(nairobiToday, []);
   const [view, setView] = useState({ y: today.y, m: today.m });
   const [bookings, setBookings] = useState<AdminBookingDto[] | null>(null);
+  const [visits, setVisits] = useState<ProjectVisitDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>(today.key);
 
@@ -94,6 +103,28 @@ export default function CalendarPage() {
     return out;
   }, [view]);
 
+  // Project visits for the six weeks on screen.
+  const gridFrom = cells[0]?.key;
+  const gridTo = cells[cells.length - 1]?.key;
+  useEffect(() => {
+    if (!gridFrom || !gridTo) return;
+    let live = true;
+    api
+      .projectVisits(gridFrom, gridTo)
+      .then((r) => { if (live) setVisits(r.visits); })
+      .catch(() => { if (live) setError('Could not load the project visits.'); });
+    return () => { live = false; };
+  }, [gridFrom, gridTo]);
+
+  const visitsByDate = useMemo(() => {
+    const map = new Map<string, ProjectVisitDto[]>();
+    for (const v of visits) (map.get(v.date) ?? map.set(v.date, []).get(v.date)!).push(v);
+    return map;
+  }, [visits]);
+
+  const replaceVisit = (v: ProjectVisitDto) =>
+    setVisits((prev) => prev.map((x) => (x.projectId === v.projectId && x.date === v.date ? v : x)));
+
   const monthLabel = new Date(Date.UTC(view.y, view.m, 1)).toLocaleDateString('en-GB', {
     month: 'long',
     year: 'numeric',
@@ -106,6 +137,7 @@ export default function CalendarPage() {
   };
 
   const selectedList = byDate.get(selected) ?? [];
+  const selectedVisits = visitsByDate.get(selected) ?? [];
 
   return (
     <div className="space-y-6">
@@ -114,7 +146,7 @@ export default function CalendarPage() {
           <h1 className="font-serif text-3xl">
             Calendar
           </h1>
-          <p className="text-text-muted text-sm mt-1">Every booking, by date and time — shared across the team.</p>
+          <p className="text-text-muted text-sm mt-1">Every booking and project visit, by date, shared across the team.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => move(-1)} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-bg-muted">
@@ -150,6 +182,9 @@ export default function CalendarPage() {
         <div className="grid grid-cols-7">
           {cells.map((c) => {
             const items = byDate.get(c.key) ?? [];
+            const dayVisits = visitsByDate.get(c.key) ?? [];
+            const total = items.length + dayVisits.length;
+            const bookingRoom = Math.max(0, 3 - dayVisits.length);
             const isToday = c.key === today.key;
             const isSelected = c.key === selected;
             return (
@@ -172,17 +207,23 @@ export default function CalendarPage() {
                   >
                     {c.day}
                   </span>
-                  {items.length > 0 && <span className="text-[10px] text-text-muted">{items.length}</span>}
+                  {total > 0 && <span className="text-[10px] text-text-muted">{total}</span>}
                 </div>
                 <div className="mt-1 space-y-1">
-                  {items.slice(0, 3).map((b) => (
+                  {dayVisits.slice(0, 3).map((v) => (
+                    <div key={`${v.projectId}|${v.date}`} className="flex items-center gap-1 truncate text-[11px] text-text">
+                      <span className={`h-1.5 w-1.5 shrink-0 rotate-45 ${VISIT_TONE[v.status]}`} />
+                      <span className="truncate">{v.isDeepClean ? `Deep: ${v.projectTitle}` : v.projectTitle}</span>
+                    </div>
+                  ))}
+                  {items.slice(0, bookingRoom).map((b) => (
                     <div key={b.id} className="flex items-center gap-1 truncate text-[11px] text-text">
                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_TONE[b.status]}`} />
                       <span className="text-text-muted">{nairobiTime(b.scheduledAt)}</span>
                       <span className="truncate">{b.customerName.split(' ')[0]}</span>
                     </div>
                   ))}
-                  {items.length > 3 && <div className="text-[10px] text-text-muted">+{items.length - 3} more</div>}
+                  {total > 3 && <div className="text-[10px] text-text-muted">+{total - 3} more</div>}
                 </div>
               </button>
             );
@@ -197,6 +238,9 @@ export default function CalendarPage() {
             <span className={`h-2 w-2 rounded-full ${STATUS_TONE[s]}`} /> {STATUS_LABEL[s]}
           </span>
         ))}
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`h-2 w-2 rotate-45 ${VISIT_TONE.PLANNED}`} /> Project visit
+        </span>
       </div>
 
       {/* Selected day detail */}
@@ -205,7 +249,15 @@ export default function CalendarPage() {
           {new Date(`${selected}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           {' · '}
           {selectedList.length} {selectedList.length === 1 ? 'booking' : 'bookings'}
+          {selectedVisits.length > 0 && ` · ${selectedVisits.length} project ${selectedVisits.length === 1 ? 'visit' : 'visits'}`}
         </h2>
+        {selectedVisits.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {selectedVisits.map((v) => (
+              <VisitRow key={`${v.projectId}|${v.date}`} visit={v} showDate={false} onChanged={replaceVisit} />
+            ))}
+          </ul>
+        )}
         <div className="mt-3 space-y-2">
           {selectedList.length === 0 ? (
             <div className="rounded-lg border border-border bg-surface px-4 py-6 text-center text-sm text-text-muted">

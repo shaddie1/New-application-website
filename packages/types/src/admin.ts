@@ -568,6 +568,52 @@ export type ProjectStage =
 
 export type PaymentFrequency = 'ONE_OFF' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
+/** Whether the client wants the service once or on a schedule. */
+export type ProjectKind = 'ONCE' | 'REPEATING';
+export type RepeatUnit = 'WEEK' | 'MONTH';
+
+/**
+ * A project's service schedule, as the form sends it. For a ONCE project only
+ * the start date matters. serviceDays are ISO weekdays (1 = Monday … 7 = Sunday);
+ * weekOfMonth is 1–4, or 5 for the last, and is used for monthly repeats only.
+ */
+export interface ProjectScheduleInput {
+  kind?: ProjectKind;
+  repeatEvery?: number | null;
+  repeatUnit?: RepeatUnit | null;
+  serviceDays?: number[];
+  weekOfMonth?: number | null;
+  deepCleanEveryMonths?: number | null;
+  deepCleanPriceCents?: number | null;
+}
+
+/** One planned visit; status is PLANNED until someone marks it. */
+export interface ProjectVisitDto {
+  projectId: string;
+  projectTitle: string;
+  clientName: string | null;
+  siteLocation: string | null;
+  date: string;
+  isDeepClean: boolean;
+  status: 'PLANNED' | 'DONE' | 'SKIPPED';
+  note: string | null;
+  markedByName: string | null;
+}
+
+export interface MarkProjectVisitInput {
+  /** Null takes the mark off, so the visit is planned again. */
+  status: 'DONE' | 'SKIPPED' | null;
+  note?: string | null;
+}
+
+/** What the form shows while a schedule is being filled in. */
+export interface SchedulePreviewDto {
+  /** What is missing, in plain words, or null when the schedule can be saved. */
+  problem: string | null;
+  summary: string;
+  nextVisits: { date: string; isDeepClean: boolean }[];
+}
+
 export interface ProjectCheckDto {
   id: string;
   question: string;
@@ -588,7 +634,8 @@ export type ProjectEventKind =
   | 'QUESTION_ANSWERED'
   | 'QUESTION_ADDED'
   | 'QUESTION_REMOVED'
-  | 'NOTE_CHANGED';
+  | 'NOTE_CHANGED'
+  | 'VISIT_MARKED';
 
 /** One entry in a project's history. Written once, never edited. */
 export interface ProjectEventDto {
@@ -624,6 +671,17 @@ export interface ProjectDto {
   estimatedTotalCents: number | null;
   /** Whole billing periods in the span, for showing the working. */
   billingPeriods: number | null;
+  kind: ProjectKind;
+  repeatEvery: number | null;
+  repeatUnit: RepeatUnit | null;
+  serviceDays: number[];
+  weekOfMonth: number | null;
+  deepCleanEveryMonths: number | null;
+  deepCleanPriceCents: number | null;
+  /** The schedule in one line, e.g. "Every week on weekdays". */
+  scheduleSummary: string;
+  /** The next few planned visits from today (Nairobi), for the project card. */
+  nextVisits: { date: string; isDeepClean: boolean }[];
   notes: string | null;
   checklist: ProjectCheckDto[];
   /** Answered (or N/A) as a share of the checklist, 0–100. */
@@ -639,7 +697,7 @@ export interface ProjectDto {
   updatedAt: string;
 }
 
-export interface CreateProjectInput {
+export interface CreateProjectInput extends ProjectScheduleInput {
   title: string;
   clientName?: string;
   clientPhone?: string;
@@ -652,11 +710,11 @@ export interface CreateProjectInput {
   valueCents?: number;
   paymentFrequency?: PaymentFrequency;
   notes?: string;
-  /** Omit to seed the standard checklist. */
+  /** Omit to seed the standard checklist for the project's kind. */
   questions?: { question: string; section?: string }[];
 }
 
-export interface UpdateProjectInput {
+export interface UpdateProjectInput extends ProjectScheduleInput {
   title?: string;
   clientName?: string | null;
   clientPhone?: string | null;

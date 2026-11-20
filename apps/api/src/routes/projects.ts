@@ -5,20 +5,72 @@ import type {
   AddProjectCheckInput,
   AnswerProjectCheckInput,
   CreateProjectInput,
+  MarkProjectVisitInput,
   ProjectCheckDto,
   ProjectDto,
   ProjectEventDto,
+  ProjectVisitDto,
+  SchedulePreviewDto,
   UpdateProjectInput,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { requireStaff } from '../auth/roles.js';
+import {
+  WEEKDAY_NAMES,
+  addDays,
+  describeSchedule,
+  nairobiToday,
+  plannedVisits,
+  scheduleProblem,
+  type ProjectSchedule,
+} from '../projects/schedule.js';
+import { scheduleOf, visitsBetween } from '../projects/visits.js';
 
 const STAGES = ['ENQUIRY', 'SURVEY', 'SCHEDULED', 'IN_PROGRESS', 'SNAGGING', 'COMPLETE', 'CANCELLED'] as const;
 const SEGMENTS = ['RESIDENTIAL', 'COMMERCIAL', 'MEDICAL', 'DEVELOPER'] as const;
 const FREQUENCIES = ['ONE_OFF', 'DAILY', 'WEEKLY', 'MONTHLY'] as const;
+const KINDS = ['ONCE', 'REPEATING'] as const;
+const UNITS = ['WEEK', 'MONTH'] as const;
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
+
+/** The longest span the visits list answers for at once. */
+const MAX_VISIT_SPAN_DAYS = 93;
+/** How many upcoming visits a project card shows. */
+const NEXT_VISITS = 5;
+
+/** The schedule fields, shared by create, update and the preview. */
+const ScheduleFields = {
+  kind: z.enum(KINDS).optional(),
+  repeatEvery: z.number().int().min(1).max(52).nullable().optional(),
+  repeatUnit: z.enum(UNITS).nullable().optional(),
+  serviceDays: z.array(z.number().int().min(1).max(7)).max(7).optional(),
+  weekOfMonth: z.number().int().min(1).max(5).nullable().optional(),
+  deepCleanEveryMonths: z.number().int().min(1).max(24).nullable().optional(),
+  deepCleanPriceCents: z.number().int().nonnegative().nullable().optional(),
+};
+
+/**
+ * The checklist seeded onto a new repeating project. A contract runs for months,
+ * so the questions are about setting it up, keeping it running and reviewing it,
+ * rather than a single handover.
+ */
+const REPEATING_QUESTIONS: { question: string; section: string }[] = [
+  { section: 'Setup', question: 'Has the site been surveyed and the scope agreed with the client?' },
+  { section: 'Setup', question: 'Is access confirmed (keys, gate, lift, parking)?' },
+  { section: 'Setup', question: 'Has the client signed the contract, with its length and notice period?' },
+  { section: 'Setup', question: 'Are the service days and times agreed with the client?' },
+  { section: 'Setup', question: 'Are the deep cleans and their price agreed (or not needed)?' },
+  { section: 'Setup', question: 'Is it agreed when invoices go out and when they must be paid?' },
+  { section: 'Resourcing', question: 'Has a regular crew been assigned, with a named supervisor?' },
+  { section: 'Resourcing', question: 'Are the machines and materials for each visit planned?' },
+  { section: 'Running', question: 'Was the first visit done, with before and after photos?' },
+  { section: 'Running', question: 'Is there a named contact at the client for problems and changes?' },
+  { section: 'Running', question: 'Has the client given feedback after the first month?' },
+  { section: 'Review', question: 'Has a date been set to review or renew the contract?' },
+  { section: 'Review', question: 'Are the visits so far recorded in Jobs & costs?' },
+];
 
 /**
  * The standard checklist seeded onto a new project. Written as questions with a
@@ -54,6 +106,7 @@ const CreateSchema = z.object({
   targetEndDate: DateStr.nullable().optional(),
   valueCents: z.number().int().nonnegative().optional(),
   paymentFrequency: z.enum(FREQUENCIES).optional(),
+  ...ScheduleFields,
   notes: z.string().trim().max(2000).optional(),
   questions: z
     .array(z.object({ question: z.string().trim().min(1).max(300), section: z.string().trim().max(80).optional() }))
@@ -72,8 +125,83 @@ const UpdateSchema = z.object({
   targetEndDate: DateStr.nullable().optional(),
   valueCents: z.number().int().nonnegative().nullable().optional(),
   paymentFrequency: z.enum(FREQUENCIES).optional(),
+  ...ScheduleFields,
   notes: z.string().trim().max(2000).nullable().optional(),
 }) satisfies z.ZodType<UpdateProjectInput>;
+
+const PreviewSchema = z.object({
+  ...ScheduleFields,
+  startDate: DateStr.nullable().optional(),
+  targetEndDate: DateStr.nullable().optional(),
+});
+
+const VisitsQuery = z.object({ from: DateStr, to: DateStr });
+
+const MarkSchema = z.object({
+  status: z.enum(['DONE', 'SKIPPED']).nullable(),
+  note: z.string().trim().max(500).nullable().optional(),
+}) satisfies z.ZodType<MarkProjectVisitInput>;
+
+type ScheduleInput = z.infer<z.ZodObject<typeof ScheduleFields>>;
+
+/**
+ * The schedule fields as they will be stored, from what is stored now and what
+ * the request changes. A one-off project keeps none of them, so switching a
+ * project back to one-off clears its schedule.
+ */
+function mergedSchedule(
+  current: ProjectSchedule & { deepCleanPriceCents: number | null },
+  change: ScheduleInput & { startDate?: string | null; targetEndDate?: string | null },
+) {
+  const kind = change.kind ?? current.kind;
+  const startDate = change.startDate !== undefined ? change.startDate : current.startDate;
+  const endDate = change.targetEndDate !== undefined ? change.targetEndDate : current.endDate;
+  if (kind === 'ONCE') {
+    return {
+      schedule: { kind, startDate, endDate, repeatEvery: null, repeatUnit: null, serviceDays: [], weekOfMonth: null, deepCleanEveryMonths: null } satisfies ProjectSchedule,
+      deepCleanPriceCents: null,
+    };
+  }
+  const repeatUnit = change.repeatUnit !== undefined ? change.repeatUnit : current.repeatUnit;
+  const weekOfMonth = change.weekOfMonth !== undefined ? change.weekOfMonth : current.weekOfMonth;
+  const deepCleanEveryMonths =
+    change.deepCleanEveryMonths !== undefined ? change.deepCleanEveryMonths : current.deepCleanEveryMonths;
+  const deepCleanPriceCents =
+    change.deepCleanPriceCents !== undefined ? change.deepCleanPriceCents : current.deepCleanPriceCents;
+  return {
+    schedule: {
+      kind,
+      startDate,
+      endDate,
+      repeatEvery: change.repeatEvery !== undefined ? change.repeatEvery : current.repeatEvery,
+      repeatUnit,
+      serviceDays: [...new Set(change.serviceDays ?? current.serviceDays)].sort((a, b) => a - b),
+      // Only a monthly schedule uses the week of the month.
+      weekOfMonth: repeatUnit === 'MONTH' ? weekOfMonth : null,
+      deepCleanEveryMonths,
+    } satisfies ProjectSchedule,
+    deepCleanPriceCents: deepCleanEveryMonths ? deepCleanPriceCents : null,
+  };
+}
+
+const NO_SCHEDULE = {
+  kind: 'ONCE' as const, startDate: null, endDate: null, repeatEvery: null, repeatUnit: null,
+  serviceDays: [] as number[], weekOfMonth: null, deepCleanEveryMonths: null, deepCleanPriceCents: null,
+};
+
+/** The schedule columns to write. */
+function scheduleData(s: ProjectSchedule, deepCleanPriceCents: number | null) {
+  return {
+    kind: s.kind,
+    repeatEvery: s.repeatEvery,
+    repeatUnit: s.repeatUnit,
+    serviceDays: s.serviceDays,
+    weekOfMonth: s.weekOfMonth,
+    deepCleanEveryMonths: s.deepCleanEveryMonths,
+    deepCleanPriceCents,
+  };
+}
+
 
 const AnswerSchema = z.object({
   answer: z.boolean().nullable().optional(),
@@ -104,7 +232,13 @@ const FIELD_LABELS: Record<string, string> = {
   title: 'Title', clientName: 'Client', clientPhone: 'Client phone', siteLocation: 'Site',
   serviceLineCode: 'Service line', clientSegment: 'Segment', startDate: 'Start date',
   targetEndDate: 'Target completion', valueCents: 'Value', paymentFrequency: 'Payment frequency',
+  kind: 'Kind', repeatEvery: 'Repeats every', repeatUnit: 'Repeat unit', serviceDays: 'Service days',
+  weekOfMonth: 'Week of the month', deepCleanEveryMonths: 'Deep clean every (months)',
+  deepCleanPriceCents: 'Deep clean price',
 };
+const KIND_LABELS: Record<string, string> = { ONCE: 'One-off', REPEATING: 'Repeating' };
+const UNIT_LABELS: Record<string, string> = { WEEK: 'weeks', MONTH: 'months' };
+const WEEK_OF_MONTH_LABELS = ['', '1st', '2nd', '3rd', '4th', 'last'];
 
 /**
  * Append one line to a project's history. Deliberately fire-and-forget at the
@@ -134,7 +268,13 @@ function reload(id: string) {
 /** Human-readable value for a diff line. */
 function shown(field: string, value: unknown): string {
   if (value === null || value === undefined || value === '') return '—';
-  if (field === 'valueCents' && typeof value === 'number') {
+  if (field === 'serviceDays' && Array.isArray(value)) {
+    return value.length ? value.map((d: number) => WEEKDAY_NAMES[d - 1]?.slice(0, 3) ?? d).join(', ') : '—';
+  }
+  if (field === 'kind') return KIND_LABELS[String(value)] ?? String(value);
+  if (field === 'repeatUnit') return UNIT_LABELS[String(value)] ?? String(value);
+  if (field === 'weekOfMonth' && typeof value === 'number') return WEEK_OF_MONTH_LABELS[value] ?? String(value);
+  if ((field === 'valueCents' || field === 'deepCleanPriceCents') && typeof value === 'number') {
     return `KSh ${(value / 100).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
   }
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -160,12 +300,24 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     const parsed = CreateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
-    const { questions, startDate, targetEndDate, stage, clientSegment, paymentFrequency, ...rest } = parsed.data;
-    const seed = questions?.length ? questions : DEFAULT_QUESTIONS;
+    const {
+      questions, startDate, targetEndDate, stage, clientSegment, paymentFrequency,
+      kind, repeatEvery, repeatUnit, serviceDays, weekOfMonth, deepCleanEveryMonths, deepCleanPriceCents,
+      ...rest
+    } = parsed.data;
+    const { schedule, deepCleanPriceCents: deepPrice } = mergedSchedule(NO_SCHEDULE, {
+      kind, repeatEvery, repeatUnit, serviceDays, weekOfMonth, deepCleanEveryMonths, deepCleanPriceCents,
+      startDate, targetEndDate,
+    });
+    const problem = scheduleProblem(schedule, deepPrice);
+    if (problem) return reply.code(400).send({ error: problem });
+
+    const seed = questions?.length ? questions : schedule.kind === 'REPEATING' ? REPEATING_QUESTIONS : DEFAULT_QUESTIONS;
 
     const row = await prisma.project.create({
       data: {
         ...rest,
+        ...scheduleData(schedule, deepPrice),
         stage: (stage ?? 'ENQUIRY') as ProjectStage,
         clientSegment: clientSegment as ClientSegment | undefined,
         paymentFrequency: (paymentFrequency ?? 'ONE_OFF') as PaymentFrequency,
@@ -200,11 +352,23 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'project not found' });
 
-    const { startDate, targetEndDate, stage, clientSegment, paymentFrequency, ...rest } = parsed.data;
+    const {
+      startDate, targetEndDate, stage, clientSegment, paymentFrequency,
+      kind, repeatEvery, repeatUnit, serviceDays, weekOfMonth, deepCleanEveryMonths, deepCleanPriceCents,
+      ...rest
+    } = parsed.data;
+    const { schedule, deepCleanPriceCents: deepPrice } = mergedSchedule(
+      { ...scheduleOf(existing), deepCleanPriceCents: existing.deepCleanPriceCents },
+      { kind, repeatEvery, repeatUnit, serviceDays, weekOfMonth, deepCleanEveryMonths, deepCleanPriceCents, startDate, targetEndDate },
+    );
+    const problem = scheduleProblem(schedule, deepPrice);
+    if (problem) return reply.code(400).send({ error: problem });
+
     const row = await prisma.project.update({
       where: { id: req.params.id },
       data: {
         ...rest,
+        ...scheduleData(schedule, deepPrice),
         ...(stage !== undefined && { stage: stage as ProjectStage }),
         ...(clientSegment !== undefined && { clientSegment: clientSegment as ClientSegment | null }),
         ...(paymentFrequency !== undefined && { paymentFrequency: paymentFrequency as PaymentFrequency }),
@@ -268,6 +432,89 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     }
     await prisma.project.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
+  });
+
+  // ── Schedule and visits ───────────────────────────────────────────────────
+
+  /** What a schedule being filled in would give, so the form can show it before saving. */
+  app.post('/schedule-preview', async (req, reply) => {
+    const parsed = PreviewSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const { schedule, deepCleanPriceCents } = mergedSchedule(NO_SCHEDULE, parsed.data);
+    const problem = scheduleProblem(schedule, deepCleanPriceCents);
+    const today = nairobiToday();
+    const from = schedule.startDate && schedule.startDate > today ? schedule.startDate : today;
+    const preview: SchedulePreviewDto = {
+      problem,
+      summary: describeSchedule(schedule),
+      nextVisits: problem ? [] : plannedVisits(schedule, from, addDays(from, 370)).slice(0, NEXT_VISITS),
+    };
+    return reply.send(preview);
+  });
+
+  /** Every planned and marked visit of the open projects, from one date to another. */
+  app.get('/visits', async (req, reply) => {
+    const parsed = VisitsQuery.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'Give from and to as YYYY-MM-DD.' });
+    const { from, to } = parsed.data;
+    if (to < from) return reply.code(400).send({ error: 'The end date is before the start date.' });
+    if (to > addDays(from, MAX_VISIT_SPAN_DAYS)) {
+      return reply.code(400).send({ error: `Ask for at most ${MAX_VISIT_SPAN_DAYS} days at a time.` });
+    }
+    return reply.send({ visits: await visitsBetween(from, to) });
+  });
+
+  /** Mark one planned visit done or skipped, or take the mark off. */
+  app.put<{ Params: { id: string; date: string } }>('/:id/visits/:date', async (req, reply) => {
+    const parsed = MarkSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const date = req.params.date;
+    if (!DateStr.safeParse(date).success) return reply.code(400).send({ error: 'The date must be YYYY-MM-DD.' });
+
+    const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+
+    const planned = plannedVisits(scheduleOf(project), date, date)[0];
+    const existing = await prisma.projectVisit.findUnique({
+      where: { projectId_date: { projectId: project.id, date: new Date(date) } },
+    });
+    // A mark can be put only on a planned visit, but taken off one the schedule
+    // no longer has, so an old mark never gets stuck.
+    if (!planned && !existing) {
+      return reply.code(400).send({ error: 'There is no visit planned on that day.' });
+    }
+
+    if (parsed.data.status === null) {
+      if (existing) {
+        await prisma.projectVisit.delete({ where: { id: existing.id } });
+        await logEvent(project.id, 'VISIT_MARKED', `Visit on ${date} set back to planned`, req.auth!.sub);
+      }
+    } else {
+      if (!planned) return reply.code(400).send({ error: 'There is no visit planned on that day.' });
+      const data = {
+        status: parsed.data.status,
+        isDeepClean: planned.isDeepClean,
+        note: parsed.data.note ?? null,
+        markedById: req.auth!.sub,
+        markedAt: new Date(),
+      };
+      await prisma.projectVisit.upsert({
+        where: { projectId_date: { projectId: project.id, date: new Date(date) } },
+        create: { projectId: project.id, date: new Date(date), ...data },
+        update: data,
+      });
+      const word = parsed.data.status === 'DONE' ? 'done' : 'skipped';
+      await logEvent(
+        project.id,
+        'VISIT_MARKED',
+        `${planned.isDeepClean ? 'Deep clean' : 'Visit'} on ${date} marked ${word}`,
+        req.auth!.sub,
+        parsed.data.note || null,
+      );
+    }
+
+    const [visit] = await visitsBetween(date, date, project.id);
+    return reply.send({ visit: visit ?? null });
   });
 
   // ── Checklist ─────────────────────────────────────────────────────────────
@@ -442,6 +689,13 @@ function toDto(row: Row): ProjectDto {
       ? periodsBetween(row.startDate, row.targetEndDate, row.paymentFrequency)
       : null;
 
+  const schedule = scheduleOf(row);
+  const today = nairobiToday();
+  const nextVisits =
+    row.stage === 'COMPLETE' || row.stage === 'CANCELLED'
+      ? []
+      : plannedVisits(schedule, today, addDays(today, 370)).slice(0, NEXT_VISITS);
+
   return {
     id: row.id,
     title: row.title,
@@ -458,6 +712,15 @@ function toDto(row: Row): ProjectDto {
     paymentFrequency: row.paymentFrequency,
     billingPeriods: periods,
     estimatedTotalCents: periods !== null && row.valueCents !== null ? periods * row.valueCents : null,
+    kind: row.kind,
+    repeatEvery: row.repeatEvery,
+    repeatUnit: row.repeatUnit,
+    serviceDays: row.serviceDays,
+    weekOfMonth: row.weekOfMonth,
+    deepCleanEveryMonths: row.deepCleanEveryMonths,
+    deepCleanPriceCents: row.deepCleanPriceCents,
+    scheduleSummary: describeSchedule(schedule),
+    nextVisits,
     notes: row.notes,
     checklist,
     progressPercent: checklist.length > 0 ? Math.round((answered / checklist.length) * 100) : 0,

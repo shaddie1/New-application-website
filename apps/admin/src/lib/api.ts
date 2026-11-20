@@ -44,6 +44,10 @@ import type {
   DashboardOverview,
   ProjectDto,
   ProjectEventDto,
+  ProjectScheduleInput,
+  ProjectVisitDto,
+  MarkProjectVisitInput,
+  SchedulePreviewDto,
   CreateProjectInput,
   UpdateProjectInput,
   AddProjectCheckInput,
@@ -569,6 +573,27 @@ export const api = {
     request<{ events: ProjectEventDto[] }>(`/admin/projects/${encodeURIComponent(projectId)}/events`, {
       auth: true,
     }),
+
+  /** What a schedule being filled in would give: its summary, first visits, or what is missing. */
+  schedulePreview: (input: ProjectScheduleInput & { startDate?: string | null; targetEndDate?: string | null }) =>
+    request<SchedulePreviewDto>('/admin/projects/schedule-preview', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(input),
+    }),
+
+  /** Planned and marked visits of the open projects, at most 93 days at a time. */
+  projectVisits: (from: string, to: string) =>
+    request<{ visits: ProjectVisitDto[] }>(
+      `/admin/projects/visits?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { auth: true },
+    ),
+
+  markProjectVisit: (projectId: string, date: string, input: MarkProjectVisitInput) =>
+    request<{ visit: ProjectVisitDto | null }>(
+      `/admin/projects/${encodeURIComponent(projectId)}/visits/${encodeURIComponent(date)}`,
+      { method: 'PUT', auth: true, body: JSON.stringify(input) },
+    ),
 
   // ── Project money (owner, admin, financial manager, COO) ─────────────────
   projectMoneyTable: () =>
