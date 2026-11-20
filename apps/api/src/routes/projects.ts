@@ -436,6 +436,12 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
         error: 'This project has invoices, which are kept for the record. Set its stage to Cancelled instead.',
       });
     }
+    // Pay-ins are shareholders' investments, so they stay too.
+    if ((await prisma.projectPayIn.count({ where: { projectId: req.params.id } })) > 0) {
+      return reply.code(409).send({
+        error: "Shareholders paid in towards this project's costs, which is kept as their investment. Set its stage to Cancelled instead.",
+      });
+    }
     await prisma.project.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
   });

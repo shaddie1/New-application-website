@@ -110,6 +110,7 @@ model User {
   machineInvestorsCreated MachineInvestor[] @relation("MachineInvestorCreatedBy")
   machinePayoutsCreated   MachinePayout[]   @relation("MachinePayoutCreatedBy")
   investmentsCreated  Investment[]         @relation("InvestmentCreatedBy")
+  projectPayInsCreated ProjectPayIn[]      @relation("ProjectPayInCreatedBy")
   distributionsCreated ProfitDistribution[] @relation("ProfitDistributionCreatedBy")
   targetsCreated       MonthlyTarget[]      @relation("MonthlyTargetCreatedBy")
   websiteJobsCreated   WebsiteJob[]         @relation("WebsiteJobCreatedBy")
@@ -931,6 +932,7 @@ model Asset {
   maintenance  AssetMaintenance[]
   machineLines     MachineLine[]
   machineInvestors MachineInvestor[]
+  projectMachines  ProjectMachine[]
   createdBy    User           @relation("AssetCreatedBy", fields: [createdById], references: [id])
   createdById  String
   createdAt    DateTime       @default(now())
@@ -1048,6 +1050,10 @@ model Investment {
   shareholderId String?
   reference     String?
   documentUrl   String?
+  // Set when this is one shareholder's part of a project's costs paid in
+  // (ProjectPayIn); it goes with that pay-in.
+  payIn         ProjectPayIn?  @relation(fields: [payInId], references: [id], onDelete: Cascade)
+  payInId       String?
   createdBy     User           @relation("InvestmentCreatedBy", fields: [createdById], references: [id])
   createdById   String
   createdAt     DateTime       @default(now())
@@ -1055,6 +1061,7 @@ model Investment {
 
   @@index([date])
   @@index([shareholderId])
+  @@index([payInId])
 }
 
 enum DistributionStatus {
@@ -1064,9 +1071,12 @@ enum DistributionStatus {
 }
 
 /**
- * One shareholder's payout for one period. `basisPoints` and `netProfitCents`
- * are snapshots taken when the distribution is created — a later change to the
- * cap table must never rewrite what was already declared or paid.
+ * One shareholder's payout for one period. `basisPoints`, `netProfitCents` and
+ * `marketingCents` are snapshots taken when the distribution is created — a
+ * later change to the cap table must never rewrite what was already declared
+ * or paid. `marketingCents` is the period's 5% set aside for marketing before
+ * the split, the same on every row of the period; periods declared before the
+ * rule came in have 0.
  */
 model ProfitDistribution {
   id             String             @id @default(cuid())
@@ -1076,6 +1086,7 @@ model ProfitDistribution {
   shareholder    Shareholder        @relation(fields: [shareholderId], references: [id])
   shareholderId  String
   netProfitCents Int
+  marketingCents Int                @default(0)
   basisPoints    Int
   amountCents    Int
   status         DistributionStatus @default(PENDING)
@@ -1201,6 +1212,8 @@ model Project {
   jobs            Job[]
   visits          ProjectVisit[]
   invoices        Invoice[]
+  machines        ProjectMachine[]
+  payIns          ProjectPayIn[]
   createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   createdById     String
   createdAt       DateTime      @default(now())
@@ -1312,6 +1325,45 @@ model InvoiceLine {
 model InvoiceCounter {
   year Int @id
   last Int
+}
+
+/**
+ * A machine a project uses, and how many half days it works on each visit.
+ * When an invoice's payment is recorded, the visits marked done in its period
+ * times these half days are offered as the machine's days on the income job.
+ */
+model ProjectMachine {
+  id               String   @id @default(cuid())
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId        String
+  asset            Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assetId          String
+  halfDaysPerVisit Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([projectId, assetId])
+  @@index([assetId])
+}
+
+/**
+ * A project's costs paid in by the shareholders: the total is entered once and
+ * split by stake into one Investment per shareholder. It stays in the company
+ * as their investment and is not paid back; they receive their profit share.
+ */
+model ProjectPayIn {
+  id          String       @id @default(cuid())
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId   String
+  totalCents  Int
+  date        DateTime     @db.Date
+  note        String?
+  investments Investment[]
+  createdBy   User         @relation("ProjectPayInCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime     @default(now())
+
+  @@index([projectId])
 }
 
 /**

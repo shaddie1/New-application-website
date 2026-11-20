@@ -8,6 +8,7 @@ import type {
   InvestmentDto,
   InvestmentKind,
   MarketingChannel,
+  MarketingFundDto,
   MarketingSpendDto,
   ProfitDistributionDto,
   RevenueBreakdown,
@@ -651,6 +652,7 @@ function InvestmentsTab({ onError }: TabProps) {
             { header: 'Type', value: (r) => label(r.kind) },
             { header: 'Amount (KSh)', value: (r) => csvMoney(r.amountCents) },
             { header: 'Purpose', value: (r) => r.purpose },
+            { header: 'Project', value: (r) => r.projectTitle ?? '' },
             { header: 'Reference', value: (r) => r.reference ?? '' },
             { header: 'Recorded by', value: (r) => r.createdByName ?? '' },
           ], rows)
@@ -739,16 +741,24 @@ function InvestmentsTab({ onError }: TabProps) {
                   <Td>{label(r.kind)}</Td>
                   <Td>
                     {r.purpose}
-                    {r.reference && <div className="text-xs text-text-muted">Ref {r.reference}</div>}
+                    {r.projectTitle && (
+                      <div className="text-xs text-text-muted">Their part of a project's costs paid in, split by stake</div>
+                    )}
+                    {r.reference && <div className="text-xs text-text-muted">{r.projectTitle ? 'Note' : 'Ref'} {r.reference}</div>}
                   </Td>
                   <Td right className="font-medium">{fmt(r.amountCents)}</Td>
                   <Td right>
-                    <button className="text-xs text-danger hover:underline"
-                      onClick={async () => {
-                        if (!confirm(`Delete investment from ${r.source}?`)) return;
-                        try { await api.deleteInvestment(r.id); await load(); }
-                        catch (err) { onError(err, 'Could not delete'); }
-                      }}>Delete</button>
+                    {r.projectTitle ? (
+                      // One part of a pay-in goes with the whole pay-in, from the project's Money tab.
+                      <span className="text-xs text-text-muted">On the project</span>
+                    ) : (
+                      <button className="text-xs text-danger hover:underline"
+                        onClick={async () => {
+                          if (!confirm(`Delete investment from ${r.source}?`)) return;
+                          try { await api.deleteInvestment(r.id); await load(); }
+                          catch (err) { onError(err, 'Could not delete'); }
+                        }}>Delete</button>
+                    )}
                   </Td>
                 </tr>
               ))}
@@ -768,11 +778,14 @@ function SharingTab({ onError }: TabProps) {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ label: '', periodStart: monthStartIso(), periodEnd: todayIso() });
+  const [fund, setFund] = useState<MarketingFundDto | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows((await api.distributions()).distributions);
+      const [distributions, marketing] = await Promise.all([api.distributions(), api.marketingFund()]);
+      setRows(distributions.distributions);
+      setFund(marketing.fund);
     } catch (err) {
       onError(err, 'Could not load distributions');
     } finally {
@@ -801,6 +814,7 @@ function SharingTab({ onError }: TabProps) {
             { header: 'Shareholder', value: (r) => r.shareholderName },
             { header: 'Stake (%)', value: (r) => (r.basisPoints / 100).toFixed(2) },
             { header: 'Net profit (KSh)', value: (r) => csvMoney(r.netProfitCents) },
+            { header: 'Marketing 5% (KSh)', value: (r) => csvMoney(r.marketingCents) },
             { header: 'Share (KSh)', value: (r) => csvMoney(r.amountCents) },
             { header: 'Status', value: (r) => label(r.status) },
             { header: 'Paid at', value: (r) => (r.paidAt ? r.paidAt.slice(0, 10) : '') },
@@ -848,11 +862,26 @@ function SharingTab({ onError }: TabProps) {
             <button type="submit" disabled={saving} className={btn}>{saving ? 'Calculating…' : 'Declare'}</button>
           </div>
           <p className="text-xs text-text-muted sm:col-span-4">
-            Net profit for the period is calculated from approved jobs and their expenses, then split by the current
-            cap table. The stake and profit figure are frozen on the record, so later cap-table edits never rewrite a
-            declared payout.
+            Net profit for the period is calculated from approved jobs and their expenses. When it is a profit, 5% is
+            set aside for marketing first, and the rest is split by the current cap table. A loss sets nothing aside.
+            The stake and the figures are frozen on the record, so later cap-table edits never rewrite a declared payout.
           </p>
         </form>
+      )}
+
+      {fund && fund.periods.length > 0 && (
+        <div className="mb-4 rounded-xl border border-border bg-surface px-5 py-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <span className="font-medium">Marketing fund</span>
+            <span className={fund.balanceCents >= 0 ? 'text-lg font-semibold text-success' : 'text-lg font-semibold text-danger'}>
+              {fmt(fund.balanceCents)}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-text-muted">
+            {fmt(fund.setAsideCents)} set aside (5% of the profit of {fund.periods.length} declared period
+            {fund.periods.length === 1 ? '' : 's'}), less {fmt(fund.spentCents)} of marketing spend since {fund.sinceDate}.
+          </p>
+        </div>
       )}
 
       {loading ? <Empty>Loading…</Empty> : periods.size === 0 ? (
@@ -874,6 +903,11 @@ function SharingTab({ onError }: TabProps) {
                     <span className={first.netProfitCents >= 0 ? 'font-medium text-success' : 'font-medium text-danger'}>
                       {fmt(first.netProfitCents)}
                     </span>
+                    {first.marketingCents > 0 && (
+                      <span className="ml-3 text-text-muted">
+                        Marketing 5% <span className="font-medium text-text">{fmt(first.marketingCents)}</span>
+                      </span>
+                    )}
                     <span className="ml-3 text-xs text-text-muted">{paid}/{items.length} paid</span>
                   </div>
                 </div>

@@ -407,12 +407,13 @@ describe('a removed holder', () => {
       overview.allocations.map((a: { shareholder: { id: string }; periodShareCents: number; allTimeShareCents: number }) =>
         [a.shareholder.id, a.periodShareCents, a.allTimeShareCents]),
     ).toEqual([
-      ['h1', 400_000, 400_000],
-      ['h2', 300_000, 300_000],
+      // KSh 500 of the 10,000 goes to marketing first.
+      ['h1', 380_000, 380_000],
+      ['h2', 285_000, 285_000],
     ]);
     expect(overview.totalBasisPoints).toBe(7000);
-    expect(overview.unallocatedPeriodCents).toBe(300_000);
-    expect(overview.unallocatedAllTimeCents).toBe(300_000);
+    expect(overview.unallocatedPeriodCents).toBe(285_000);
+    expect(overview.unallocatedAllTimeCents).toBe(285_000);
   });
 
   it('is left out of a payout declaration', async () => {
@@ -425,8 +426,8 @@ describe('a removed holder', () => {
       res.json().distributions.map((d: { shareholderId: string; basisPoints: number; amountCents: number }) =>
         [d.shareholderId, d.basisPoints, d.amountCents]),
     ).toEqual([
-      ['h1', 4000, 400_000],
-      ['h2', 3000, 300_000],
+      ['h1', 4000, 380_000],
+      ['h2', 3000, 285_000],
     ]);
     expect(t.profitDistributions.filter((d) => d.label === 'October 2026').map((d) => d.shareholderId)).toEqual(['h1', 'h2']);
   });
@@ -541,9 +542,9 @@ describe('the order of the holders', () => {
       equity.json().overview.allocations.map((a: { shareholder: { id: string }; periodShareCents: number }) =>
         [a.shareholder.id, a.periodShareCents]),
     ).toEqual([
-      ['h1', 400_000],
-      ['h2', 300_000],
-      ['h3', 300_000],
+      ['h1', 380_000],
+      ['h2', 285_000],
+      ['h3', 285_000],
     ]);
   });
 });

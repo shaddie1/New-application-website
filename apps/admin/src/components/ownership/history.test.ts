@@ -3,7 +3,7 @@ import type { EquityHistoryMonth } from '@onyxhawk/types';
 
 import { OTHERS_KEY } from '../stacked-bars';
 import {
-  OVER_KEY, amountWithoutUnit, isPhone, monthAxisLabels, monthTableColumns, shapeHistory, tableMonthIndexes, wholeColumns,
+  MARKETING_KEY, OVER_KEY, amountWithoutUnit, isPhone, monthAxisLabels, monthTableColumns, shapeHistory, tableMonthIndexes, wholeColumns,
 } from './history';
 import { RETAINED_SEGMENT } from './split';
 
@@ -22,6 +22,7 @@ function month(year: number, monthNumber: number, label: string, netCents: numbe
     month: monthNumber,
     label,
     netCents,
+    marketingCents: 0,
     shares,
     unallocatedCents: netCents - shares.reduce((acc, s) => acc + s.shareCents, 0),
     partial,
@@ -98,6 +99,24 @@ describe('shapeHistory', () => {
     expect(history.summary).toContain('Dec 2025');
     expect(history.summary).toContain('Feb 2026');
     expect(history.summary).toContain("today's stakes");
+  });
+});
+
+describe('5% for marketing', () => {
+  // December made 10,000 and February 5,000: 500 and 250 go to marketing. January's loss sets nothing aside.
+  const months = threeMonths(THREE).map((m) => ({ ...m, marketingCents: m.netCents > 0 ? m.netCents / 20 : 0 }));
+  const history = shapeHistory(months);
+
+  it('adds a "Marketing" row after the holders, so each month still adds up to its net profit', () => {
+    expect(history.rows.map((r) => r.key)).toEqual(['h1', 'h2', 'h3', MARKETING_KEY]);
+    expect(history.rows[3]).toEqual({
+      key: MARKETING_KEY, label: 'Marketing (5% of profit)', kind: 'marketing', colourIndex: null, cents: [50_000, 0, 25_000],
+    });
+    expect(history.summary).toContain('after 5% of each profit for marketing');
+  });
+
+  it('adds no row while nothing was set aside', () => {
+    expect(shapeHistory(threeMonths(THREE)).rows.map((r) => r.kind)).toEqual(['holder', 'holder', 'holder']);
   });
 });
 

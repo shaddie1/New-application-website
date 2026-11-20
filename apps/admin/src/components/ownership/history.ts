@@ -12,6 +12,8 @@ import { BASIS_POINTS_TOTAL } from './stakes';
  */
 
 export const OVER_KEY = '__over';
+/** The table row for the 5% set aside for marketing. */
+export const MARKETING_KEY = '__marketing';
 
 /**
  * One colour in the chart and its legend. A null colour index is a neutral
@@ -40,13 +42,14 @@ export type HistoryMonthHead = {
 };
 
 /**
- * One row of the table: a holder, what the business retains, or what stakes
- * over 100% hand out beyond the net profit. `cents` has one amount per month.
+ * One row of the table: a holder, the 5% set aside for marketing, what the
+ * business retains, or what stakes over 100% hand out beyond the net profit.
+ * `cents` has one amount per month.
  */
 export type HistoryRow = {
   key: string;
   label: string;
-  kind: 'holder' | 'retained' | 'over';
+  kind: 'holder' | 'marketing' | 'retained' | 'over';
   colourIndex: number | null;
   cents: number[];
 };
@@ -103,6 +106,12 @@ export function shapeHistory(months: EquityHistoryMonth[]): OwnershipHistory {
   );
   let columns = folded.columns;
 
+  // 5% of each month's profit goes to marketing before the split, so the table's rows still add up to the net profit.
+  const marketing = months.map((m) => m.marketingCents ?? 0);
+  if (marketing.some((c) => c !== 0)) {
+    rows.push({ key: MARKETING_KEY, label: 'Marketing (5% of profit)', kind: 'marketing', colourIndex: null, cents: marketing });
+  }
+
   const stakesBasisPoints = holders.reduce((acc, h) => acc + h.basisPoints, 0);
   const unallocated = months.map((m) => m.unallocatedCents);
   if (stakesBasisPoints < BASIS_POINTS_TOTAL) {
@@ -121,7 +130,8 @@ export function shapeHistory(months: EquityHistoryMonth[]): OwnershipHistory {
   const last = heads[heads.length - 1]!;
   const summary =
     `Each month's net profit from ${first.label} ${first.year} to ${last.label} ${last.year}, ` +
-    `stacked by shareholder at today's stakes. The table below gives every amount.`;
+    `stacked by shareholder at today's stakes${marketing.some((c) => c !== 0) ? ', after 5% of each profit for marketing' : ''}. ` +
+    `The table below gives every amount.`;
 
   return { months: heads, series, columns, rows, stakesBasisPoints, summary };
 }

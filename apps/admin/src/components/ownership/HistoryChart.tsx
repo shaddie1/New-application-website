@@ -1,6 +1,6 @@
 'use client';
 
-import { TriangleAlert } from 'lucide-react';
+import { Megaphone, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { cn } from '../../lib/cn';
@@ -451,6 +451,13 @@ function AmountsTable({
                       <InitialsBadge name={row.label} colourIndex={row.colourIndex} size={badgeSize} />
                     ) : row.kind === 'retained' ? (
                       <RetainedBadge size={badgeSize} />
+                    ) : row.kind === 'marketing' ? (
+                      <span
+                        aria-hidden="true"
+                        className={cn('inline-flex shrink-0 items-center justify-center rounded-full bg-mist text-charcoal-muted', phone ? 'h-6 w-6' : 'h-7 w-7')}
+                      >
+                        <Megaphone className="size-3.5" />
+                      </span>
                     ) : (
                       <span
                         aria-hidden="true"
@@ -463,7 +470,11 @@ function AmountsTable({
                     <span
                       className={cn(
                         badgeOnly ? 'sr-only' : 'min-w-0 break-words leading-snug',
-                        row.kind === 'holder' ? 'text-charcoal' : row.kind === 'retained' ? 'italic text-charcoal-muted' : 'font-medium text-warning',
+                        row.kind === 'holder'
+                          ? 'text-charcoal'
+                          : row.kind === 'retained' || row.kind === 'marketing'
+                            ? 'italic text-charcoal-muted'
+                            : 'font-medium text-warning',
                       )}
                     >
                       {row.label}

@@ -108,7 +108,8 @@ const AMINA = { id: 'h2', name: 'Amina Yusuf', title: null, kind: 'INDIVIDUAL', 
 /** One holder's line of a payout declared on 12 November for October. */
 const declared = (id: string, shareholderId: string, shareholderName: string, netProfitCents: number, basisPoints: number, amountCents: number) => ({
   id, label: 'October 2026', periodStart: '2026-10-01', periodEnd: '2026-10-31', shareholderId, shareholderName,
-  netProfitCents, basisPoints, amountCents, status: 'PENDING', paidAt: null, reference: null, notes: null,
+  // 5% of the profit goes to marketing before the split.
+  netProfitCents, marketingCents: Math.round(netProfitCents * 0.05), basisPoints, amountCents, status: 'PENDING', paidAt: null, reference: null, notes: null,
   createdByName: 'Owner', createdAt: '2026-11-12T09:00:00.000Z', updatedAt: '2026-11-12T09:00:00.000Z',
 });
 
@@ -200,13 +201,16 @@ describe('AE5: with machines on the register and no days logged, every answer is
     expect(res.json()).toEqual({
       overview: {
         allocations: [
-          { shareholder: HOLDINGS, periodShareCents: 2_400_000, allTimeShareCents: 3_780_000 },
-          { shareholder: AMINA, periodShareCents: 1_600_000, allTimeShareCents: 2_520_000 },
+          // After 5% for marketing: 38,000 of October's 40,000 and 59,850 of the 63,000 all time.
+          { shareholder: HOLDINGS, periodShareCents: 2_280_000, allTimeShareCents: 3_591_000 },
+          { shareholder: AMINA, periodShareCents: 1_520_000, allTimeShareCents: 2_394_000 },
         ],
         totalBasisPoints: 10_000,
         unallocatedPeriodCents: 0,
         unallocatedAllTimeCents: 0,
         periodNetCents: 4_000_000,
+        periodMarketingCents: 200_000,
+        allTimeMarketingCents: 315_000,
         periodIncomeCents: 10_000_000,
         periodExpensesCents: 6_000_000,
         periodProjects: 1,
@@ -225,18 +229,18 @@ describe('AE5: with machines on the register and no days logged, every answer is
       history: {
         months: [
           {
-            year: 2026, month: 10, label: 'Oct', netCents: 4_000_000,
+            year: 2026, month: 10, label: 'Oct', netCents: 4_000_000, marketingCents: 200_000,
             shares: [
-              { shareholderId: 'h1', shareholderName: 'OnyxHawk Holdings', basisPoints: 6000, shareCents: 2_400_000 },
-              { shareholderId: 'h2', shareholderName: 'Amina Yusuf', basisPoints: 4000, shareCents: 1_600_000 },
+              { shareholderId: 'h1', shareholderName: 'OnyxHawk Holdings', basisPoints: 6000, shareCents: 2_280_000 },
+              { shareholderId: 'h2', shareholderName: 'Amina Yusuf', basisPoints: 4000, shareCents: 1_520_000 },
             ],
             unallocatedCents: 0, partial: false,
           },
           {
-            year: 2026, month: 11, label: 'Nov', netCents: 2_300_000,
+            year: 2026, month: 11, label: 'Nov', netCents: 2_300_000, marketingCents: 115_000,
             shares: [
-              { shareholderId: 'h1', shareholderName: 'OnyxHawk Holdings', basisPoints: 6000, shareCents: 1_380_000 },
-              { shareholderId: 'h2', shareholderName: 'Amina Yusuf', basisPoints: 4000, shareCents: 920_000 },
+              { shareholderId: 'h1', shareholderName: 'OnyxHawk Holdings', basisPoints: 6000, shareCents: 1_311_000 },
+              { shareholderId: 'h2', shareholderName: 'Amina Yusuf', basisPoints: 4000, shareCents: 874_000 },
             ],
             unallocatedCents: 0, partial: true,
           },
@@ -251,8 +255,8 @@ describe('AE5: with machines on the register and no days logged, every answer is
     expect(res.statusCode).toBe(201);
     expect(res.json()).toEqual({
       distributions: [
-        declared('pd1', 'h1', 'OnyxHawk Holdings', 4_000_000, 6000, 2_400_000),
-        declared('pd2', 'h2', 'Amina Yusuf', 4_000_000, 4000, 1_600_000),
+        declared('pd1', 'h1', 'OnyxHawk Holdings', 4_000_000, 6000, 2_280_000),
+        declared('pd2', 'h2', 'Amina Yusuf', 4_000_000, 4000, 1_520_000),
       ],
     });
   });
@@ -345,8 +349,9 @@ describe('AE1: 2.5 days of the scrubber on the October job, KSh 5,000', () => {
       overview.allocations.map((a: { shareholder: { id: string }; periodShareCents: number; allTimeShareCents: number }) =>
         [a.shareholder.id, a.periodShareCents, a.allTimeShareCents]),
     ).toEqual([
-      ['h1', 2_100_000, 3_480_000],
-      ['h2', 1_400_000, 2_320_000],
+      // After 5% for marketing: 33,250 of October's 35,000 and 55,100 of the 58,000 all time.
+      ['h1', 1_995_000, 3_306_000],
+      ['h2', 1_330_000, 2_204_000],
     ]);
   });
 
@@ -355,8 +360,8 @@ describe('AE1: 2.5 days of the scrubber on the October job, KSh 5,000', () => {
 
     expect(months.map((m: { month: number; netCents: number; shares: { shareCents: number }[] }) =>
       [m.month, m.netCents, m.shares.map((s) => s.shareCents)])).toEqual([
-      [10, 3_500_000, [2_100_000, 1_400_000]],
-      [11, 2_300_000, [1_380_000, 920_000]],
+      [10, 3_500_000, [1_995_000, 1_330_000]],
+      [11, 2_300_000, [1_311_000, 874_000]],
     ]);
   });
 
@@ -575,8 +580,8 @@ describe('AE6: a declared payout and machine days logged afterwards', () => {
 
     expect((await get('/admin/finance/distributions')).json()).toEqual({
       distributions: [
-        declared('pd1', 'h1', 'OnyxHawk Holdings', 4_000_000, 6000, 2_400_000),
-        declared('pd2', 'h2', 'Amina Yusuf', 4_000_000, 4000, 1_600_000),
+        declared('pd1', 'h1', 'OnyxHawk Holdings', 4_000_000, 6000, 2_280_000),
+        declared('pd2', 'h2', 'Amina Yusuf', 4_000_000, 4000, 1_520_000),
       ],
     });
     expect((await get(`/admin/financials/summary?${OCTOBER}`)).json().summary.netCents).toBe(3_500_000);
@@ -590,8 +595,8 @@ describe('AE6: a declared payout and machine days logged afterwards', () => {
     expect(res.statusCode).toBe(201);
     expect(res.json()).toEqual({
       distributions: [
-        declared('pd1', 'h1', 'OnyxHawk Holdings', 3_500_000, 6000, 2_100_000),
-        declared('pd2', 'h2', 'Amina Yusuf', 3_500_000, 4000, 1_400_000),
+        declared('pd1', 'h1', 'OnyxHawk Holdings', 3_500_000, 6000, 1_995_000),
+        declared('pd2', 'h2', 'Amina Yusuf', 3_500_000, 4000, 1_330_000),
       ],
     });
   });

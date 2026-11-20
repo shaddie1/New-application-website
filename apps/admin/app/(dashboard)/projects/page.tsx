@@ -18,6 +18,7 @@ import { ScheduleFields } from '../../../src/components/projects/ScheduleFields'
 import { TitleCombobox } from '../../../src/components/projects/TitleCombobox';
 import { VisitsTab } from '../../../src/components/projects/VisitsTab';
 import { InvoicesTab } from '../../../src/components/projects/InvoicesTab';
+import { ProjectSplit } from '../../../src/components/projects/ProjectSplit';
 import { Segmented } from '../../../src/components/ui/segmented';
 import { emptySchedule, scheduleInput, visitDateLabel, type ScheduleForm } from '../../../src/lib/projectSchedule';
 import { pickService } from '../../../src/lib/projectTitle';
@@ -672,7 +673,10 @@ function ProjectCard({
           </div>
 
           {tab === 'money' ? (
-            <ContractMoney projectId={p.id} />
+            <>
+              <ContractMoney projectId={p.id} />
+              <ProjectSplit projectId={p.id} canRecordPayIn={canRecordPayment} />
+            </>
           ) : tab === 'invoices' ? (
             <InvoicesTab project={p} canRecordPayment={canRecordPayment} />
           ) : tab === 'visits' ? (

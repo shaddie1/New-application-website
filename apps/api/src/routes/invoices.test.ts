@@ -13,8 +13,15 @@ const s = {
   jobs: [] as Row[],
   events: [] as Row[],
   costs: new Map<string, number>(),
+  machineLines: [] as Row[],
+  doneVisits: 0,
   seq: 0,
 };
+
+const MACHINES: Row[] = [
+  { id: 'm1', name: 'Scrubber', projectRateCents: 50_000, countsFrom: new Date('2026-01-01'), retiredAt: null },
+  { id: 'm2', name: 'Old buffer', projectRateCents: 30_000, countsFrom: new Date('2026-01-01'), retiredAt: new Date('2026-12-01') },
+];
 
 const USERS: Record<string, Row> = {
   owner: { id: 'owner', fullName: 'Test Owner', role: 'ADMIN', isOwner: true },
@@ -63,7 +70,18 @@ const db = {
     findUnique: vi.fn(async ({ where }: Row) => (where.id === PROJECT.id ? PROJECT : null)),
     findUniqueOrThrow: vi.fn(async () => PROJECT),
   },
-  projectVisit: { findMany: vi.fn(async () => []) },
+  projectVisit: {
+    findMany: vi.fn(async () => []),
+    count: vi.fn(async () => s.doneVisits),
+  },
+  projectMachine: {
+    findMany: vi.fn(async () => [
+      { halfDaysPerVisit: 1, asset: MACHINES[0] },
+      { halfDaysPerVisit: 2, asset: MACHINES[1] },
+    ]),
+  },
+  asset: { findMany: vi.fn(async ({ where }: Row) => MACHINES.filter((m) => where.id.in.includes(m.id))) },
+  machineLine: { createMany: vi.fn(async ({ data }: Row) => s.machineLines.push(...data)) },
   projectEvent: { create: vi.fn(async ({ data }: Row) => s.events.push(data)) },
   invoiceCounter: {
     upsert: vi.fn(async ({ where }: Row) => {
@@ -149,7 +167,7 @@ afterAll(() => vi.useRealTimers());
 
 beforeEach(() => {
   vi.setSystemTime(new Date('2027-02-10T09:00:00Z'));
-  Object.assign(s, { invoices: [], lines: [], counters: new Map(), jobs: [], events: [], costs: new Map(), seq: 0 });
+  Object.assign(s, { invoices: [], lines: [], counters: new Map(), jobs: [], events: [], costs: new Map(), machineLines: [], doneVisits: 0, seq: 0 });
 });
 
 describe('who can use invoices', () => {
@@ -287,6 +305,42 @@ describe('recording the payment', () => {
     const res = await call('owner', 'POST', `/${inv.id}/unpaid`);
     expect(res.json().invoice).toMatchObject({ status: 'SENT', paidOn: null, jobId: null });
     expect(s.jobs).toHaveLength(0);
+  });
+
+  it('suggests machine days from the visits done in the period, leaving out a retired machine', async () => {
+    const inv = await february();
+    s.doneVisits = 6;
+    const res = await call('finance', 'GET', `/${inv.id}/machine-days`);
+    expect(res.json()).toEqual({
+      doneVisits: 6,
+      suggestions: [{ assetId: 'm1', name: 'Scrubber', rateCents: 50_000, halfDaysPerVisit: 1, halfDays: 6 }],
+    });
+  });
+
+  it('adds machine days to the income job at the project rate, skipping a machine left at 0', async () => {
+    const inv = await february();
+    await call('finance', 'POST', `/${inv.id}/send`, {});
+    const res = await call('owner', 'POST', `/${inv.id}/paid`, {
+      paidOn: '2027-02-10',
+      machineDays: [{ assetId: 'm1', halfDays: 6 }, { assetId: 'm2', halfDays: 0 }],
+    });
+    expect(res.statusCode).toBe(200);
+    // 3 days at KSh 500.
+    expect(s.machineLines).toEqual([{
+      assetId: 'm1', jobId: s.jobs[0]!.id, halfDays: 6, rateCents: 50_000, standardRateCents: 50_000,
+      amountCents: 150_000, isHire: false, createdById: 'owner',
+    }]);
+    expect(s.events.at(-1)!.detail).toMatch(/machine days: Scrubber 3 days, KSh 1,500/);
+  });
+
+  it('refuses days on a retired machine and adds nothing', async () => {
+    const inv = await february();
+    await call('finance', 'POST', `/${inv.id}/send`, {});
+    const res = await call('owner', 'POST', `/${inv.id}/paid`, { paidOn: '2027-02-10', machineDays: [{ assetId: 'm2', halfDays: 2 }] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/Old buffer is retired/);
+    expect(s.jobs).toHaveLength(0);
+    expect(s.machineLines).toHaveLength(0);
   });
 
   it('won’t cancel a paid invoice, and deletes only drafts', async () => {

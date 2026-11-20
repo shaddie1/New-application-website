@@ -5,9 +5,9 @@ import { as, resetDb, t } from '../test-support/financialsDb.js';
 
 vi.mock('../db.js', async () => ({ prisma: (await import('../test-support/financialsDb.js')).db }));
 
-// Ownership's history chart: each month's net profit split across the current
-// holders at today's stakes, by the same split and the same month figures the
-// equity overview uses.
+// Ownership's history chart: each month's net profit, less 5% for marketing
+// when it is a profit, split across the current holders at today's stakes, by
+// the same split and the same month figures the equity overview uses.
 
 const HISTORY = '/admin/financials/equity/history';
 
@@ -92,7 +92,7 @@ afterEach(() => {
 });
 
 describe('GET /admin/financials/equity/history', () => {
-  it('splits a month that made 3,880,000 cents 40/30/30 into 1,552,000, 1,164,000 and 1,164,000', async () => {
+  it('sets 194,000 aside from a month that made 3,880,000 cents and splits the rest 40/30/30 into 1,474,400, 1,105,800 and 1,105,800', async () => {
     const months = await historyFor();
 
     expect(monthOf(months, 2026, 10)).toEqual({
@@ -100,10 +100,11 @@ describe('GET /admin/financials/equity/history', () => {
       month: 10,
       label: 'Oct',
       netCents: 3_880_000,
+      marketingCents: 194_000,
       shares: [
-        { shareholderId: 'h1', shareholderName: 'OnyxHawk Holdings', basisPoints: 4000, shareCents: 1_552_000 },
-        { shareholderId: 'h2', shareholderName: 'Amina Yusuf', basisPoints: 3000, shareCents: 1_164_000 },
-        { shareholderId: 'h3', shareholderName: 'Brian Otieno', basisPoints: 3000, shareCents: 1_164_000 },
+        { shareholderId: 'h1', shareholderName: 'OnyxHawk Holdings', basisPoints: 4000, shareCents: 1_474_400 },
+        { shareholderId: 'h2', shareholderName: 'Amina Yusuf', basisPoints: 3000, shareCents: 1_105_800 },
+        { shareholderId: 'h3', shareholderName: 'Brian Otieno', basisPoints: 3000, shareCents: 1_105_800 },
       ],
       unallocatedCents: 0,
       partial: false,
@@ -113,19 +114,22 @@ describe('GET /admin/financials/equity/history', () => {
   it.each([
     ['40/30/30', [4000, 3000, 3000]],
     ['33.33% three times, which leaves 0.01% with nobody', [3333, 3333, 3333]],
-  ])("makes each month's shares and its remainder add up to that month's net profit, at %s", async (_stakes, basisPoints) => {
+  ])("makes each month's marketing, shares and remainder add up to that month's net profit, at %s", async (_stakes, basisPoints) => {
     setStakes(...basisPoints);
 
     const months = await historyFor();
 
     expect(months.map((m) => m.netCents)).toEqual(NET_BY_MONTH);
-    expect(months.map((m) => shareCents(m).reduce((acc, v) => acc + v, 0) + m.unallocatedCents)).toEqual(NET_BY_MONTH);
+    // 5% of each profit; nothing from the loss month or the empty ones.
+    expect(months.map((m) => m.marketingCents)).toEqual([12_500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 194_000, 50_000]);
+    expect(months.map((m) => m.marketingCents + shareCents(m).reduce((acc, v) => acc + v, 0) + m.unallocatedCents)).toEqual(NET_BY_MONTH);
   });
 
-  it('gives each holder a negative share of a loss month, adding up to the loss', async () => {
+  it('gives each holder a negative share of a loss month, adding up to the loss, and sets nothing aside', async () => {
     const september = monthOf(await historyFor(), 2026, 9);
 
     expect(september.netCents).toBe(-500_000);
+    expect(september.marketingCents).toBe(0);
     expect(shareCents(september)).toEqual([-200_000, -150_000, -150_000]);
     expect(september.unallocatedCents).toBe(0);
   });
@@ -138,6 +142,7 @@ describe('GET /admin/financials/equity/history', () => {
       month: 8,
       label: 'Aug',
       netCents: 0,
+      marketingCents: 0,
       shares: [
         { shareholderId: 'h1', shareholderName: 'OnyxHawk Holdings', basisPoints: 4000, shareCents: 0 },
         { shareholderId: 'h2', shareholderName: 'Amina Yusuf', basisPoints: 3000, shareCents: 0 },
@@ -155,7 +160,7 @@ describe('GET /admin/financials/equity/history', () => {
 
     expect(months).toHaveLength(12);
     for (const m of months) expect(m.shares.map((s) => s.shareholderId)).toEqual(['h1', 'h2', 'h3']);
-    expect(shareCents(monthOf(months, 2026, 10))).toEqual([1_552_000, 1_164_000, 1_164_000]);
+    expect(shareCents(monthOf(months, 2026, 10))).toEqual([1_474_400, 1_105_800, 1_105_800]);
     expect(monthOf(months, 2026, 10).unallocatedCents).toBe(0);
   });
 
@@ -164,9 +169,9 @@ describe('GET /admin/financials/equity/history', () => {
 
     const months = await historyFor();
 
-    expect(shareCents(monthOf(months, 2026, 10))).toEqual([1_552_000, 1_164_000, 776_000]);
-    // A tenth of each month's net profit; November's odd cent is shared out, not held back.
-    expect(months.map((m) => m.unallocatedCents)).toEqual([25_000, 0, 0, 0, 0, 0, 0, 0, 0, -50_000, 388_000, 100_000]);
+    expect(shareCents(monthOf(months, 2026, 10))).toEqual([1_474_400, 1_105_800, 737_200]);
+    // A tenth of what each month shares after marketing; November's odd cent is shared out, not held back.
+    expect(months.map((m) => m.unallocatedCents)).toEqual([23_750, 0, 0, 0, 0, 0, 0, 0, 0, -50_000, 368_600, 95_000]);
   });
 
   it("matches the equity overview's shares for the same month in its last entry", async () => {
@@ -177,7 +182,8 @@ describe('GET /admin/financials/equity/history', () => {
     // 6,000.01 and 5,000 in, 1,000 out. The 25 November job is dated after today and still counts.
     expect(november.netCents).toBe(1_000_001);
     expect(november.netCents).toBe(overview.periodNetCents);
-    expect(shareCents(november)).toEqual([400_001, 300_000, 300_000]);
+    // 50,000 for marketing; 950,001 shared.
+    expect(shareCents(november)).toEqual([380_001, 285_000, 285_000]);
     expect(november.shares.map((s) => [s.shareholderId, s.shareCents])).toEqual(
       overview.allocations.map((a: { shareholder: { id: string }; periodShareCents: number }) =>
         [a.shareholder.id, a.periodShareCents]),

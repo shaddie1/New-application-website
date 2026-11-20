@@ -76,6 +76,13 @@ import type {
   CreateInvoiceInput,
   UpdateInvoiceInput,
   PayInvoiceInput,
+  InvoiceMachineDaysDto,
+  ProjectMachinesDto,
+  SetProjectMachinesInput,
+  ProjectSplitDto,
+  ProjectPayInDto,
+  CreateProjectPayInInput,
+  MarketingFundDto,
   UnsortedJobDto,
   MachinesAccessDto,
   MachineRegisterDto,
@@ -458,6 +465,9 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  marketingFund: () =>
+    request<{ fund: MarketingFundDto }>('/admin/finance/marketing-fund', { method: 'GET', auth: true }),
+
   investments: () =>
     request<{ investments: InvestmentDto[] }>('/admin/finance/investments', { method: 'GET', auth: true }),
 
@@ -648,6 +658,34 @@ export const api = {
 
   deleteInvoice: (id: string) =>
     request<{ ok: true }>(`/admin/invoices/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+
+  /** The machine days to offer when recording an invoice's payment. */
+  invoiceMachineDays: (id: string) =>
+    request<InvoiceMachineDaysDto>(`/admin/invoices/${encodeURIComponent(id)}/machine-days`, { method: 'GET', auth: true }),
+
+  // ── A project's machines, pay-ins and profit split (money roles) ─────────
+  projectMachines: (projectId: string) =>
+    request<ProjectMachinesDto>(`/admin/projects/${encodeURIComponent(projectId)}/machines`, { method: 'GET', auth: true }),
+
+  setProjectMachines: (projectId: string, input: SetProjectMachinesInput) =>
+    request<ProjectMachinesDto>(`/admin/projects/${encodeURIComponent(projectId)}/machines`, {
+      method: 'PUT', auth: true, body: JSON.stringify(input),
+    }),
+
+  projectSplit: (projectId: string) =>
+    request<ProjectSplitDto>(`/admin/projects/${encodeURIComponent(projectId)}/split`, { method: 'GET', auth: true }),
+
+  /** Owner and admins only. */
+  createProjectPayIn: (projectId: string, input: CreateProjectPayInInput) =>
+    request<{ payIn: ProjectPayInDto }>(`/admin/projects/${encodeURIComponent(projectId)}/pay-ins`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  deleteProjectPayIn: (projectId: string, payInId: string) =>
+    request<{ ok: true }>(
+      `/admin/projects/${encodeURIComponent(projectId)}/pay-ins/${encodeURIComponent(payInId)}`,
+      { method: 'DELETE', auth: true },
+    ),
 
   // ── Machines (owner, admin, financial manager, COO, current shareholders) ─
   /** What this account may do on the Machines page. Answered for any back-office account, never refused. */
