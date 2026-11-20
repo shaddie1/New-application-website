@@ -430,6 +430,12 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
           : `This project has ${jobCount} jobs under it. Ask the owner to move them first.`;
       return reply.code(409).send({ error, jobCount });
     }
+    // Invoices are kept for the record, even cancelled ones.
+    if ((await prisma.invoice.count({ where: { projectId: req.params.id } })) > 0) {
+      return reply.code(409).send({
+        error: 'This project has invoices, which are kept for the record. Set its stage to Cancelled instead.',
+      });
+    }
     await prisma.project.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
   });

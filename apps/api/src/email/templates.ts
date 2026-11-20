@@ -107,9 +107,34 @@ export interface DueService {
   isDeepClean: boolean;
 }
 
-/** The morning reminder to staff: every project service due today. */
-export function servicesDueTodayEmail({ dateLabel, services }: { dateLabel: string; services: DueService[] }): EmailMessage {
+/** A sent invoice past its due date, as the morning reminder lists it. */
+export interface OverdueInvoice {
+  number: string;
+  projectTitle: string;
+  clientName: string | null;
+  /** "KSh 20,500". */
+  amount: string;
+  daysLate: number;
+}
+
+const DASHBOARD_URL = ADMIN_LOGIN_URL.replace(/\/login$/, '/');
+
+/**
+ * The morning reminder to staff: every project service due today, and for the
+ * money roles, every invoice sent and not paid by its due date. Either list
+ * can be empty, not both.
+ */
+export function servicesDueTodayEmail({
+  dateLabel,
+  services,
+  overdue = [],
+}: {
+  dateLabel: string;
+  services: DueService[];
+  overdue?: OverdueInvoice[];
+}): EmailMessage {
   const count = `${services.length} ${services.length === 1 ? 'service' : 'services'}`;
+  const late = `${overdue.length} ${overdue.length === 1 ? 'invoice' : 'invoices'} overdue`;
   const lineText = (s: DueService) =>
     [s.isDeepClean ? `${s.projectTitle} (deep clean)` : s.projectTitle, s.clientName, s.siteLocation].filter(Boolean).join(' · ');
   const items = services.map(
@@ -117,16 +142,44 @@ export function servicesDueTodayEmail({ dateLabel, services }: { dateLabel: stri
       [s.clientName, s.siteLocation].filter(Boolean).length ? ` · ${[s.clientName, s.siteLocation].filter(Boolean).join(' · ')}` : ''
     }</li>`,
   );
+  const lateBy = (i: OverdueInvoice) => `${i.daysLate} ${i.daysLate === 1 ? 'day' : 'days'} late`;
+  const invoiceText = (i: OverdueInvoice) =>
+    [`${i.number}, ${i.amount}`, i.projectTitle, i.clientName, lateBy(i)].filter(Boolean).join(' · ');
+  const invoiceItems = overdue.map(
+    (i) => html`<li style="margin:0 0 8px">${strong(`${i.number}, ${i.amount}`)} · ${
+      [i.projectTitle, i.clientName, lateBy(i)].filter(Boolean).join(' · ')
+    }</li>`,
+  );
   const markThem = 'Mark each one done or skipped on the Dashboard or the project’s Visits tab.';
-  const { html: page, text } = renderLayout({
-    preheader: `${count} due today, ${dateLabel}.`,
-    heading: 'Services due today',
-    body: html`${paragraph(`${count} due today, ${dateLabel}:`)}
+  const chaseThem = 'Follow these up with the client, and record each payment on the project’s Invoices tab.';
+
+  const servicesHtml = services.length
+    ? html`${paragraph(`${count} due today, ${dateLabel}:`)}
 <ul style="margin:0 0 16px;padding-left:20px">${items}</ul>
-${paragraph(markThem)}
-${button('Open the calendar', CALENDAR_URL)}`,
-    bodyText: [`${count} due today, ${dateLabel}:`, '', ...services.map((s) => `- ${lineText(s)}`), '', markThem, '', `Calendar: ${CALENDAR_URL}`].join('\n'),
-    reason: 'You received this because you are on the OnyxHawk team as owner, admin, COO or cleaning supervisor.',
+${paragraph(markThem)}`
+    : '';
+  const overdueHtml = overdue.length
+    ? html`${paragraph(`${late}:`)}
+<ul style="margin:0 0 16px;padding-left:20px">${invoiceItems}</ul>
+${paragraph(chaseThem)}`
+    : '';
+  const servicesText = services.length
+    ? [`${count} due today, ${dateLabel}:`, '', ...services.map((s) => `- ${lineText(s)}`), '', markThem, '']
+    : [];
+  const overdueText = overdue.length ? [`${late}:`, '', ...overdue.map((i) => `- ${invoiceText(i)}`), '', chaseThem, ''] : [];
+  const [buttonLabel, buttonUrl] = services.length ? ['Open the calendar', CALENDAR_URL] : ['Open the Dashboard', DASHBOARD_URL];
+
+  const { html: page, text } = renderLayout({
+    preheader: [services.length ? `${count} due today, ${dateLabel}.` : '', overdue.length ? `${late}.` : ''].filter(Boolean).join(' '),
+    heading: services.length ? 'Services due today' : 'Invoices overdue',
+    body: html`${servicesHtml}
+${overdueHtml}
+${button(buttonLabel, buttonUrl)}`,
+    bodyText: [...servicesText, ...overdueText, `${services.length ? 'Calendar' : 'Dashboard'}: ${buttonUrl}`].join('\n'),
+    reason: 'You received this because you are on the OnyxHawk team as owner, admin, COO, financial manager or cleaning supervisor.',
   });
-  return { template: 'services-due-today', subject: `Today: ${count} due (${dateLabel})`, html: page, text };
+  const subject = services.length
+    ? `Today: ${count} due${overdue.length ? `, ${late}` : ''} (${dateLabel})`
+    : `Today: ${late} (${dateLabel})`;
+  return { template: 'services-due-today', subject, html: page, text };
 }

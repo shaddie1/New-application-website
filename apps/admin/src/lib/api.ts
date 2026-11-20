@@ -70,6 +70,12 @@ import type {
   WebsiteJobMutationResult,
   ProjectMoneyTable,
   ProjectMoneyDetail,
+  InvoiceDto,
+  ProjectInvoicesDto,
+  OpenInvoicesDto,
+  CreateInvoiceInput,
+  UpdateInvoiceInput,
+  PayInvoiceInput,
   UnsortedJobDto,
   MachinesAccessDto,
   MachineRegisterDto,
@@ -604,6 +610,44 @@ export const api = {
       `/admin/project-money/projects/${encodeURIComponent(projectId)}`,
       { method: 'GET', auth: true },
     ),
+
+  // ── Invoices (owner, admin, financial manager, COO; payments: owner and admins) ─
+  projectInvoices: (projectId: string) =>
+    request<ProjectInvoicesDto>(`/admin/invoices/projects/${encodeURIComponent(projectId)}`, { auth: true }),
+
+  openInvoices: () => request<OpenInvoicesDto>('/admin/invoices/open', { auth: true }),
+
+  invoice: (id: string) => request<{ invoice: InvoiceDto }>(`/admin/invoices/${encodeURIComponent(id)}`, { auth: true }),
+
+  createInvoice: (input: CreateInvoiceInput) =>
+    request<{ invoice: InvoiceDto }>('/admin/invoices', { method: 'POST', auth: true, body: JSON.stringify(input) }),
+
+  updateInvoice: (id: string, input: UpdateInvoiceInput) =>
+    request<{ invoice: InvoiceDto }>(`/admin/invoices/${encodeURIComponent(id)}`, {
+      method: 'PATCH', auth: true, body: JSON.stringify(input),
+    }),
+
+  sendInvoice: (id: string, sentOn?: string) =>
+    request<{ invoice: InvoiceDto }>(`/admin/invoices/${encodeURIComponent(id)}/send`, {
+      method: 'POST', auth: true, body: JSON.stringify(sentOn ? { sentOn } : {}),
+    }),
+
+  invoiceBackToDraft: (id: string) =>
+    request<{ invoice: InvoiceDto }>(`/admin/invoices/${encodeURIComponent(id)}/draft`, { method: 'POST', auth: true }),
+
+  payInvoice: (id: string, input: PayInvoiceInput) =>
+    request<{ invoice: InvoiceDto }>(`/admin/invoices/${encodeURIComponent(id)}/paid`, {
+      method: 'POST', auth: true, body: JSON.stringify(input),
+    }),
+
+  unpayInvoice: (id: string) =>
+    request<{ invoice: InvoiceDto }>(`/admin/invoices/${encodeURIComponent(id)}/unpaid`, { method: 'POST', auth: true }),
+
+  cancelInvoice: (id: string) =>
+    request<{ invoice: InvoiceDto }>(`/admin/invoices/${encodeURIComponent(id)}/cancel`, { method: 'POST', auth: true }),
+
+  deleteInvoice: (id: string) =>
+    request<{ ok: true }>(`/admin/invoices/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
 
   // ── Machines (owner, admin, financial manager, COO, current shareholders) ─
   /** What this account may do on the Machines page. Answered for any back-office account, never refused. */

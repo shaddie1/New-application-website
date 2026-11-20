@@ -614,6 +614,92 @@ export interface SchedulePreviewDto {
   nextVisits: { date: string; isDeepClean: boolean }[];
 }
 
+// ── Invoices ────────────────────────────────────────────────────────────────
+
+/** DRAFT can be changed or deleted; SENT is with the client; PAID added its income. */
+export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PAID' | 'CANCELLED';
+
+export interface InvoiceLineDto {
+  description: string;
+  quantity: number;
+  unitCents: number;
+  amountCents: number;
+}
+
+export interface InvoiceDto {
+  id: string;
+  number: string;
+  projectId: string;
+  projectTitle: string;
+  clientName: string | null;
+  clientPhone: string | null;
+  siteLocation: string | null;
+  periodStart: string;
+  periodEnd: string;
+  periodLabel: string;
+  status: InvoiceStatus;
+  lines: InvoiceLineDto[];
+  totalCents: number;
+  note: string | null;
+  sentOn: string | null;
+  dueOn: string | null;
+  paidOn: string | null;
+  paymentRef: string | null;
+  /** Sent, not paid, and past its due date (Nairobi time). */
+  isOverdue: boolean;
+  /** The income job made when it was paid. */
+  jobId: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+/** One billing period of a project, with its invoice if one was made. */
+export interface BillingPeriodDto {
+  start: string;
+  end: string;
+  label: string;
+  /** What a new invoice for this period would come to. */
+  suggestedTotalCents: number;
+  /** The period's invoice that is not cancelled, if any. */
+  invoiceId: string | null;
+}
+
+export interface ProjectInvoicesDto {
+  invoices: InvoiceDto[];
+  /** Newest first, up to today (a one-off job: its single period). */
+  periods: BillingPeriodDto[];
+}
+
+export interface CreateInvoiceInput {
+  projectId: string;
+  periodStart: string;
+  periodEnd: string;
+}
+
+/** Only a draft can be changed. */
+export interface UpdateInvoiceInput {
+  lines?: InvoiceLineDto[];
+  note?: string | null;
+}
+
+export interface SendInvoiceInput {
+  /** The day it went to the client; today when left out. Due 14 days later. */
+  sentOn?: string;
+}
+
+export interface PayInvoiceInput {
+  paidOn: string;
+  /** M-Pesa code, cheque or bank reference. */
+  paymentRef?: string | null;
+}
+
+/** Invoices sent and not paid yet, for the Dashboard. */
+export interface OpenInvoicesDto {
+  overdue: InvoiceDto[];
+  awaiting: InvoiceDto[];
+  draftCount: number;
+}
+
 export interface ProjectCheckDto {
   id: string;
   question: string;
@@ -635,7 +721,8 @@ export type ProjectEventKind =
   | 'QUESTION_ADDED'
   | 'QUESTION_REMOVED'
   | 'NOTE_CHANGED'
-  | 'VISIT_MARKED';
+  | 'VISIT_MARKED'
+  | 'INVOICE_CHANGED';
 
 /** One entry in a project's history. Written once, never edited. */
 export interface ProjectEventDto {

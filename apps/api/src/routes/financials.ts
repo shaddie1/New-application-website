@@ -313,6 +313,14 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
       if (pricedHires > 0) return reply.code(409).send({ error: HIRE_CHARGE_LOCKED });
     }
 
+    // A paid invoice's income stays as the invoice made it, under its project.
+    if (changesCharge || parsed.data.place !== undefined) {
+      const invoice = await prisma.invoice.findUnique({ where: { jobId: existing.id }, select: { number: true } });
+      if (invoice && (changesCharge || parsed.data.place?.placement !== 'PROJECT' || parsed.data.place.projectId !== existing.projectId)) {
+        return reply.code(409).send({ error: invoiceJobLocked(invoice.number) });
+      }
+    }
+
     const place = parsed.data.place && (await resolvePlace(parsed.data.place));
     if (place === null) return reply.code(400).send({ error: 'project not found' });
 
@@ -354,13 +362,17 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
 
     const { jobIds } = parsed.data;
     const result = await prisma.$transaction(async (tx) => {
-      const found = await tx.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, status: true } });
-      const statusOf = new Map(found.map((j) => [j.id, j.status]));
+      const found = await tx.job.findMany({
+        where: { id: { in: jobIds } },
+        select: { id: true, status: true, projectId: true, invoice: { select: { number: true } } },
+      });
+      const byId = new Map(found.map((j) => [j.id, j]));
       for (const jobId of jobIds) {
-        const status = statusOf.get(jobId);
-        if (!status) return { error: 'job not found', jobId };
+        const job = byId.get(jobId);
+        if (!job) return { error: 'job not found', jobId };
         // A report's place is chosen when it is approved.
-        if (status === 'PENDING') return { error: 'job is waiting for approval', jobId };
+        if (job.status === 'PENDING') return { error: 'job is waiting for approval', jobId };
+        if (job.invoice && place.projectId !== job.projectId) return { error: invoiceJobLocked(job.invoice.number), jobId };
       }
       const { count } = await tx.job.updateMany({ where: { id: { in: jobIds } }, data: place });
       return { placed: count };
@@ -371,6 +383,8 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
     const existing = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!existing) return reply.code(404).send({ error: 'job not found' });
+    const invoice = await prisma.invoice.findUnique({ where: { jobId: existing.id }, select: { number: true } });
+    if (invoice) return reply.code(409).send({ error: invoiceJobLocked(invoice.number) });
     await prisma.job.delete({ where: { id: req.params.id } });
     return reply.send({ ok: true });
   });
@@ -848,6 +862,11 @@ async function requireOwner(req: FastifyRequest, reply: FastifyReply): Promise<v
   if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
   const u = await prisma.user.findUnique({ where: { id: req.auth.sub }, select: { isOwner: true, role: true } });
   if (!u || !hasOwnerAccess(u)) return reply.code(403).send({ error: 'owner access required' });
+}
+
+/** Why a job made by a paid invoice can't be changed here. */
+function invoiceJobLocked(number: string): string {
+  return `This income is the payment of invoice ${number}. To change it, open the invoice on its project and mark it not paid.`;
 }
 
 function refusal(error: z.ZodError) {

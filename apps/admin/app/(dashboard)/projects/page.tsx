@@ -17,6 +17,7 @@ import { MoneyTable } from '../../../src/components/project-money/MoneyTable';
 import { ScheduleFields } from '../../../src/components/projects/ScheduleFields';
 import { TitleCombobox } from '../../../src/components/projects/TitleCombobox';
 import { VisitsTab } from '../../../src/components/projects/VisitsTab';
+import { InvoicesTab } from '../../../src/components/projects/InvoicesTab';
 import { Segmented } from '../../../src/components/ui/segmented';
 import { emptySchedule, scheduleInput, visitDateLabel, type ScheduleForm } from '../../../src/lib/projectSchedule';
 import { pickService } from '../../../src/lib/projectTitle';
@@ -83,6 +84,7 @@ const EVENT_TONE: Record<ProjectEventKind, string> = {
   DETAILS_CHANGED: 'var(--chart-muted)',
   NOTE_CHANGED: 'var(--chart-muted)',
   VISIT_MARKED: 'var(--chart-positive)',
+  INVOICE_CHANGED: 'var(--chart-accent)',
 };
 
 /** "3 minutes ago" for recent events, an absolute date once it stops mattering. */
@@ -445,6 +447,7 @@ export default function ProjectsPage() {
                 }
               }}
               showMoney={showMoney}
+              canRecordPayment={hasOwnerAccess(session.user)}
               focusMoney={moneyFocus === p.id}
               onMoneyFocused={() => setMoneyFocus(null)}
               onProjectChanged={patchProject}
@@ -502,9 +505,10 @@ function ActivityLog({ projectId, reloadKey }: { projectId: string; reloadKey: n
 
 function ProjectCard({
   project: p, expanded, onToggle, onStage, onAnswer, saveState, onAddQuestion, newQuestion, setNewQuestion, onDelete,
-  showMoney, focusMoney, onMoneyFocused, onProjectChanged,
+  showMoney, canRecordPayment, focusMoney, onMoneyFocused, onProjectChanged,
 }: {
   onProjectChanged: (p: ProjectDto) => void;
+  canRecordPayment: boolean;
   project: ProjectDto;
   expanded: boolean;
   onToggle: () => void;
@@ -519,7 +523,7 @@ function ProjectCard({
   focusMoney: boolean;
   onMoneyFocused: () => void;
 }) {
-  const [tab, setTab] = useState<'questions' | 'visits' | 'log' | 'money'>('questions');
+  const [tab, setTab] = useState<'questions' | 'visits' | 'log' | 'money' | 'invoices'>('questions');
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -657,10 +661,20 @@ function ProjectCard({
                 Money
               </button>
             )}
+            {showMoney && (
+              <button
+                onClick={() => setTab('invoices')}
+                className={`border-b-2 px-3 py-2 text-sm ${tab === 'invoices' ? 'border-aqua font-medium text-navy' : 'border-transparent text-charcoal-muted hover:text-charcoal'}`}
+              >
+                Invoices
+              </button>
+            )}
           </div>
 
           {tab === 'money' ? (
             <ContractMoney projectId={p.id} />
+          ) : tab === 'invoices' ? (
+            <InvoicesTab project={p} canRecordPayment={canRecordPayment} />
           ) : tab === 'visits' ? (
             <VisitsTab project={p} onProjectChanged={onProjectChanged} />
           ) : tab === 'log' ? (
