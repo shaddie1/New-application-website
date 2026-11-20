@@ -8,8 +8,13 @@ import { adminSignInCodeEmail } from '../email/templates.js';
 import { env } from '../env.js';
 
 const OTP_TTL_MS = 10 * 60 * 1000;        // 10 minutes
-const MAX_ATTEMPTS = 5;
-const MIN_RESEND_INTERVAL_MS = 30 * 1000; // anti-spam: 30s between OTP sends to same number
+const MAX_ATTEMPTS = 5;                   // wrong guesses one code allows
+const MIN_RESEND_INTERVAL_MS = 30 * 1000; // 30s between codes to the same account
+const HOUR_MS = 60 * 60 * 1000;
+const MAX_CODES_PER_HOUR = 5;             // codes one account can be sent in an hour
+const MAX_WRONG_PER_HOUR = 10;            // wrong guesses one account allows in an hour
+
+const since = (ms: number) => new Date(Date.now() - ms);
 
 /** Customer codes travel by SMS; staff codes by email. Same generation, expiry and one-time use. */
 type Purpose = 'SIGN_IN' | 'ADMIN_SIGN_IN';
@@ -28,12 +33,19 @@ export function devToolsEnabled(): boolean {
  * unused codes for the pair, so only the latest one works.
  */
 async function createOtp(phone: string, purpose: Purpose, email: string | null): Promise<string> {
-  // Anti-spam: refuse if a code was issued within the last 30s and isn't yet consumed.
+  // Every code counts towards the wait and the hourly cap, used or not, so
+  // using a code up with wrong guesses never earns a fresh one sooner.
   const recent = await prisma.otpCode.findFirst({
-    where: { phone, purpose, consumedAt: null, createdAt: { gt: new Date(Date.now() - MIN_RESEND_INTERVAL_MS) } },
+    where: { phone, purpose, createdAt: { gt: since(MIN_RESEND_INTERVAL_MS) } },
     orderBy: { createdAt: 'desc' },
   });
   if (recent) throw new OtpError('TOO_SOON', 'Please wait before requesting another code');
+
+  const sentLastHour = await prisma.otpCode.count({ where: { phone, purpose, createdAt: { gt: since(HOUR_MS) } } });
+  if (sentLastHour >= MAX_CODES_PER_HOUR) {
+    throw new OtpError('TOO_MANY_CODES', 'Too many codes requested. Try again in an hour.');
+  }
+  if ((await wrongGuessesLastHour(phone, purpose)) >= MAX_WRONG_PER_HOUR) throw tooManyWrong();
 
   await prisma.otpCode.updateMany({
     where: { phone, purpose, consumedAt: null },
@@ -87,17 +99,40 @@ async function verifyOtp(phone: string, code: string, purpose: Purpose): Promise
   if (!row) return false;
 
   if (row.attempts >= MAX_ATTEMPTS) {
-    await prisma.otpCode.update({ where: { id: row.id }, data: { consumedAt: new Date() } });
+    await prisma.otpCode.updateMany({ where: { id: row.id, consumedAt: null }, data: { consumedAt: new Date() } });
     throw new OtpError('TOO_MANY_ATTEMPTS', 'Too many incorrect codes — request a new one');
   }
+  if ((await wrongGuessesLastHour(phone, purpose)) >= MAX_WRONG_PER_HOUR) throw tooManyWrong();
 
-  if (row.codeHash !== sha256(code)) {
-    await prisma.otpCode.update({ where: { id: row.id }, data: { attempts: { increment: 1 } } });
-    return false;
-  }
+  // Count this guess before checking it, in one database step, so guesses
+  // sent at the same moment cannot get past the per-code limit.
+  const counted = await prisma.otpCode.updateMany({
+    where: { id: row.id, consumedAt: null, attempts: { lt: MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  });
+  if (counted.count === 0) return false;
 
-  await prisma.otpCode.update({ where: { id: row.id }, data: { consumedAt: new Date() } });
-  return true;
+  if (row.codeHash !== sha256(code)) return false;
+
+  // A right code is used up, and its guess no longer counts as a wrong one.
+  const used = await prisma.otpCode.updateMany({
+    where: { id: row.id, consumedAt: null },
+    data: { consumedAt: new Date(), attempts: { decrement: 1 } },
+  });
+  return used.count === 1;
+}
+
+/** Wrong guesses at this account's codes in the last hour. */
+async function wrongGuessesLastHour(phone: string, purpose: Purpose): Promise<number> {
+  const sum = await prisma.otpCode.aggregate({
+    where: { phone, purpose, createdAt: { gt: since(HOUR_MS) } },
+    _sum: { attempts: true },
+  });
+  return sum._sum.attempts ?? 0;
+}
+
+function tooManyWrong(): OtpError {
+  return new OtpError('TOO_MANY_ATTEMPTS', 'Too many incorrect codes. Try again in an hour.');
 }
 
 /** Verify a customer SIGN_IN OTP. */
@@ -111,7 +146,7 @@ export function verifyAdminSignInOtp(phone: string, code: string): Promise<boole
 }
 
 export class OtpError extends Error {
-  constructor(public code: 'TOO_SOON' | 'TOO_MANY_ATTEMPTS', message: string) {
+  constructor(public code: 'TOO_SOON' | 'TOO_MANY_CODES' | 'TOO_MANY_ATTEMPTS', message: string) {
     super(message);
     this.name = 'OtpError';
   }

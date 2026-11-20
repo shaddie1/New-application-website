@@ -16,6 +16,12 @@ import { signRegistrationToken, verifyRegistrationToken } from '../auth/jwt.js';
 import { issueSession, rotateRefreshToken, revokeRefreshToken, toPublicUser, RefreshError } from '../auth/tokens.js';
 import { generateUniqueReferralCode } from '../auth/referral.js';
 import { requireAuth } from '../auth/middleware.js';
+import { createIpLimiter, limitByIp } from '../auth/ipLimit.js';
+
+// Requests one connection may make to the four sign-in-code routes. Generous,
+// because many phones on one mobile network can share an address.
+const SIGN_IN_REQUESTS_PER_WINDOW = 60;
+const SIGN_IN_WINDOW_MS = 10 * 60 * 1000;
 
 // E.164 phone, lenient on length (Kenya is +254 + 9 digits = 13 chars, but allow other markets).
 const phoneSchema = z
@@ -74,8 +80,10 @@ function findUserByEmail(email: string) {
 }
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
+  const limitSignIn = limitByIp(createIpLimiter({ limit: SIGN_IN_REQUESTS_PER_WINDOW, windowMs: SIGN_IN_WINDOW_MS }));
+
   // ── Step 1: request OTP ────────────────────────────────────────────────
-  app.post('/request-otp', async (req, reply) => {
+  app.post('/request-otp', { preHandler: limitSignIn }, async (req, reply) => {
     const parsed = RequestOtpSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
@@ -91,7 +99,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── Step 2: verify OTP → either authenticated session or registration token ─
-  app.post('/verify-otp', async (req, reply) => {
+  app.post('/verify-otp', { preHandler: limitSignIn }, async (req, reply) => {
     const parsed = VerifyOtpSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
@@ -137,7 +145,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // a staff account without an email on file cannot sign in until the owner
   // adds one on the Team page.
 
-  app.post('/admin/request-otp', async (req, reply) => {
+  app.post('/admin/request-otp', { preHandler: limitSignIn }, async (req, reply) => {
     const parsed = AdminRequestOtpSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Enter a valid email address.' });
 
@@ -156,7 +164,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.post('/admin/verify-otp', async (req, reply) => {
+  app.post('/admin/verify-otp', { preHandler: limitSignIn }, async (req, reply) => {
     const parsed = AdminVerifyOtpSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
