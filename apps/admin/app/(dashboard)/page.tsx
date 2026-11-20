@@ -11,6 +11,7 @@ import { ExpensesChart, ProfitShareChart, RevenueCharts } from '../../src/compon
 import { MonthFigures } from '../../src/components/dashboard/MonthFigures';
 import { MonthSelector } from '../../src/components/dashboard/MonthSelector';
 import { ServicesDue } from '../../src/components/dashboard/ServicesDue';
+import { OpenInvoices } from '../../src/components/dashboard/OpenInvoices';
 import { StatusStrip } from '../../src/components/dashboard/StatusStrip';
 import { TextLink } from '../../src/components/dashboard/TextLink';
 import { isSameMonth, monthLabel, nairobiYearMonth, type YearMonth } from '../../src/components/dashboard/month';
@@ -18,7 +19,7 @@ import { activeBookings, noActiveJobs } from '../../src/components/dashboard/sta
 import { useBlock } from '../../src/components/dashboard/useBlock';
 import { Button } from '../../src/components/ui/button';
 import { Card } from '../../src/components/ui/card';
-import { hasOwnerAccess } from '../../src/lib/roles';
+import { canViewProjectMoney, hasOwnerAccess } from '../../src/lib/roles';
 
 // Finance data is not served to every staff role, so only ask for it when the
 // signed-in user is actually allowed it — otherwise the request 403s.
@@ -114,6 +115,13 @@ export default function DashboardPage() {
         <div className="mt-4">
           <ServicesDue />
         </div>
+
+        {/* Invoices are for the project money roles, as on the Invoices tab. */}
+        {canViewProjectMoney(session) && (
+          <div className="mt-4">
+            <OpenInvoices />
+          </div>
+        )}
       </section>
 
       {canSeeFinance && user && (

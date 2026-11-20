@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The morning "services due today" email: from 07:00 Nairobi time, once a day,
-// to the owner, admins, the COO and cleaning supervisors.
+// The morning email: from 07:00 Nairobi time, once a day. The services due go
+// to the owner, admins, the COO and cleaning supervisors; invoices sent and
+// not paid by their due date go to the owner and the money roles.
 
 const runFindUnique = vi.fn();
 const runCreate = vi.fn();
 const runDelete = vi.fn();
 const userFindMany = vi.fn();
+const invoiceFindMany = vi.fn();
 vi.mock('../db.js', () => ({
   prisma: {
     reminderRun: { findUnique: runFindUnique, create: runCreate, delete: runDelete },
     user: { findMany: userFindMany },
+    invoice: { findMany: invoiceFindMany },
   },
 }));
 
@@ -28,13 +31,23 @@ const visit = (title: string, status = 'PLANNED', isDeepClean = false) => ({
   projectId: title, projectTitle: title, clientName: 'Amani', siteLocation: 'Westlands',
   date: '2026-11-21', isDeepClean, status, note: null, markedByName: null,
 });
+const OWNER = { id: 'u1', email: 'owner@onyxhawk.test', isOwner: true, role: 'ADMIN' };
+const COO = { id: 'u2', email: 'coo@onyxhawk.test', isOwner: false, role: 'COO' };
+const SUPERVISOR = { id: 'u3', email: 'supervisor@onyxhawk.test', isOwner: false, role: 'CLEANING_SUPERVISOR' };
+const FINANCE = { id: 'u4', email: 'finance@onyxhawk.test', isOwner: false, role: 'FINANCIAL_MANAGER' };
+const OVERDUE = {
+  number: 'OH-2026-0003', totalCents: 2_050_000, dueOn: new Date('2026-11-18'),
+  project: { title: 'Office contract', clientName: 'Amani Ltd' },
+};
+const sentTo = (email: string) => trySendEmail.mock.calls.find((c) => c[0] === email)?.[1];
 
 beforeEach(() => {
   vi.clearAllMocks();
   runFindUnique.mockResolvedValue(null);
   runCreate.mockResolvedValue({});
   runDelete.mockResolvedValue({});
-  userFindMany.mockResolvedValue([{ id: 'u1', email: 'owner@onyxhawk.test' }, { id: 'u2', email: 'coo@onyxhawk.test' }]);
+  userFindMany.mockResolvedValue([OWNER, COO]);
+  invoiceFindMany.mockResolvedValue([]);
   trySendEmail.mockResolvedValue(true);
   visitsBetween.mockResolvedValue([visit('Office contract'), visit('Clinic', 'PLANNED', true), visit('Flat', 'SKIPPED')]);
 });
@@ -58,8 +71,33 @@ describe('sendDueReminders', () => {
     expect(message.text).not.toContain('Flat');
 
     const where = userFindMany.mock.calls[0]![0].where;
-    expect(where.OR).toEqual([{ isOwner: true }, { role: { in: ['ADMIN', 'COO', 'CLEANING_SUPERVISOR'] } }]);
+    expect(where.OR).toEqual([{ isOwner: true }, { role: { in: ['ADMIN', 'COO', 'CLEANING_SUPERVISOR', 'FINANCIAL_MANAGER'] } }]);
     expect(where.deletedAt).toBeNull();
+  });
+
+  it('adds the overdue invoices for the money roles only', async () => {
+    userFindMany.mockResolvedValue([OWNER, SUPERVISOR, FINANCE]);
+    invoiceFindMany.mockResolvedValue([OVERDUE]);
+    expect(await sendDueReminders(log, at('2026-11-21T07:00:00'))).toBe('sent');
+    expect(invoiceFindMany.mock.calls[0]![0].where).toEqual({ status: 'SENT', dueOn: { lt: new Date('2026-11-21') } });
+
+    const owner = sentTo(OWNER.email);
+    expect(owner.subject).toBe('Today: 2 services due, 1 invoice overdue (Saturday 21 November)');
+    expect(owner.text).toContain('- OH-2026-0003, KSh 20,500 · Office contract · Amani Ltd · 3 days late');
+    expect(sentTo(SUPERVISOR.email).text).not.toContain('OH-2026-0003');
+    // The financial manager gets only the invoices.
+    const finance = sentTo(FINANCE.email);
+    expect(finance.subject).toBe('Today: 1 invoice overdue (Saturday 21 November)');
+    expect(finance.text).not.toContain('Office contract · Amani · Westlands');
+  });
+
+  it('sends the overdue invoices on a day with no services', async () => {
+    userFindMany.mockResolvedValue([SUPERVISOR, FINANCE]);
+    visitsBetween.mockResolvedValue([]);
+    invoiceFindMany.mockResolvedValue([OVERDUE]);
+    expect(await sendDueReminders(log, at('2026-11-21T07:00:00'))).toBe('sent');
+    expect(trySendEmail).toHaveBeenCalledTimes(1);
+    expect(sentTo(FINANCE.email).subject).toBe('Today: 1 invoice overdue (Saturday 21 November)');
   });
 
   it('does nothing when the day was already handled', async () => {

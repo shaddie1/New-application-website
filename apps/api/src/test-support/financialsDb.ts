@@ -272,6 +272,10 @@ export const db = {
     }),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.jobs.filter((j) => matches(j, args.where)), args)),
   },
+  /** No job here was made by a paid invoice; financials.invoices.test.ts covers those. */
+  invoice: {
+    findUnique: vi.fn(async (_args: Where) => null),
+  },
   expense: {
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.expenses.filter((e) => costMatches(e, where))),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.expenses.filter((e) => costMatches(e, args.where)), args)),

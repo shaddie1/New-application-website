@@ -96,6 +96,7 @@ model User {
   projectChecksAnswered ProjectCheck[]      @relation("ProjectCheckAnsweredBy")
   projectEvents        ProjectEvent[]       @relation("ProjectEventActor")
   projectVisitsMarked  ProjectVisit[]       @relation("ProjectVisitMarkedBy")
+  invoicesCreated      Invoice[]            @relation("InvoiceCreatedBy")
   quoteSurveysUpdated  QuoteSurvey[]        @relation("QuoteSurveyUpdatedBy")
   quoteCostingsUpdated QuoteCosting[]       @relation("QuoteCostingUpdatedBy")
   quoteEstimatesComputed  QuoteEstimate[]   @relation("QuoteEstimateComputedBy")
@@ -765,6 +766,8 @@ model Job {
   expenses       Expense[]
   // Days machines worked on this job. Each line is a cost of the job.
   machineLines   MachineLine[]
+  // Set when this job is the income from a paid invoice.
+  invoice        Invoice?
   // Where the job sits for per-project money. `projectId` is set only when
   // `placement` is PROJECT; the database checks the two agree. Restrict, so a
   // project that holds jobs cannot be deleted.
@@ -1197,6 +1200,7 @@ model Project {
   events          ProjectEvent[]
   jobs            Job[]
   visits          ProjectVisit[]
+  invoices        Invoice[]
   createdBy       User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   createdById     String
   createdAt       DateTime      @default(now())
@@ -1216,6 +1220,7 @@ enum ProjectEventKind {
   QUESTION_REMOVED
   NOTE_CHANGED
   VISIT_MARKED
+  INVOICE_CHANGED
 }
 
 /**
@@ -1248,6 +1253,65 @@ model ReminderRun {
   day        DateTime @id @db.Date
   visitCount Int
   sentAt     DateTime @default(now())
+}
+
+/** DRAFT can be changed or deleted; SENT is with the client; PAID added its income; CANCELLED is kept for the record. */
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  CANCELLED
+}
+
+/**
+ * An invoice for one billing period of a project, following its Payment
+ * setting (apps/api/src/invoices/periods.ts). Marking it paid creates the
+ * income job under the project, dated the day it was paid, so it counts in
+ * Charged, Insights and profit like any other job; that job is `job`.
+ */
+model Invoice {
+  id          String        @id @default(cuid())
+  /** OH-2026-0001: the year it was made, then a running count for that year. */
+  number      String        @unique
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId   String
+  periodStart DateTime      @db.Date
+  periodEnd   DateTime      @db.Date
+  status      InvoiceStatus @default(DRAFT)
+  lines       InvoiceLine[]
+  totalCents  Int
+  note        String?
+  sentOn      DateTime?     @db.Date
+  dueOn       DateTime?     @db.Date
+  paidOn      DateTime?     @db.Date
+  paymentRef  String?
+  job         Job?          @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  jobId       String?       @unique
+  createdBy   User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([projectId, periodStart])
+  @@index([status, dueOn])
+}
+
+/** One line of an invoice: the regular service for the period, or a deep clean. */
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId   String
+  description String
+  quantity    Int     @default(1)
+  unitCents   Int
+  amountCents Int
+  sortOrder   Int     @default(0)
+}
+
+/** The last invoice number used in each year, so numbers never repeat. */
+model InvoiceCounter {
+  year Int @id
+  last Int
 }
 
 /**

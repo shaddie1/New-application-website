@@ -7,11 +7,13 @@ const userFindUnique = vi.fn();
 const projectFindUnique = vi.fn();
 const projectDelete = vi.fn();
 const jobCount = vi.fn();
+const invoiceCount = vi.fn();
 vi.mock('../db.js', () => ({
   prisma: {
     user: { findUnique: userFindUnique },
     project: { findUnique: projectFindUnique, delete: projectDelete },
     job: { count: jobCount },
+    invoice: { count: invoiceCount },
   },
 }));
 
@@ -33,6 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   userFindUnique.mockResolvedValue({ role: 'SUPPORT', isOwner: false });
   projectDelete.mockResolvedValue({});
+  invoiceCount.mockResolvedValue(0);
 });
 
 describe('DELETE /admin/projects/:id', () => {
@@ -59,6 +62,20 @@ describe('DELETE /admin/projects/:id', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
     expect(projectDelete).toHaveBeenCalledWith({ where: { id: 'p2' } });
+  });
+
+  it('refuses a project with invoices, which are kept for the record', async () => {
+    projectFindUnique.mockResolvedValue({ id: 'p3' });
+    jobCount.mockResolvedValue(0);
+    invoiceCount.mockResolvedValue(1);
+
+    const res = await del('p3');
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe(
+      'This project has invoices, which are kept for the record. Set its stage to Cancelled instead.',
+    );
+    expect(projectDelete).not.toHaveBeenCalled();
   });
 
   it('answers 404 for a project that does not exist', async () => {
