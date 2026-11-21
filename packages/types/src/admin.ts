@@ -141,13 +141,32 @@ export interface ExpenseDto {
   jobId: string | null;
   bookingId: string | null;
   createdAt: string;
+  // What the amount is made of. Each is sent only when the expense has it, and
+  // a server older than these never sends them, so the admin reads them as
+  // optional. An expense typed as one amount has none.
+  /** How many were bought, in thousandths: 2500 is two and a half. Comes with `unitPriceCents`. */
+  quantityThousandths?: number;
+  /** What the quantity counts: litres, pieces, days. */
+  unit?: string;
+  /** The price for one. `amountCents` is the quantity times this, to the nearest cent. */
+  unitPriceCents?: number;
+  /** The M-Pesa code or the number on the receipt. */
+  receiptRef?: string;
 }
 
 export interface CreateExpenseInput {
   category: ExpenseCategory;
+  /** The figure every total adds up. With a quantity and a price it must be the quantity times the price, to the nearest cent. */
   amountCents: number;
+  /** The item bought, or what the money was for. */
   description?: string;
   date: string; // YYYY-MM-DD
+  /** In thousandths: 2500 is two and a half. Given together with `unitPriceCents`, or not at all. */
+  quantityThousandths?: number;
+  /** Only beside a quantity. */
+  unit?: string;
+  unitPriceCents?: number;
+  receiptRef?: string;
 }
 
 /** One machine's days on a job, as the owner's job list shows them. They are logged on the Machines page. */

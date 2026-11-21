@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AllTimeTotals,
   ClientSegment,
-  ExpenseCategory,
+  CreateExpenseInput,
   ExpenseDto,
   FinancialSummary,
   JobDto,
@@ -13,6 +13,8 @@ import type {
   ProjectDto,
 } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
+import { ExpenseForm } from '../../../src/components/expenses/ExpenseForm';
+import { ExpenseList } from '../../../src/components/expenses/ExpenseList';
 import { daysText } from '../../../src/components/machines/wording';
 import { JobPlaceMover, PlacementPicker, refusalMessage } from '../../../src/components/project-money/PlacementPicker';
 import { SortJobs } from '../../../src/components/project-money/SortJobs';
@@ -35,18 +37,6 @@ const SEGMENTS = Object.keys(SEGMENT_LABELS) as ClientSegment[];
 /** Nairobi areas we work in most — free text is still allowed. */
 const REGIONS = ['Westlands', 'Karen', 'Kilimani', 'Lavington', 'Kileleshwa', 'Runda', 'Roysambu', 'CBD'];
 
-const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
-  MATERIALS: 'Materials',
-  TRANSPORT: 'Transport',
-  EMPLOYEE_PAY: 'Employee pay',
-  LUNCH: 'Lunch',
-  MISCELLANEOUS: 'Miscellaneous',
-};
-
-const CATEGORIES: ExpenseCategory[] = [
-  'MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS',
-];
-
 function monthRange(year: number, month: number) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const from = `${year}-${pad(month)}-01`;
@@ -55,13 +45,6 @@ function monthRange(year: number, month: number) {
 }
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
-
-const blankExpenseForm = () => ({
-  category: 'TRANSPORT' as ExpenseCategory,
-  amountKes: '',
-  description: '',
-  date: todayIso(),
-});
 
 type Tab = 'jobs' | 'submissions' | 'sort' | 'trends';
 
@@ -99,10 +82,8 @@ export default function FinancialsPage() {
   const [approveRefusal, setApproveRefusal] = useState<{ reportId: string; message: string } | null>(null);
   const [unsortedCount, setUnsortedCount] = useState<number | null>(null);
 
-  // Per-job expansion + expense form
+  // Per-job expansion. The expense form lives inside the open job and starts blank each time one opens.
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
-  const [expenseForm, setExpenseForm] = useState(blankExpenseForm());
-  const [savingExpense, setSavingExpense] = useState(false);
 
   // Deletion state
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
@@ -212,7 +193,6 @@ export default function FinancialsPage() {
       setJobPlace(null);
       setShowJobForm(false);
       setExpandedJobId(res.job.id);
-      setExpenseForm(blankExpenseForm());
     } catch (err) {
       setCreateJobRefusal(refusalMessage(err, 'Could not save job.'));
     } finally {
@@ -286,41 +266,26 @@ export default function FinancialsPage() {
   };
 
   // ── Add expense to job ─────────────────────────────────────────────────────
-  const handleAddExpense = async (e: React.FormEvent, jobId: string) => {
-    e.preventDefault();
-    const amountKes = parseFloat(expenseForm.amountKes);
-    if (!amountKes || amountKes <= 0) return;
-    setSavingExpense(true);
+  // The form shows a refusal itself, so a failure is left to reach it.
+  const addExpense = async (jobId: string, input: CreateExpenseInput): Promise<ExpenseDto> => {
     setError(null);
-    try {
-      const res = await api.addJobExpense(jobId, {
-        category: expenseForm.category,
-        amountCents: Math.round(amountKes * 100),
-        description: expenseForm.description.trim() || undefined,
-        date: expenseForm.date,
-      });
-      const newExpense = res.expense;
-      setJobs((prev) => prev.map((j) => {
-        if (j.id !== jobId) return j;
-        const expenses = [newExpense, ...j.expenses];
-        const totalExpensesCents = j.totalExpensesCents + newExpense.amountCents;
-        return { ...j, expenses, totalExpensesCents, netCents: j.actualIncomeCents - totalExpensesCents };
-      }));
-      setSummary((prev) => prev ? {
-        ...prev,
-        expensesByCategoryCents: {
-          ...prev.expensesByCategoryCents,
-          [newExpense.category]: (prev.expensesByCategoryCents[newExpense.category] ?? 0) + newExpense.amountCents,
-        },
-        totalExpensesCents: prev.totalExpensesCents + newExpense.amountCents,
-        netCents: prev.netCents - newExpense.amountCents,
-      } : prev);
-      setExpenseForm(blankExpenseForm());
-    } catch (err) {
-      setError(err instanceof ApiError ? `Could not add expense (${err.status}).` : 'Could not add expense.');
-    } finally {
-      setSavingExpense(false);
-    }
+    const { expense: newExpense } = await api.addJobExpense(jobId, input);
+    setJobs((prev) => prev.map((j) => {
+      if (j.id !== jobId) return j;
+      const expenses = [newExpense, ...j.expenses];
+      const totalExpensesCents = j.totalExpensesCents + newExpense.amountCents;
+      return { ...j, expenses, totalExpensesCents, netCents: j.actualIncomeCents - totalExpensesCents };
+    }));
+    setSummary((prev) => prev ? {
+      ...prev,
+      expensesByCategoryCents: {
+        ...prev.expensesByCategoryCents,
+        [newExpense.category]: (prev.expensesByCategoryCents[newExpense.category] ?? 0) + newExpense.amountCents,
+      },
+      totalExpensesCents: prev.totalExpensesCents + newExpense.amountCents,
+      netCents: prev.netCents - newExpense.amountCents,
+    } : prev);
+    return newExpense;
   };
 
   // ── Delete expense ─────────────────────────────────────────────────────────
@@ -355,7 +320,6 @@ export default function FinancialsPage() {
       setExpandedJobId(null);
     } else {
       setExpandedJobId(jobId);
-      setExpenseForm(blankExpenseForm());
     }
   };
 
@@ -616,15 +580,12 @@ export default function FinancialsPage() {
             loading={loading}
             monthLabel={monthLabel}
             expandedJobId={expandedJobId}
-            expenseForm={expenseForm}
-            savingExpense={savingExpense}
             deletingJobId={deletingJobId}
             deletingExpenseId={deletingExpenseId}
             onToggleExpand={toggleExpand}
             onDeleteJob={(j) => void handleDeleteJob(j)}
-            onAddExpense={(e, id) => void handleAddExpense(e, id)}
+            onAddExpense={addExpense}
             onDeleteExpense={(jobId, ex) => void handleDeleteExpense(jobId, ex)}
-            onExpenseFormChange={setExpenseForm}
             projects={projects}
             onJobMoved={(moved) => {
               if (jobs.find((j) => j.id === moved.id)?.placement === 'UNSORTED') refreshUnsortedCount();
@@ -693,26 +654,7 @@ export default function FinancialsPage() {
                       </div>
                       {report.expenses.length > 0 && (
                         <div className="mt-3 rounded-lg border border-border overflow-hidden">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-text-muted uppercase tracking-widest border-b border-border bg-bg-muted/40">
-                                <th className="px-3 py-1.5 text-left font-normal">Date</th>
-                                <th className="px-3 py-1.5 text-left font-normal">Category</th>
-                                <th className="px-3 py-1.5 text-left font-normal">Description</th>
-                                <th className="px-3 py-1.5 text-right font-normal">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                              {report.expenses.map((ex) => (
-                                <tr key={ex.id}>
-                                  <td className="px-3 py-1.5 text-text-muted">{ex.date}</td>
-                                  <td className="px-3 py-1.5">{CATEGORY_LABELS[ex.category]}</td>
-                                  <td className="px-3 py-1.5 text-text-muted">{ex.description ?? '—'}</td>
-                                  <td className="px-3 py-1.5 text-right font-medium">{fmt(ex.amountCents)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                          <ExpenseList expenses={report.expenses} dense />
                         </div>
                       )}
                       <div className="mt-3 max-w-md">
@@ -891,23 +833,20 @@ export default function FinancialsPage() {
 // ── Job list sub-component ─────────────────────────────────────────────────
 
 function JobList({
-  jobs, loading, monthLabel, expandedJobId, expenseForm, savingExpense,
+  jobs, loading, monthLabel, expandedJobId,
   deletingJobId, deletingExpenseId, onToggleExpand, onDeleteJob,
-  onAddExpense, onDeleteExpense, onExpenseFormChange, projects, onJobMoved,
+  onAddExpense, onDeleteExpense, projects, onJobMoved,
 }: {
   jobs: JobDto[];
   loading: boolean;
   monthLabel: string;
   expandedJobId: string | null;
-  expenseForm: ReturnType<typeof blankExpenseForm>;
-  savingExpense: boolean;
   deletingJobId: string | null;
   deletingExpenseId: string | null;
   onToggleExpand: (id: string) => void;
   onDeleteJob: (job: JobDto) => void;
-  onAddExpense: (e: React.FormEvent, jobId: string) => void;
+  onAddExpense: (jobId: string, input: CreateExpenseInput) => Promise<ExpenseDto>;
   onDeleteExpense: (jobId: string, expense: ExpenseDto) => void;
-  onExpenseFormChange: React.Dispatch<React.SetStateAction<ReturnType<typeof blankExpenseForm>>>;
   projects: ProjectDto[];
   onJobMoved: (job: JobDto) => void;
 }) {
@@ -1032,36 +971,11 @@ function JobList({
             {isExpanded && (
               <div className="border-t border-border">
                 {job.expenses.length > 0 ? (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border">
-                        <th className="px-5 py-2 text-left font-normal">Date</th>
-                        <th className="px-5 py-2 text-left font-normal">Category</th>
-                        <th className="px-5 py-2 text-left font-normal">Description</th>
-                        <th className="px-5 py-2 text-right font-normal">Amount</th>
-                        <th className="px-5 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {job.expenses.map((ex) => (
-                        <tr key={ex.id} className="hover:bg-bg-muted/40">
-                          <td className="px-5 py-2 text-text-muted text-xs">{ex.date}</td>
-                          <td className="px-5 py-2">{CATEGORY_LABELS[ex.category]}</td>
-                          <td className="px-5 py-2 text-text-muted">{ex.description ?? '—'}</td>
-                          <td className="px-5 py-2 text-right font-medium">{fmt(ex.amountCents)}</td>
-                          <td className="px-5 py-2 text-right">
-                            <button
-                              onClick={() => onDeleteExpense(job.id, ex)}
-                              disabled={deletingExpenseId === ex.id}
-                              className="text-danger text-xs hover:underline disabled:opacity-40"
-                            >
-                              {deletingExpenseId === ex.id ? '…' : 'Delete'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <ExpenseList
+                    expenses={job.expenses}
+                    onDelete={(ex) => onDeleteExpense(job.id, ex)}
+                    deletingId={deletingExpenseId}
+                  />
                 ) : (
                   <p className="px-5 py-3 text-text-muted text-sm">
                     {machineLines.length > 0 ? 'No other expenses yet.' : 'No expenses yet.'}
@@ -1103,65 +1017,7 @@ function JobList({
                   </div>
                 )}
 
-                <form
-                  onSubmit={(e) => onAddExpense(e, job.id)}
-                  className="px-5 py-4 border-t border-border bg-bg-muted/30 grid grid-cols-2 md:grid-cols-4 gap-3"
-                >
-                  <div>
-                    <label className="block text-xs text-text-muted mb-1">Category</label>
-                    <select
-                      className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                      value={expenseForm.category}
-                      onChange={(e) => onExpenseFormChange((f) => ({ ...f, category: e.target.value as ExpenseCategory }))}
-                    >
-                      {CATEGORIES.map((c) => (
-                        <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-muted mb-1">Amount (KSh)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="e.g. 200"
-                      required
-                      className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                      value={expenseForm.amountKes}
-                      onChange={(e) => onExpenseFormChange((f) => ({ ...f, amountKes: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-muted mb-1">Date</label>
-                    <input
-                      type="date"
-                      required
-                      className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                      value={expenseForm.date}
-                      onChange={(e) => onExpenseFormChange((f) => ({ ...f, date: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-muted mb-1">Description (optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Matatu to Karen"
-                      className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                      value={expenseForm.description}
-                      onChange={(e) => onExpenseFormChange((f) => ({ ...f, description: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-span-full flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={savingExpense}
-                      className="rounded-lg bg-navy text-white px-4 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
-                    >
-                      {savingExpense ? 'Adding…' : '+ Add expense'}
-                    </button>
-                  </div>
-                </form>
+                <ExpenseForm onAdd={(input) => onAddExpense(job.id, input)} />
               </div>
             )}
           </div>

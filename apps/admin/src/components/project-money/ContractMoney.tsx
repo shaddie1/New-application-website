@@ -5,6 +5,7 @@ import type { CostLineDto, ProjectMoneyDetail, ProjectMoneyJobDto } from '@onyxh
 
 import { api } from '../../lib/api';
 import { costGroupLabel, costGroupRows } from '../../lib/costGroups';
+import { lineDetailText } from '../../lib/expenseLine';
 import { money as formatMoney } from '../../lib/money';
 import { Figure, Profit } from './MoneyTable';
 
@@ -51,6 +52,8 @@ function CostLine({ cost: c }: { cost: CostLineDto }) {
   // A machine's days are not bought, so there is no receipt to ask after:
   // the line says nothing about one, not even that it is missing.
   const takesReceipt = c.category !== 'MACHINES';
+  // "4 litres × KSh 250" for a cost entered with a quantity and a price; nothing for one amount.
+  const detail = lineDetailText(c);
   return (
     <li className="border-b border-line py-2 last:border-b-0">
       <div className="flex items-baseline justify-between gap-4">
@@ -62,6 +65,7 @@ function CostLine({ cost: c }: { cost: CostLineDto }) {
       </div>
       <div className="mt-0.5 flex flex-wrap gap-x-2 break-words text-xs text-charcoal-muted">
         <span>{c.date}</span>
+        {detail && <span className="tabular-nums">· {detail}</span>}
         <span>· Entered by {c.enteredByName ?? 'unknown'}</span>
         {takesReceipt && !c.receiptRef && !c.receiptUrl && <span>· No receipt</span>}
         {c.receiptRef && <span className="min-w-0">· Receipt: {c.receiptRef}</span>}

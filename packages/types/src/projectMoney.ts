@@ -48,6 +48,12 @@ export interface CostLineDto {
   receiptRef?: string | null;
   /** A web address starting with http or https, or null. Left out of a `MACHINES` line. */
   receiptUrl?: string | null;
+  /** How many were bought, in thousandths. Sent only for an expense entered with a quantity and a price. */
+  quantityThousandths?: number;
+  /** What the quantity counts. Sent only when the expense has one. */
+  unit?: string;
+  /** The price for one. Sent together with `quantityThousandths`. */
+  unitPriceCents?: number;
 }
 
 export interface ProjectMoneyJobDto {

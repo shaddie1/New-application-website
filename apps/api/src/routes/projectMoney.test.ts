@@ -344,6 +344,22 @@ describe('GET /admin/project-money/projects/:id', () => {
     expect(line.receiptUrl).toBeNull();
   });
 
+  it('a cost line entered with a quantity and a price carries them beside its amount', async () => {
+    // Four and a half days at KSh 1,000 a day.
+    const line = await costLine({ quantityThousandths: 4_500, unit: 'days', unitPriceCents: 100_000 });
+
+    expect(line).toMatchObject({ amountCents: 450_000, quantityThousandths: 4_500, unit: 'days', unitPriceCents: 100_000 });
+  });
+
+  it('a cost line typed as one amount carries no quantity, unit or price', async () => {
+    const line = await costLine({ quantityThousandths: null, unit: null, unitPriceCents: null });
+
+    expect(line.amountCents).toBe(450_000);
+    expect(line).not.toHaveProperty('quantityThousandths');
+    expect(line).not.toHaveProperty('unit');
+    expect(line).not.toHaveProperty('unitPriceCents');
+  });
+
   it('a cost line with only a receipt link carries the link', async () => {
     const line = await costLine({ receiptUrl: 'https://files.example.com/receipts/r-17.jpg' });
 

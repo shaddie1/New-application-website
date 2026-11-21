@@ -11,6 +11,7 @@ import type { CostLineDto, ProjectMoneyDetail, ProjectMoneyTable } from '@onyxha
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
+import { lineDetail } from '../expenses/line.js';
 import { requireProjectMoneyAccess } from '../projectMoney/access.js';
 import { COUNTED_STATUSES, contractBreakdown, contractLines, moneyJobFields, moneyJobSelect } from '../projectMoney/figures.js';
 import { attachActor } from '../quotes/access.js';
@@ -72,6 +73,9 @@ export const projectMoneyRoutes: FastifyPluginAsync = async (app) => {
             category: true,
             description: true,
             amountCents: true,
+            quantityThousandths: true,
+            unit: true,
+            unitPriceCents: true,
             receiptRef: true,
             receiptUrl: true,
             createdBy: { select: { fullName: true } },
@@ -109,6 +113,7 @@ export const projectMoneyRoutes: FastifyPluginAsync = async (app) => {
             enteredByName: e.createdBy.fullName,
             receiptRef: e.receiptRef,
             receiptUrl: webLink(e.receiptUrl),
+            ...lineDetail(e),
           })),
           ...j.machineLines.map((l) => ({
             id: l.id,
