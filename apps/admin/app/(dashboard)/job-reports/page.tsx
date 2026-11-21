@@ -1,22 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ExpenseCategory, ExpenseDto, JobDto } from '@onyxhawk/types';
+import type { CreateExpenseInput, ExpenseDto, JobDto } from '@onyxhawk/types';
 import { api, ApiError } from '../../../src/lib/api';
+import { ExpenseForm } from '../../../src/components/expenses/ExpenseForm';
+import { ExpenseList } from '../../../src/components/expenses/ExpenseList';
 import { useRequireAdmin } from '../../../src/lib/auth';
 import { money as fmt } from '../../../src/lib/money';
-
-const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
-  MATERIALS: 'Materials',
-  TRANSPORT: 'Transport',
-  EMPLOYEE_PAY: 'Employee pay',
-  LUNCH: 'Lunch',
-  MISCELLANEOUS: 'Miscellaneous',
-};
-
-const CATEGORIES: ExpenseCategory[] = [
-  'MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS',
-];
 
 const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   PENDING:  { label: 'Pending review', cls: 'bg-warning/15 text-warning' },
@@ -24,13 +14,6 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
 };
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
-
-const blankExpenseForm = () => ({
-  category: 'TRANSPORT' as ExpenseCategory,
-  amountKes: '',
-  description: '',
-  date: todayIso(),
-});
 
 export default function JobReportsPage() {
   const session = useRequireAdmin();
@@ -47,10 +30,8 @@ export default function JobReportsPage() {
   });
   const [saving, setSaving] = useState(false);
 
-  // Expanded expense form
+  // The open report. The expense form lives inside it and starts blank each time one opens.
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expenseForm, setExpenseForm] = useState(blankExpenseForm());
-  const [savingExpense, setSavingExpense] = useState(false);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
 
@@ -90,7 +71,6 @@ export default function JobReportsPage() {
       setForm({ title: '', date: todayIso(), incomeKes: '', discountKes: '', clientName: '', clientPhone: '', clientLocation: '', notes: '' });
       setShowForm(false);
       setExpandedId(res.report.id);
-      setExpenseForm(blankExpenseForm());
     } catch (err) {
       setError(err instanceof ApiError ? `Could not submit report (${err.status}).` : 'Could not submit report.');
     } finally {
@@ -114,32 +94,17 @@ export default function JobReportsPage() {
   };
 
   // ── Add expense ────────────────────────────────────────────────────────────
-  const handleAddExpense = async (e: React.FormEvent, reportId: string) => {
-    e.preventDefault();
-    const amountKes = parseFloat(expenseForm.amountKes);
-    if (!amountKes || amountKes <= 0) return;
-    setSavingExpense(true);
+  // The form shows a refusal itself, so a failure is left to reach it.
+  const addExpense = async (reportId: string, input: CreateExpenseInput): Promise<ExpenseDto> => {
     setError(null);
-    try {
-      const res = await api.addReportExpense(reportId, {
-        category: expenseForm.category,
-        amountCents: Math.round(amountKes * 100),
-        description: expenseForm.description.trim() || undefined,
-        date: expenseForm.date,
-      });
-      const newExpense = res.expense;
-      setReports((prev) => prev.map((r) => {
-        if (r.id !== reportId) return r;
-        const expenses = [newExpense, ...r.expenses];
-        const totalExpensesCents = r.totalExpensesCents + newExpense.amountCents;
-        return { ...r, expenses, totalExpensesCents, netCents: r.actualIncomeCents - totalExpensesCents };
-      }));
-      setExpenseForm(blankExpenseForm());
-    } catch (err) {
-      setError(err instanceof ApiError ? `Could not add expense (${err.status}).` : 'Could not add expense.');
-    } finally {
-      setSavingExpense(false);
-    }
+    const { expense: newExpense } = await api.addReportExpense(reportId, input);
+    setReports((prev) => prev.map((r) => {
+      if (r.id !== reportId) return r;
+      const expenses = [newExpense, ...r.expenses];
+      const totalExpensesCents = r.totalExpensesCents + newExpense.amountCents;
+      return { ...r, expenses, totalExpensesCents, netCents: r.actualIncomeCents - totalExpensesCents };
+    }));
+    return newExpense;
   };
 
   // ── Delete expense ─────────────────────────────────────────────────────────
@@ -351,8 +316,7 @@ export default function JobReportsPage() {
                     {isPending && (
                       <button
                         onClick={() => {
-                          if (isExpanded) setExpandedId(null);
-                          else { setExpandedId(report.id); setExpenseForm(blankExpenseForm()); }
+                          setExpandedId(isExpanded ? null : report.id);
                         }}
                         className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-muted"
                       >
@@ -375,97 +339,16 @@ export default function JobReportsPage() {
                 {isExpanded && isPending && (
                   <div className="border-t border-border">
                     {report.expenses.length > 0 ? (
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-text-muted text-xs uppercase tracking-widest border-b border-border">
-                            <th className="px-5 py-2 text-left font-normal">Date</th>
-                            <th className="px-5 py-2 text-left font-normal">Category</th>
-                            <th className="px-5 py-2 text-left font-normal">Description</th>
-                            <th className="px-5 py-2 text-right font-normal">Amount</th>
-                            <th className="px-5 py-2" />
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {report.expenses.map((ex) => (
-                            <tr key={ex.id} className="hover:bg-bg-muted/40">
-                              <td className="px-5 py-2 text-text-muted text-xs">{ex.date}</td>
-                              <td className="px-5 py-2">{CATEGORY_LABELS[ex.category]}</td>
-                              <td className="px-5 py-2 text-text-muted">{ex.description ?? '—'}</td>
-                              <td className="px-5 py-2 text-right font-medium">{fmt(ex.amountCents)}</td>
-                              <td className="px-5 py-2 text-right">
-                                <button
-                                  onClick={() => void handleDeleteExpense(report.id, ex)}
-                                  disabled={deletingExpenseId === ex.id}
-                                  className="text-danger text-xs hover:underline disabled:opacity-40"
-                                >
-                                  {deletingExpenseId === ex.id ? '…' : 'Delete'}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <ExpenseList
+                        expenses={report.expenses}
+                        onDelete={(ex) => void handleDeleteExpense(report.id, ex)}
+                        deletingId={deletingExpenseId}
+                      />
                     ) : (
                       <p className="px-5 py-3 text-text-muted text-sm">No expenses added yet.</p>
                     )}
 
-                    <form
-                      onSubmit={(e) => void handleAddExpense(e, report.id)}
-                      className="px-5 py-4 border-t border-border bg-bg-muted/30 grid grid-cols-2 md:grid-cols-4 gap-3"
-                    >
-                      <div>
-                        <label className="block text-xs text-text-muted mb-1">Category</label>
-                        <select
-                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                          value={expenseForm.category}
-                          onChange={(e) => setExpenseForm((f) => ({ ...f, category: e.target.value as ExpenseCategory }))}
-                        >
-                          {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-text-muted mb-1">Amount (KSh)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder="e.g. 200"
-                          required
-                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                          value={expenseForm.amountKes}
-                          onChange={(e) => setExpenseForm((f) => ({ ...f, amountKes: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-text-muted mb-1">Date</label>
-                        <input
-                          type="date"
-                          required
-                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                          value={expenseForm.date}
-                          onChange={(e) => setExpenseForm((f) => ({ ...f, date: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-text-muted mb-1">Description (optional)</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Matatu to Karen"
-                          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
-                          value={expenseForm.description}
-                          onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))}
-                        />
-                      </div>
-                      <div className="col-span-full flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={savingExpense}
-                          className="rounded-lg bg-navy text-white px-4 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
-                        >
-                          {savingExpense ? 'Adding…' : '+ Add expense'}
-                        </button>
-                      </div>
-                    </form>
+                    <ExpenseForm onAdd={(input) => addExpense(report.id, input)} />
                   </div>
                 )}
               </div>
