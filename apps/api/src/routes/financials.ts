@@ -3,9 +3,7 @@ import { z } from 'zod';
 import { ClientSegment, ExpenseCategory, JobPlacement, JobStatus, Prisma, ShareholderKind } from '@prisma/client';
 import type {
   CostsByGroup,
-  ExpenseDto,
   FinancialSummary,
-  CreateExpenseInput,
   JobDto,
   JobMachineLineDto,
   CreateJobInput,
@@ -29,6 +27,7 @@ import type {
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { hasOwnerAccess } from '../auth/staff.js';
+import { readExpenseLine, toExpenseDto, type ExpenseRow } from '../expenses/line.js';
 import { monthDays, monthsEndingAt, nairobiToday } from '../finance/comparison.js';
 import { marketingSetAsideCents, splitByStake } from '../finance/split.js';
 import { machineAmountCents } from '../machines/amounts.js';
@@ -84,13 +83,6 @@ const PlaceJobsSchema = z.object({
   jobIds: z.array(z.string().min(1)).min(1),
   place: PlaceSchema,
 }) satisfies z.ZodType<PlaceJobsInput>;
-
-const CreateExpenseSchema = z.object({
-  category: z.enum(['MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS']),
-  amountCents: z.number().int().positive(),
-  description: z.string().trim().max(500).optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
-}) satisfies z.ZodType<CreateExpenseInput>;
 
 // 10000 basis points = 100.00%.
 const BASIS_POINTS_TOTAL = 10_000;
@@ -396,18 +388,11 @@ export const financialsRoutes: FastifyPluginAsync = async (app) => {
     const job = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!job) return reply.code(404).send({ error: 'job not found' });
 
-    const parsed = CreateExpenseSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const read = readExpenseLine(req.body);
+    if ('error' in read) return reply.code(400).send({ error: read.error });
 
     const row = await prisma.expense.create({
-      data: {
-        category: parsed.data.category as ExpenseCategory,
-        amountCents: parsed.data.amountCents,
-        description: parsed.data.description,
-        date: new Date(parsed.data.date),
-        jobId: job.id,
-        createdById: req.auth!.sub,
-      },
+      data: { ...read.line, jobId: job.id, createdById: req.auth!.sub },
     });
     return reply.code(201).send({ expense: toExpenseDto(row) });
   });
@@ -908,17 +893,6 @@ type MachineLineRow = {
   asset: { name: string };
 };
 
-type ExpenseRow = {
-  id: string;
-  category: ExpenseCategory;
-  amountCents: number;
-  description: string | null;
-  date: Date;
-  jobId: string | null;
-  bookingId: string | null;
-  createdAt: Date;
-};
-
 function toJobDto(row: JobRow): JobDto {
   const expenses = row.expenses.map(toExpenseDto);
   const machineCents = row.machineLines.reduce((acc, l) => acc + l.amountCents, 0);
@@ -963,18 +937,5 @@ function toMachineLineDto(row: MachineLineRow): JobMachineLineDto {
     rateCents: row.rateCents,
     amountCents: row.amountCents,
     isHire: row.isHire,
-  };
-}
-
-function toExpenseDto(row: ExpenseRow): ExpenseDto {
-  return {
-    id: row.id,
-    category: row.category,
-    amountCents: row.amountCents,
-    description: row.description,
-    date: row.date.toISOString().slice(0, 10),
-    jobId: row.jobId,
-    bookingId: row.bookingId,
-    createdAt: row.createdAt.toISOString(),
   };
 }

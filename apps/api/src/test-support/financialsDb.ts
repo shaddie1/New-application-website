@@ -280,6 +280,25 @@ export const db = {
   },
   expense: {
     findMany: vi.fn(async ({ where }: Partial<Where> = {}) => t.expenses.filter((e) => costMatches(e, where))),
+    findUnique: vi.fn(async ({ where }: Where) => t.expenses.find((e) => matches(e, where)) ?? null),
+    /** The columns the database fills in when a row is created without them, and its check on a line's detail. */
+    create: vi.fn(async ({ data }: Data) => {
+      const expense: Row = {
+        id: `expense${++seq}`, description: null, quantityThousandths: null, unit: null, unitPriceCents: null,
+        receiptRef: null, receiptUrl: null, reconciled: false, bookingId: null, createdAt: new Date(), ...data,
+      };
+      const lumpSum = expense.quantityThousandths == null && expense.unitPriceCents == null && expense.unit == null;
+      if (!lumpSum && !(expense.quantityThousandths > 0 && expense.unitPriceCents > 0)) {
+        throw new Error('Check constraint violated: Expense_detail_check');
+      }
+      t.expenses.push(expense);
+      return expense;
+    }),
+    delete: vi.fn(async ({ where }: Where) => {
+      const expense = t.expenses.find((e) => matches(e, where))!;
+      t.expenses = t.expenses.filter((e) => e !== expense);
+      return expense;
+    }),
     aggregate: vi.fn(async (args: Partial<Where> & Row) => aggregate(t.expenses.filter((e) => costMatches(e, args.where)), args)),
   },
   asset: {

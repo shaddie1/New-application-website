@@ -812,6 +812,13 @@ model Expense {
   category    ExpenseCategory
   amountCents Int
   description String?
+  // What explains the amount, when the expense was bought by the piece: how
+  // many (in thousandths, so 2500 is two and a half), of what unit, at what
+  // price for one. Quantity and price are set together or not at all; the
+  // database checks that. `amountCents` stays the figure every total adds up.
+  quantityThousandths Int?
+  unit                String?
+  unitPriceCents      Int?
   date        DateTime        @db.Date
   // Source document: an M-Pesa code, invoice number, or an uploaded image.
   // `reconciled` marks the entry as matched against a statement.

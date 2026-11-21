@@ -1,16 +1,15 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { ExpenseCategory, ClientSegment, JobPlacement } from '@prisma/client';
+import { ClientSegment, JobPlacement } from '@prisma/client';
 import type {
-  ExpenseDto,
   JobDto,
   CreateJobReportInput,
-  CreateExpenseInput,
 } from '@onyxhawk/types';
 
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { requireStaff } from '../auth/roles.js';
+import { readExpenseLine, toExpenseDto, type ExpenseRow } from '../expenses/line.js';
 
 const CreateReportSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -22,13 +21,6 @@ const CreateReportSchema = z.object({
   clientLocation: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(1000).optional(),
 }) satisfies z.ZodType<CreateJobReportInput>;
-
-const CreateExpenseSchema = z.object({
-  category: z.enum(['MATERIALS', 'TRANSPORT', 'EMPLOYEE_PAY', 'LUNCH', 'MISCELLANEOUS']),
-  amountCents: z.number().int().positive(),
-  description: z.string().trim().max(500).optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
-}) satisfies z.ZodType<CreateExpenseInput>;
 
 // A job's machine days, by their amounts only. The person who reported a job
 // sees one Machines amount for it: no machine name, days or rate is loaded.
@@ -100,18 +92,11 @@ export const jobReportsRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: 'report not found' });
     }
 
-    const parsed = CreateExpenseSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const read = readExpenseLine(req.body);
+    if ('error' in read) return reply.code(400).send({ error: read.error });
 
     const row = await prisma.expense.create({
-      data: {
-        category: parsed.data.category as ExpenseCategory,
-        amountCents: parsed.data.amountCents,
-        description: parsed.data.description,
-        date: new Date(parsed.data.date),
-        jobId: job.id,
-        createdById: req.auth!.sub,
-      },
+      data: { ...read.line, jobId: job.id, createdById: req.auth!.sub },
     });
     return reply.code(201).send({ expense: toExpenseDto(row) });
   });
@@ -158,17 +143,6 @@ type JobRow = {
   project: { title: string } | null;
 };
 
-type ExpenseRow = {
-  id: string;
-  category: ExpenseCategory;
-  amountCents: number;
-  description: string | null;
-  date: Date;
-  jobId: string | null;
-  bookingId: string | null;
-  createdAt: Date;
-};
-
 function toJobDto(row: JobRow): JobDto {
   const expenses = row.expenses.map(toExpenseDto);
   const machineCents = row.machineLines.reduce((acc, l) => acc + l.amountCents, 0);
@@ -201,18 +175,5 @@ function toJobDto(row: JobRow): JobDto {
     createdAt: row.createdAt.toISOString(),
     // One amount, and only when there is one: the lines themselves are the owner's to see.
     ...(machineCents > 0 && { machineCents }),
-  };
-}
-
-function toExpenseDto(row: ExpenseRow): ExpenseDto {
-  return {
-    id: row.id,
-    category: row.category,
-    amountCents: row.amountCents,
-    description: row.description,
-    date: row.date.toISOString().slice(0, 10),
-    jobId: row.jobId,
-    bookingId: row.bookingId,
-    createdAt: row.createdAt.toISOString(),
   };
 }
